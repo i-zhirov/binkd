@@ -171,12 +171,10 @@ fn run_case(func: &str, args: &[Vec<u8>]) -> Option<Vec<u8>> {
             let a = FtnAddr::parse(text_arg(&args[0]), &domains())?;
             let b = FtnAddr::parse(text_arg(&args[1]), &domains())?;
             let r = a.compare(&b);
-            Some(if r < 0 {
-                b"<".to_vec()
-            } else if r > 0 {
-                b">".to_vec()
-            } else {
-                b"=".to_vec()
+            Some(match r.cmp(&0) {
+                std::cmp::Ordering::Less => b"<".to_vec(),
+                std::cmp::Ordering::Greater => b">".to_vec(),
+                std::cmp::Ordering::Equal => b"=".to_vec(),
             })
         }
         "addr_filename" => {

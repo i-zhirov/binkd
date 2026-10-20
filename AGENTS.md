@@ -28,8 +28,8 @@ Rust crates are also a library for embedding in other programs.
 ## Technical Context
 
 - **Language/Version**: C (C89, K&R-style function definitions) for the
-  reference implementation. Rust edition 2021 (`rust/Cargo.toml`). The
-  minimum supported Rust version is not declared.
+  reference implementation. Rust edition 2021 with a minimum supported Rust
+  version of 1.85 (`rust-version` in `rust/Cargo.toml`).
 - **Primary Dependencies**: C: zlib, bzip2, and Perl (all optional),
   pthreads, libresolv, and libutil. Rust: none, only `std`.
 - **Storage**: The local file system. The BSO spool directories, the
@@ -105,6 +105,8 @@ Prerequisites and install steps are in `README.md`.
   `make -C tests CFLAGS="-O0 -g -fsanitize=address -fno-omit-frame-pointer"`
 - **Build (Rust)**: `cd rust && cargo build --workspace`
 - **Test (Rust)**: `cd rust && cargo test --workspace`
+- **Check the minimum supported Rust version** (needs the 1.85 toolchain):
+  `cd rust && cargo +1.85 check --workspace`
 - **Lint (Rust)**: `cd rust && cargo clippy --workspace --all-targets`
 - **Format check (Rust)**: `cd rust && cargo fmt --check`
 - **Format fix (Rust)**: `cd rust && cargo fmt`
@@ -140,6 +142,12 @@ Prerequisites and install steps are in `README.md`.
 
 - You MUST NOT add an external Rust dependency without a reason. The Rust
   workspace has no external dependencies today.
+
+- You MUST NOT use a Rust language feature that is newer than the minimum
+  supported Rust version. `rust-version` in `rust/Cargo.toml` states it; the
+  current value is 1.85. Check a change with
+  `cd rust && cargo +1.85 check --workspace` when the 1.85 toolchain is
+  installed.
 
 - When making changes to the project structure, ensure the Project Structure
   section in `AGENTS.md` is updated and remains valid.

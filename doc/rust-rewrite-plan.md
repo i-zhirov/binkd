@@ -535,7 +535,8 @@ The list below holds the decisions that the plan needs before phase 4.
    A future change needs a version note.
 6. Windows support: the C code has a service mode and a tray icon. The
    plan keeps these in phase 6.
-7. Minimum supported Rust version and the dependency policy.
+7. Minimum supported Rust version: 1.85, stated as `rust-version` in
+   `rust/Cargo.toml`. The dependency policy is in `AGENTS.md`.
 
 ## 8. Risks
 

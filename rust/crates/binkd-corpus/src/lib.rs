@@ -159,13 +159,18 @@ fn hex_value(c: u8) -> Option<u8> {
 }
 
 /// Decodes a hex string into bytes.
+///
+/// An odd number of digits gives `None`. The code does not use
+/// `usize::is_multiple_of()`, because it needs Rust 1.87 and the workspace
+/// keeps the minimum supported version lower.
 pub fn hex_decode(s: &[u8]) -> Option<Vec<u8>> {
-    if !s.len().is_multiple_of(2) {
-        return None;
-    }
     let mut out = Vec::with_capacity(s.len() / 2);
-    for pair in s.chunks(2) {
+    let mut pairs = s.chunks_exact(2);
+    for pair in &mut pairs {
         out.push(hex_value(pair[0])? * 16 + hex_value(pair[1])?);
+    }
+    if !pairs.remainder().is_empty() {
+        return None;
     }
     Some(out)
 }

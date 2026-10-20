@@ -3,6 +3,7 @@ name = "binkd-spool"
 description = "BSO spool handling of binkd: flow files, queue, busy flags, inbound"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 

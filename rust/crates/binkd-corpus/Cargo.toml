@@ -3,6 +3,7 @@ name = "binkd-corpus"
 description = "The golden corpus reader for the binkd tests"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
