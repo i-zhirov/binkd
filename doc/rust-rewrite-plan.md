@@ -409,7 +409,7 @@ Exit criteria:
 The value cases moved from the inline tables of the C tests to the corpus,
 so the corpus is the only source of the cases.
 
-### Phase 2: spool layer (partly done)
+### Phase 2: spool layer (done)
 
 Deliverables:
 
@@ -419,7 +419,7 @@ Deliverables:
 - Differential tests that compare the file system state after each
   operation.
 
-The first part is done:
+The port holds:
 
 - `binkd-ftn::node` holds the node table of `ftnnode.c`. The `defnode`
   DNS resolution stays out; it belongs to the network layer.
@@ -439,12 +439,16 @@ The C runner passed a relative temporary name to `check_pkthdr()`, so the C
 code could not open the packet file. The runner now passes the absolute path,
 and the corpus covers the good and the bad packet addresses.
 
+The session counters and the SRIF events of `inb_done()` stay with the
+protocol layer. The `defnode` DNS resolution of `get_node_info()` stays with
+the network layer.
+
 Exit criteria:
 
 - The queue scan, the sort order, the `.try` format, and the `.hld`
   format match the C code. (done)
 - The inbound rename, the duplicate check, and the packet header check
-  match the C code.
+  match the C code. (done)
 
 The queue order of two entries with the same sort key follows the
 `readdir()` order in both implementations. The corpus avoids such entries,
