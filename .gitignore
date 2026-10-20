@@ -1,1 +1,4 @@
 *.o
+
+# Test build directory
+tests/build/

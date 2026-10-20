@@ -76,6 +76,10 @@ UNIXes:
 * [Russian manual for binkd 0.9.9](http://binkd.grumbler.org/binkd-ug-ru.htm.win.ru) © Stas Degteff (`2:5080/102@fidonet`)
 * [FAQ](http://binkd.grumbler.org/binkdfaq.shtml)
 
+**Unit tests:** see [tests/README.md](tests/README.md) for the C test suite.
+
+**Rust rewrite plan:** see [doc/rust-rewrite-plan.md](doc/rust-rewrite-plan.md).
+
 **Authors:** Dmitry Maloff <maloff@corbina.net> and others.
 
 **Bug reporting:** <binkd-bugs@happy.kiev.ua>, also RU.BINKD or BINKD echoconferences.
