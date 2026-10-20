@@ -178,6 +178,7 @@ file system. The Rust port keeps the same order as the C code.
 | `spool/inbound_test.tsv` | `binkd-spool` | `inb_test` and the rename styles |
 | `spool/inbound_done.tsv` | `binkd-spool` | `inb_done` rename |
 | `spool/inbound_reject.tsv` | `binkd-spool` | `inb_reject` and `inb_fopen` |
+| `spool/inbound_pkthdr.tsv` | `binkd-spool` | `check_pkthdr` |
 
 The corpus does not cover the modules that need the network, the process
 managers, or the config parser. See `doc/rust-rewrite-plan.md` for the

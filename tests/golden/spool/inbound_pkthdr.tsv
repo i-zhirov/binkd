@@ -1,0 +1,27 @@
+# crate: binkd-spool
+# case: inbound_pkthdr
+#
+# `check_pkthdr()` tests the address of a packet against our AKAs.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	scalar	pkthdr_bad	bad
+config	node	2:5047/13@fidonet	example.com	-
+setup	dir	in
+setup	binary	in/00000001.dt	0d00640000000000000000000000000000000200b713b71300000000000000000000000000000000000000000100020002000000010000000000
+setup	binary	in/00000002.dt	c8000d0000000000000000000000000000000200b713b71300000000000000000000000000000000000000000100030002000000000000000000
+setup	session	nonsecure	in
+setup	session	aka	2:5047/13@fidonet
+setup	session	nfa	1
+op	set_scalar	pkthdr_type	-1
+op	check_pkthdr	13b70064.pkt	in/00000001.dt	in/13b70064.pkt
+op	check_pkthdr	13b70065.pkt	in/00000002.dt	in/13b70065.pkt
+op	set_scalar	pkthdr_type	4
+op	check_pkthdr	13b70064.pkt	in/00000002.dt	in/13b70064.pkt
+op	set_scalar	pkthdr_type	8
+op	set_session	secure
+op	check_pkthdr	13b70064.pkt	in/00000002.dt	in/13b70064.pkt
+---
+check_pkthdr	13b70064.pkt	1	in/13b70064.pkt
+check_pkthdr	13b70065.pkt	0	in/13b70065.bad
+check_pkthdr	13b70064.pkt	1	in/13b70064.pkt
+check_pkthdr	13b70064.pkt	1	in/13b70064.pkt

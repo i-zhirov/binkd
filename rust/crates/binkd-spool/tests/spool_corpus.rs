@@ -213,6 +213,32 @@ impl Runner {
                     "bfilebox" => {
                         self.config.bfilebox = self.root.join(value).to_string_lossy().into_owned()
                     }
+                    "pkthdr_type" => self.config.pkthdr_type = value.parse().unwrap_or(0),
+                    "pkthdr_bad" => self.config.pkthdr_bad = Some(value.clone()),
+                    "renamestyle" => {
+                        self.config.renamestyle = match value.as_str() {
+                            "extension" => binkd_spool::config::RenameStyle::Extension,
+                            "body" => binkd_spool::config::RenameStyle::Body,
+                            _ => binkd_spool::config::RenameStyle::Postfix,
+                        }
+                    }
+                    "inboundcase" => {
+                        self.config.inboundcase = match value.as_str() {
+                            "upper" => binkd_ftn::text::InbCase::Upper,
+                            "lower" => binkd_ftn::text::InbCase::Lower,
+                            "mixed" => binkd_ftn::text::InbCase::Mixed,
+                            _ => binkd_ftn::text::InbCase::Save,
+                        }
+                    }
+                    "minfree" => self.config.minfree = value.parse().unwrap_or(0),
+                    "minfree_nonsecure" => {
+                        self.config.minfree_nonsecure = value.parse().unwrap_or(0)
+                    }
+                    "kill_dup_partial_files" => self.config.kill_dup_partial_files = value != "0",
+                    "kill_old_partial_files" => {
+                        self.config.kill_old_partial_files = value.parse().unwrap_or(0)
+                    }
+                    "deletedirs" => self.config.deletedirs = value != "0",
                     _ => {}
                 }
             }

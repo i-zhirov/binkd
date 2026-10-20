@@ -571,6 +571,7 @@ impl Inbound {
             return (true, real_name);
         };
 
+        let debug = std::env::var("BINKD_SPOOL_DEBUG").is_ok();
         let mut listed = false;
         let mut check = false;
         for addr in &self.fa {
@@ -587,6 +588,12 @@ impl Inbound {
             }
         }
 
+        if debug {
+            eprintln!(
+                "DEBUG ck: bad={:?} type={} secure={} listed={} check={}",
+                bad, config.pkthdr_type, self.secure, listed, check
+            );
+        }
         if !check
             && (config.pkthdr_type == 0
                 || (config.pkthdr_type == addrtype::A_PROT && !self.secure)
@@ -604,6 +611,13 @@ impl Inbound {
             parsed = pkt_getaddr(&data[..58]);
         }
         if let Some(v) = parsed {
+            if debug {
+                eprintln!(
+                    "DEBUG ck: parsed={:?} fa={:?}",
+                    v,
+                    self.fa.iter().map(|a| a.format(false)).collect::<Vec<_>>()
+                );
+            }
             for addr in &self.fa {
                 if (v[0] < 0 || addr.z == v[0] as i32)
                     && (v[1] < 0 || addr.net == v[1] as i32)
@@ -615,6 +629,9 @@ impl Inbound {
             }
         }
 
+        if debug {
+            eprintln!("DEBUG ck: no match, changing the extension");
+        }
         // Change the extension to the bad one.
         if let Some(dot) = real_name.rfind('.') {
             let ext_len = real_name.len() - dot - 1;

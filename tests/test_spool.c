@@ -618,11 +618,13 @@ static void run_op (char *args[], int n)
   }
   else if (!strcmp (op, "check_pkthdr"))
   {
-    char real[MAXPATHLEN + 10];
+    char real[MAXPATHLEN + 10], tmp[MAXPATHLEN + 1];
 
+    /* The C code opens the temporary file by name. */
+    snprintf (tmp, sizeof (tmp), "%s/%s", root, args[2]);
     strnzcpy (real, args[3], sizeof (real));
     emitf ("check_pkthdr\t%s\t%d\t%s", args[1],
-            check_pkthdr (&session, args[1], args[2], real, &cfg), rel (real));
+            check_pkthdr (&session, args[1], tmp, real, &cfg), rel (real));
   }
   else if (!strcmp (op, "process_hld"))
   {

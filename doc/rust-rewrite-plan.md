@@ -431,13 +431,13 @@ The first part is done:
 - `binkd-spool::busy` holds the `.bsy` and `.csy` flags of the busy
   list, and `binkd-spool::inbound` holds the partial files, the rename,
   and the duplicate check of `inbound.c`.
-- `tests/golden/spool/` holds 11 cases. The C runner in
+- `tests/golden/spool/` holds 12 cases. The C runner in
   `tests/test_spool.c` and the Rust test in
   `crates/binkd-spool/tests/spool_corpus.rs` read the same files.
 
-The packet header check of `inbound.c` (`check_pkthdr`) is ported but has no
-corpus case yet: the C and Rust runners disagreed on the test packet, so the
-case waits for a fix.
+The C runner passed a relative temporary name to `check_pkthdr()`, so the C
+code could not open the packet file. The runner now passes the absolute path,
+and the corpus covers the good and the bad packet addresses.
 
 Exit criteria:
 
