@@ -58,7 +58,11 @@ pub fn trans_flo_line(s: &[u8], rules: &[RfRule]) -> Option<Vec<u8>> {
     }
     let mut buf = s.to_vec();
     for rule in rules {
-        buf = ed(Some(&buf), Some(rule.from.as_bytes()), Some(rule.to.as_bytes()));
+        buf = ed(
+            Some(&buf),
+            Some(rule.from.as_bytes()),
+            Some(rule.to.as_bytes()),
+        );
     }
     Some(buf)
 }

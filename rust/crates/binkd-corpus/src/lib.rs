@@ -75,15 +75,10 @@ pub fn load() -> Vec<Case> {
                 .iter()
                 .position(|f| *f == "=>")
                 .unwrap_or_else(|| panic!("{file}:{lineno}: no => separator"));
-            assert!(
-                sep + 1 < fields.len(),
-                "{file}:{lineno}: no expected value"
-            );
+            assert!(sep + 1 < fields.len(), "{file}:{lineno}: no expected value");
             let args = fields[1..sep]
                 .iter()
-                .map(|f| {
-                    decode_field(f).unwrap_or_else(|| panic!("{file}:{lineno}: bad escape"))
-                })
+                .map(|f| decode_field(f).unwrap_or_else(|| panic!("{file}:{lineno}: bad escape")))
                 .collect();
             let want = decode_field(fields[sep + 1])
                 .unwrap_or_else(|| panic!("{file}:{lineno}: bad escape"));

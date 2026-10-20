@@ -84,11 +84,7 @@ fn addr_from_args(args: &[Vec<u8>]) -> FtnAddr {
 }
 
 fn addr_string(fa: &FtnAddr) -> Vec<u8> {
-    format!(
-        "{}:{}:{}:{}:{}",
-        fa.z, fa.net, fa.node, fa.p, fa.domain
-    )
-    .into_bytes()
+    format!("{}:{}:{}:{}:{}", fa.z, fa.net, fa.node, fa.p, fa.domain).into_bytes()
 }
 
 fn run_case(func: &str, args: &[Vec<u8>]) -> Option<Vec<u8>> {
@@ -175,7 +171,13 @@ fn run_case(func: &str, args: &[Vec<u8>]) -> Option<Vec<u8>> {
             let a = FtnAddr::parse(text_arg(&args[0]), &domains())?;
             let b = FtnAddr::parse(text_arg(&args[1]), &domains())?;
             let r = a.compare(&b);
-            Some(if r < 0 { b"<".to_vec() } else if r > 0 { b">".to_vec() } else { b"=".to_vec() })
+            Some(if r < 0 {
+                b"<".to_vec()
+            } else if r > 0 {
+                b">".to_vec()
+            } else {
+                b"=".to_vec()
+            })
         }
         "addr_filename" => {
             let fa = addr_from_args(args);

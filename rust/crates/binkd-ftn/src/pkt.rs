@@ -106,10 +106,7 @@ pub fn pkt_setaddr(raw: &mut [u8], v: &PktAddr) -> bool {
         }
 
         // Type-2+ packets move the net field for the point.
-        if get(raw, 44) == get(raw, 41)
-            && get(raw, 45) == get(raw, 40)
-            && get_byte2(raw, 50) != 0
-        {
+        if get(raw, 44) == get(raw, 41) && get(raw, 45) == get(raw, 40) && get_byte2(raw, 50) != 0 {
             raw[38] = raw[20];
             raw[39] = raw[21];
             raw[20] = 0xff;

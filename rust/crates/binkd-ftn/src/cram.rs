@@ -135,7 +135,10 @@ mod tests {
     #[test]
     fn to_string_value() {
         let digest: Vec<u8> = (0..16).collect();
-        assert_eq!(to_string(&digest), "CRAM-MD5-000102030405060708090a0b0c0d0e0f");
+        assert_eq!(
+            to_string(&digest),
+            "CRAM-MD5-000102030405060708090a0b0c0d0e0f"
+        );
     }
 
     #[test]
