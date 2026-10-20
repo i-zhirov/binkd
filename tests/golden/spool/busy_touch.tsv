@@ -1,0 +1,25 @@
+# crate: binkd-spool
+# case: busy_touch
+#
+# `bsy_touch()` touches the flags after the delay only.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+setup	dir	outb
+setup	dir	in
+setup	session	nonsecure	in
+setup	session	aka	2:5047/13@fidonet
+setup	session	nfa	1
+
+op	busy_add	2:5047/100@fidonet	b
+op	mtime	outb/13b70064.bsy
+op	set_mtime	outb/13b70064.bsy	1000000000
+op	busy_touch
+op	mtime	outb/13b70064.bsy
+op	set_mtime	outb/13b70064.bsy	1000000000
+op	busy_touch
+op	mtime	outb/13b70064.bsy
+---
+busy_add	2:5047/100@fidonet	1
+mtime	outb/13b70064.bsy	now
+mtime	outb/13b70064.bsy	now
+mtime	outb/13b70064.bsy	old

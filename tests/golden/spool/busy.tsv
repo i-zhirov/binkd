@@ -1,0 +1,35 @@
+# crate: binkd-spool
+# case: busy
+#
+# The `.bsy` and `.csy` files of the busy list.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	node	2:5047/100@fidonet	example.com	-
+setup	dir	outb
+
+op	busy_add	2:5047/100@fidonet	b
+op	busy_test	2:5047/100@fidonet	b
+op	busy_test	2:5047/100@fidonet	c
+op	busy_add	2:5047/100@fidonet	b
+op	exists	outb/13b70064.bsy
+op	busy_remove	2:5047/100@fidonet	b
+op	busy_test	2:5047/100@fidonet	b
+op	exists	outb/13b70064.bsy
+op	busy_add	2:5047/100@fidonet	b
+op	busy_add	2:5047/100@fidonet	c
+op	busy_remove_all
+op	exists	outb/13b70064.bsy
+op	exists	outb/13b70064.csy
+op	files
+---
+busy_add	2:5047/100@fidonet	1
+busy_test	2:5047/100@fidonet	0
+busy_test	2:5047/100@fidonet	1
+busy_add	2:5047/100@fidonet	0
+exists	outb/13b70064.bsy	1
+busy_test	2:5047/100@fidonet	1
+exists	outb/13b70064.bsy	0
+busy_add	2:5047/100@fidonet	1
+busy_add	2:5047/100@fidonet	1
+exists	outb/13b70064.bsy	0
+exists	outb/13b70064.csy	0

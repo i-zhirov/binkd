@@ -92,6 +92,10 @@ The lines before `---` are:
 | `setup dir <path>` | Create a directory. |
 | `setup file <path> <size> <mtime>` | Create a file of the size and the time. |
 | `setup text <path> <content>` | Create a file with the content. |
+| `setup binary <path> <hex>` | Create a file with the bytes. |
+| `setup session <state> [<dir>]` | Set the session state and the directory. |
+| `setup session aka <addr>` | Add one of the session addresses. |
+| `setup session nfa <n>` | Set the number of the non-busy addresses. |
 | `config domain <name> <dir> <z0>` | Add a domain. |
 | `config node <addr> <hosts> <obox>` | Add a node. `-` is no box. |
 | `config aka <addr>` | Add one of our addresses. |
@@ -109,6 +113,21 @@ The lines before `---` are:
 | `op remove_try <addr>` | Remove the `.try` file. |
 | `op hold <addr> <until>` | Write the `.hld` file. |
 | `op process_hld <addr>` | Read the `.hld` file. |
+| `op busy_add <addr> <flag>` | Create the busy file. |
+| `op busy_test <addr> <flag>` | Test the busy file. |
+| `op busy_remove <addr> <flag>` | Remove the busy file. |
+| `op busy_remove_all` | Remove every busy file. |
+| `op busy_touch` | Touch the busy files. |
+| `op mtime <path>` | Print `now` or `old` for the modification time. |
+| `op set_mtime <path> <time>` | Set the modification time. |
+| `op setup_partial <name> <netname> <size> <time>` | Create the `.hr`/`.dt` pair. |
+| `op setup_real <path> <size>` | Create the real file of a transfer. |
+| `op inb_test <name> <size> <time>` | Test the inbound file. |
+| `op inb_fopen <netname> <size> <time>` | Open the partial file. |
+| `op inb_reject <netname> <size> <time>` | Remove the partial file. |
+| `op inb_done <netname> <size> <time>` | Rename the partial file. |
+| `op set_scalar <name> <value>` | Set a config value. |
+| `op set_session <state>` | Set the session state. |
 | `op dump` | Print the queue. |
 | `op nodes` | Print the nodes. |
 | `op files` | Print the files under the case root, sorted. |
@@ -154,6 +173,11 @@ file system. The Rust port keeps the same order as the C code.
 | `spool/bsy.tsv` | `binkd-spool` | `.bsy` and `.csy` files |
 | `spool/try_hld.tsv` | `binkd-spool` | `.try` and `.hld` files |
 | `spool/try_remove.tsv` | `binkd-spool` | `remove-try-files` |
+| `spool/busy.tsv` | `binkd-spool` | `.bsy` and `.csy` flags |
+| `spool/busy_touch.tsv` | `binkd-spool` | `bsy_touch` delay |
+| `spool/inbound_test.tsv` | `binkd-spool` | `inb_test` and the rename styles |
+| `spool/inbound_done.tsv` | `binkd-spool` | `inb_done` rename |
+| `spool/inbound_reject.tsv` | `binkd-spool` | `inb_reject` and `inb_fopen` |
 
 The corpus does not cover the modules that need the network, the process
 managers, or the config parser. See `doc/rust-rewrite-plan.md` for the

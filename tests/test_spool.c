@@ -29,8 +29,17 @@
 #include "ftnq.h"
 #include "ftnnode.h"
 #include "ftnaddr.h"
+#include "bsy.h"
+#include "inbound.h"
+#include "protocol.h"
+#include "protoco2.h"
+#include "srif.h"
 #include "tools.h"
 #include "harness.h"
+
+/* `inbound.c` does not declare `check_pkthdr()` in `inbound.h`. */
+int check_pkthdr (STATE *state, char *netname, char *tmp_name,
+                  char *real_name, BINKD_CONFIG *config);
 
 /* `ftnq.c` does not declare `process_hld()` in `ftnq.h`. */
 void process_hld (FTN_ADDR *fa, char *path, BINKD_CONFIG *config);
@@ -45,6 +54,9 @@ static BINKD_CONFIG cfg;
 static FTN_ADDR akas[MAX_AKAS];
 static int nakas = 0;
 static FTNQ *q = NULL;
+static STATE session;
+static FTN_ADDR session_fa[MAX_AKAS];
+static char session_inbound[MAXPATHLEN + 1];
 static char out[MAX_LINES][MAX_LINE];
 static int nout = 0;
 
@@ -449,6 +461,169 @@ static void run_op (char *args[], int n)
       exit (1);
     hold_node (&fa, (time_t) strtoumax (args[2], NULL, 10), &cfg);
   }
+  else if (!strcmp (op, "busy_add") || !strcmp (op, "busy_test"))
+  {
+    FTN_ADDR fa;
+    int ok;
+
+    if (!parse_addr (args[1], &fa))
+      exit (1);
+    if (!strcmp (op, "busy_add"))
+      ok = bsy_add (&fa, (bsy_t) args[2][0], &cfg);
+    else
+      ok = bsy_test (&fa, (bsy_t) args[2][0], &cfg);
+    emitf ("%s\t%s\t%d", op, args[1], ok);
+  }
+  else if (!strcmp (op, "busy_remove"))
+  {
+    FTN_ADDR fa;
+
+    if (!parse_addr (args[1], &fa))
+      exit (1);
+    bsy_remove (&fa, (bsy_t) args[2][0], &cfg);
+  }
+  else if (!strcmp (op, "busy_remove_all"))
+  {
+    bsy_remove_all (&cfg);
+  }
+  else if (!strcmp (op, "busy_touch"))
+  {
+    bsy_touch (&cfg);
+  }
+  else if (!strcmp (op, "mtime"))
+  {
+    char full[MAXPATHLEN + 1];
+    struct stat sb;
+
+    snprintf (full, sizeof (full), "%s/%s", root, args[1]);
+    if (stat (full, &sb) != 0)
+      emitf ("mtime\t%s\t-", args[1]);
+    else if ((time_t) sb.st_mtime > time (0) - 10)
+      emitf ("mtime\t%s\tnow", args[1]);
+    else
+      emitf ("mtime\t%s\told", args[1]);
+  }
+  else if (!strcmp (op, "set_mtime"))
+  {
+    char full[MAXPATHLEN + 1];
+    struct utimbuf utb;
+
+    snprintf (full, sizeof (full), "%s/%s", root, args[1]);
+    utb.actime = utb.modtime = (time_t) strtoumax (args[2], NULL, 10);
+    utime (full, &utb);
+  }
+  else if (!strcmp (op, "setup_partial"))
+  {
+    char hr[MAXPATHLEN + 1], dt[MAXPATHLEN + 1], line[MAX_LINE];
+    FILE *f;
+    long i;
+
+    snprintf (hr, sizeof (hr), "%s/%s.hr", session.inbound, args[1]);
+    snprintf (dt, sizeof (dt), "%s/%s.dt", session.inbound, args[1]);
+    {
+      char node[FTN_ADDR_SZ + 1];
+      if (session.nallfa > 0)
+        ftnaddress_to_str (node, &session.fa[0]);
+      else
+        strcpy (node, "0:0/0.0@unknown");
+      snprintf (line, sizeof (line), "%s %s %s %s\n",
+                args[2], args[3], args[4], node);
+    }
+    if ((f = fopen (hr, "wb")) != NULL) { fputs (line, f); fclose (f); }
+    if ((f = fopen (dt, "wb")) != NULL)
+    {
+      for (i = 0; i < atol (args[3]); ++i) fputc (0, f);
+      fclose (f);
+    }
+    {
+      struct utimbuf utb;
+      utb.actime = utb.modtime = (time_t) strtoumax (args[4], NULL, 10);
+      utime (dt, &utb);
+    }
+  }
+  else if (!strcmp (op, "setup_real"))
+  {
+    char full[MAXPATHLEN + 1];
+    FILE *f;
+    long i;
+
+    snprintf (full, sizeof (full), "%s/%s", session.inbound, args[1]);
+    if ((f = fopen (full, "wb")) != NULL)
+    {
+      for (i = 0; i < atol (args[2]); ++i) fputc (0, f);
+      fclose (f);
+    }
+  }
+  else if (!strcmp (op, "set_scalar"))
+  {
+    if (!strcmp (args[1], "pkthdr_type"))
+      cfg.pkthdr_type = atoi (args[2]);
+  }
+  else if (!strcmp (op, "set_session"))
+  {
+    if (!strcmp (args[1], "secure"))
+      session.state = P_SECURE;
+    else if (!strcmp (args[1], "nonsecure"))
+      session.state = P_NONSECURE;
+  }
+  else if (!strcmp (op, "inb_test"))
+  {
+    char real[MAXPATHLEN + 10];
+    int ok = inb_test (args[1], (boff_t) strtoumax (args[2], NULL, 10),
+                       (time_t) strtoumax (args[3], NULL, 10), session.inbound,
+                       real, cfg.renamestyle);
+    emitf ("inb_test\t%s\t%s", args[1], ok ? rel (real) : "-");
+  }
+  else if (!strcmp (op, "inb_fopen"))
+  {
+    TFILE file;
+    FILE *f;
+
+    memset (&file, 0, sizeof (file));
+    strnzcpy (file.netname, args[1], sizeof (file.netname));
+    file.size = (boff_t) strtoumax (args[2], NULL, 10);
+    file.time = (time_t) strtoumax (args[3], NULL, 10);
+    session.in = file;
+    f = inb_fopen (&session, &cfg);
+    if (f)
+    {
+      char path[MAXPATHLEN + 1];
+      long pos = ftell (f);
+      fclose (f);
+      /* The name of the partial file is in the .hr file of the transfer. */
+      snprintf (path, sizeof (path), "%s/%s", root, args[1]);
+      (void) pos;
+      emitf ("inb_fopen\t%s\t1", args[1]);
+    }
+    else
+      emitf ("inb_fopen\t%s\t0", args[1]);
+  }
+  else if (!strcmp (op, "inb_reject"))
+  {
+    memset (&session.in, 0, sizeof (session.in));
+    strnzcpy (session.in.netname, args[1], sizeof (session.in.netname));
+    session.in.size = (boff_t) strtoumax (args[2], NULL, 10);
+    session.in.time = (time_t) strtoumax (args[3], NULL, 10);
+    emitf ("inb_reject\t%s\t%d", args[1], inb_reject (&session, &cfg));
+  }
+  else if (!strcmp (op, "inb_done"))
+  {
+    TFILE file;
+
+    memset (&file, 0, sizeof (file));
+    strnzcpy (file.netname, args[1], sizeof (file.netname));
+    file.size = (boff_t) strtoumax (args[2], NULL, 10);
+    file.time = (time_t) strtoumax (args[3], NULL, 10);
+    emitf ("inb_done\t%s\t%d", args[1], inb_done (&file, &session, &cfg));
+  }
+  else if (!strcmp (op, "check_pkthdr"))
+  {
+    char real[MAXPATHLEN + 10];
+
+    strnzcpy (real, args[3], sizeof (real));
+    emitf ("check_pkthdr\t%s\t%d\t%s", args[1],
+            check_pkthdr (&session, args[1], args[2], real, &cfg), rel (real));
+  }
   else if (!strcmp (op, "process_hld"))
   {
     FTN_ADDR fa;
@@ -499,6 +674,9 @@ static void run_file (const char *path)
   }
 
   memset (&cfg, 0, sizeof (cfg));
+  memset (&session, 0, sizeof (session));
+  session.fa = session_fa;
+  session.inbound = session_inbound;
   q = NULL;
   nout = 0;
   nakas = 0;
@@ -546,6 +724,59 @@ static void run_file (const char *path)
         mkfile (fields[2], text, 0, 0);
         free (text);
       }
+      else if (!strcmp (fields[1], "binary"))
+      {
+        /* The bytes of a file, in hex. */
+        char full[MAXPATHLEN + 1];
+        FILE *f;
+        size_t i, len = strlen (fields[3]) / 2;
+
+        char *slash;
+        snprintf (full, sizeof (full), "%s/%s", root, fields[2]);
+        if ((slash = strrchr (full, '/')) != NULL)
+        {
+          *slash = 0;
+          mkdirs (full);
+          *slash = '/';
+        }
+        if ((f = fopen (full, "wb")) != NULL)
+        {
+          for (i = 0; i < len; ++i)
+          {
+            char byte[3] = { fields[3][i * 2], fields[3][i * 2 + 1], 0 };
+            fputc ((int) strtol (byte, NULL, 16), f);
+          }
+          fclose (f);
+        }
+      }
+      else if (!strcmp (fields[1], "session"))
+      {
+        if (!strcmp (fields[2], "secure"))
+        {
+          session.state = P_SECURE;
+          if (nf > 3)
+            snprintf (session.inbound, MAXPATHLEN + 1, "%s/%s", root, fields[3]);
+        }
+        else if (!strcmp (fields[2], "nonsecure"))
+        {
+          session.state = P_NONSECURE;
+          if (nf > 3)
+            snprintf (session.inbound, MAXPATHLEN + 1, "%s/%s", root, fields[3]);
+        }
+        else if (!strcmp (fields[2], "inbound"))
+          snprintf (session.inbound, MAXPATHLEN + 1, "%s/%s", root, fields[3]);
+        else if (!strcmp (fields[2], "aka"))
+        {
+          FTN_ADDR fa;
+          if (!parse_addr (fields[3], &fa))
+            exit (1);
+          session.fa[session.nallfa++] = fa;
+        }
+        else if (!strcmp (fields[2], "nfa"))
+          session.nfa = atoi (fields[3]);
+        else if (!strcmp (fields[2], "skip_all"))
+          session.skip_all_flag = 1;
+      }
     }
     else if (!strcmp (fields[0], "config"))
     {
@@ -580,6 +811,39 @@ static void run_file (const char *path)
           snprintf (cfg.tfilebox, sizeof (cfg.tfilebox), "%s/%s", root, fields[3]);
         else if (!strcmp (fields[2], "bfilebox"))
           snprintf (cfg.bfilebox, sizeof (cfg.bfilebox), "%s/%s", root, fields[3]);
+        else if (!strcmp (fields[2], "temp_inbound"))
+          snprintf (cfg.temp_inbound, sizeof (cfg.temp_inbound), "%s/%s", root, fields[3]);
+        else if (!strcmp (fields[2], "minfree"))
+          cfg.minfree = atol (fields[3]);
+        else if (!strcmp (fields[2], "minfree_nonsecure"))
+          cfg.minfree_nonsecure = atol (fields[3]);
+        else if (!strcmp (fields[2], "kill_dup_partial_files"))
+          cfg.kill_dup_partial_files = atoi (fields[3]);
+        else if (!strcmp (fields[2], "kill_old_partial_files"))
+          cfg.kill_old_partial_files = atol (fields[3]);
+        else if (!strcmp (fields[2], "deletedirs"))
+          cfg.deletedirs = atoi (fields[3]);
+        else if (!strcmp (fields[2], "renamestyle"))
+          cfg.renamestyle = !strcmp (fields[3], "extension") ? RENAME_EXTENSION
+                            : (!strcmp (fields[3], "body") ? RENAME_BODY : RENAME_POSTFIX);
+        else if (!strcmp (fields[2], "inboundcase"))
+          cfg.inboundcase = !STRICMP (fields[3], "upper") ? INB_UPPER
+                           : (!STRICMP (fields[3], "lower") ? INB_LOWER
+                           : (!STRICMP (fields[3], "mixed") ? INB_MIXED : INB_SAVE));
+        else if (!strcmp (fields[2], "pkthdr_type"))
+          cfg.pkthdr_type = atoi (fields[3]);
+        else if (!strcmp (fields[2], "pkthdr_bad"))
+        {
+          xfree (cfg.pkthdr_bad);
+          cfg.pkthdr_bad = xstrdup (fields[3]);
+        }
+        else if (!strcmp (fields[2], "overwrite"))
+        {
+          struct maskchain *m = xalloc (sizeof (struct maskchain));
+          m->next = cfg.overwrite.first;
+          m->mask = xstrdup (fields[3]);
+          cfg.overwrite.first = m;
+        }
       }
     }
   }

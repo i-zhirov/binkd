@@ -13,8 +13,40 @@ pub const NL_NODE: i32 = 1;
 /// The node is listed in the passwords file.
 pub const NL_PASSWORDS: i32 = 2;
 
-/// `NR_USE_OLD`: keep the old value of the flag.
+/// `NR_USE_OLD`, `ND_USE_OLD`, `RIP_USE_OLD`, `NP_USE_OLD`, `AF_USE_OLD`:
+/// keep the old value of the flag.
 pub const USE_OLD: i32 = -1;
+
+/// `NR_ON`.
+pub const NR_ON: i32 = 1;
+/// `NR_OFF`.
+pub const NR_OFF: i32 = 0;
+/// `ND_ON`.
+pub const ND_ON: i32 = 1;
+/// `ND_OFF`.
+pub const ND_OFF: i32 = 0;
+/// `MD_ON`.
+pub const MD_ON: i32 = 1;
+/// `MD_OFF`.
+pub const MD_OFF: i32 = -1;
+/// `MD_USE_OLD`, the default value.
+pub const MD_USE_OLD: i32 = 0;
+/// `RIP_ON`.
+pub const RIP_ON: i32 = 1;
+/// `RIP_OFF`.
+pub const RIP_OFF: i32 = 0;
+/// `RIP_SIP`: the strict IP check of `-sip`.
+pub const RIP_SIP: i32 = 2;
+/// `HC_ON`.
+pub const HC_ON: i32 = 1;
+/// `HC_OFF`.
+pub const HC_OFF: i32 = -1;
+/// `HC_USE_OLD`, the default value.
+pub const HC_USE_OLD: i32 = 0;
+/// `NP_ON`.
+pub const NP_ON: i32 = 1;
+/// `NP_OFF`.
+pub const NP_OFF: i32 = 0;
 
 /// The node resolution is repeated after this many seconds.
 pub const RESOLVE_TTL: i64 = 3600;

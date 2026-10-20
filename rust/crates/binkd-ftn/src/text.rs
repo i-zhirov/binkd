@@ -150,9 +150,10 @@ pub fn makeinboundcase(s: &mut [u8], style: InbCase) {
 }
 
 /// The file name case style.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum InbCase {
     /// Keep the file name as is.
+    #[default]
     Save,
     /// Convert the file name to uppercase.
     Upper,

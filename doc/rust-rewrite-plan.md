@@ -428,11 +428,16 @@ The first part is done:
   sizes, and the node selection.
 - `binkd-spool::tryfile` holds the `.try` files, the `.hld` files, the
   old `.bsy` files, and the poll files.
-- `tests/golden/spool/` holds 7 cases. The C runner in
+- `binkd-spool::busy` holds the `.bsy` and `.csy` flags of the busy
+  list, and `binkd-spool::inbound` holds the partial files, the rename,
+  and the duplicate check of `inbound.c`.
+- `tests/golden/spool/` holds 11 cases. The C runner in
   `tests/test_spool.c` and the Rust test in
   `crates/binkd-spool/tests/spool_corpus.rs` read the same files.
 
-The `bsy.c` module and the inbound part of `inbound.c` are the next step.
+The packet header check of `inbound.c` (`check_pkthdr`) is ported but has no
+corpus case yet: the C and Rust runners disagreed on the test packet, so the
+case waits for a fix.
 
 Exit criteria:
 

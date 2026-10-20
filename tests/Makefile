@@ -31,7 +31,7 @@ WARNINGS := -Wall -Wno-unused-parameter
 
 # The binkd modules that the tests link.  Add a module here when a
 # new test needs it.
-MODULES := pmatch ftndom ftnaddr ftnnode getw crypt md5b readflo tools xalloc ftnq
+MODULES := pmatch ftndom ftnaddr ftnnode getw crypt md5b readflo tools xalloc ftnq bsy inbound unix/rename
 
 TESTS := test_crypt test_md5 test_corpus test_spool
 
@@ -73,6 +73,7 @@ $(BUILD)/stubs.o: stubs.c | $(BUILD)
 
 # Real binkd modules.
 $(BUILD)/%.o: $(TOP)/%.c | $(BUILD)
+	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) $(WARNINGS) $(CPPFLAGS) -c -o $@ $<
 
 $(BUILD)/test_%: $(BUILD)/test_%.o $(BUILD)/harness.o $(BUILD)/stubs.o $(MODOBJS)

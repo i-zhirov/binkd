@@ -16,6 +16,8 @@
 #include "sys.h"
 #include "tools.h"
 #include "readcfg.h"
+#include "protoco2.h"
+#include "srif.h"
 
 /* common.h: the logger tests the console mode. */
 int inetd_flag = 0;
@@ -25,6 +27,16 @@ int mypid = 0;
 
 /* server.h: the CRAM challenge generator mixes this value in. */
 int ext_rand = 0;
+
+/*
+ * common.h: the free space of a directory. The tests run without the
+ * `minfree` check, so the stub never runs.
+ */
+unsigned long getfree (char *path)
+{
+  (void) path;
+  return 0;
+}
 
 /*
  * readcfg.h: the node table resolves an unknown `defnode` node with DNS.
@@ -66,3 +78,23 @@ char *mask_test (char *s, struct maskchain *chain)
   (void) chain;
   return NULL;
 }
+
+/* `srif.h`: the tests run without event flags. */
+int evt_test (EVTQ **eq, char *filename, EVT_FLAG *evt_flags)
+{
+  (void) eq;
+  (void) filename;
+  (void) evt_flags;
+  return 0;
+}
+
+FTNQ *evt_run (FTNQ *q, char *filename0, int imm_freq,
+               STATE *st, BINKD_CONFIG *config)
+{
+  (void) filename0;
+  (void) imm_freq;
+  (void) st;
+  (void) config;
+  return q;
+}
+

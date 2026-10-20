@@ -1,0 +1,30 @@
+# crate: binkd-spool
+# case: inbound_test
+#
+# `inb_test()` looks for the file with the same size and time.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+setup	dir	outb
+setup	dir	in
+setup	session	nonsecure	in
+setup	session	aka	2:5047/13@fidonet
+setup	session	nfa	1
+config	scalar	renamestyle	postfix
+setup	file	in/13b70064.tic	10	1000000000
+setup	file	in/13b70064.pkt	10	1000000000
+op	inb_test	13b70064.tic	10	1000000000
+op	inb_test	13b70064.tic	11	1000000000
+op	inb_test	13b70064.pkt	10	1000000000
+op	inb_test	13b70064.pkt	11	1000000000
+op	inb_test	13b70064.txt	10	1000000000
+op	inb_test	13b70064.txt	11	1000000000
+op	files
+---
+inb_test	13b70064.tic	in/13b70064.tic
+inb_test	13b70064.tic	-
+inb_test	13b70064.pkt	in/13b70064.pkt
+inb_test	13b70064.pkt	-
+inb_test	13b70064.txt	-
+inb_test	13b70064.txt	-
+file	in/13b70064.pkt	10
+file	in/13b70064.tic	10

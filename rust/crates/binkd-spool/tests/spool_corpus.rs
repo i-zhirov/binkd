@@ -12,7 +12,9 @@ use binkd_corpus::{decode_field, encode_field, hex_encode};
 use binkd_ftn::addr::FtnAddr;
 use binkd_ftn::domain::FtnDomain;
 use binkd_ftn::node::{NodeSpec, NL_NODE};
+use binkd_spool::busy::BusyList;
 use binkd_spool::config::{Share, SpoolConfig};
+use binkd_spool::inbound::{Inbound, TFile};
 use binkd_spool::queue::Queue;
 use binkd_spool::tryfile;
 
@@ -28,6 +30,8 @@ struct Runner {
     root: PathBuf,
     config: SpoolConfig,
     queue: Queue,
+    busy: BusyList,
+    session: Inbound,
     out: Vec<String>,
 }
 
@@ -37,6 +41,14 @@ impl Runner {
             root,
             config: SpoolConfig::new(),
             queue: Queue::new(),
+            busy: BusyList::new(),
+            session: Inbound {
+                dir: String::new(),
+                secure: false,
+                fa: Vec::new(),
+                nfa: 0,
+                skip_all_flag: false,
+            },
             out: Vec::new(),
         }
     }
@@ -116,6 +128,36 @@ impl Runner {
                 let content = decode_field(&fields[3]).expect("bad case text");
                 self.mkfile(&fields[2], Some(&content), 0, 0);
             }
+            "binary" => {
+                let content = binkd_corpus::hex_decode(fields[3].as_bytes()).expect("bad hex");
+                self.mkfile(&fields[2], Some(&content), 0, 0);
+            }
+            "session" => match fields[2].as_str() {
+                "secure" => {
+                    self.session.secure = true;
+                    if fields.len() > 3 {
+                        self.session.dir =
+                            self.root.join(&fields[3]).to_string_lossy().into_owned();
+                    }
+                }
+                "nonsecure" => {
+                    self.session.secure = false;
+                    if fields.len() > 3 {
+                        self.session.dir =
+                            self.root.join(&fields[3]).to_string_lossy().into_owned();
+                    }
+                }
+                "inbound" => {
+                    self.session.dir = self.root.join(&fields[3]).to_string_lossy().into_owned();
+                }
+                "aka" => {
+                    let fa = self.parse_addr(&fields[3]);
+                    self.session.fa.push(fa);
+                }
+                "nfa" => self.session.nfa = fields[3].parse().unwrap_or(0),
+                "skip_all" => self.session.skip_all_flag = true,
+                _ => {}
+            },
             _ => {}
         }
     }
@@ -314,6 +356,150 @@ impl Runner {
                 let fa = self.parse_addr(&args[1]);
                 let until = args[2].parse().unwrap_or(0);
                 tryfile::hold_node(&fa, until, &mut self.config, now());
+            }
+            "busy_add" | "busy_test" => {
+                let fa = self.parse_addr(&args[1]);
+                let bt = args[2].as_bytes()[0];
+                let ok = if args[0] == "busy_add" {
+                    self.busy.add(&fa, bt, &self.config)
+                } else {
+                    self.busy.test(&fa, bt, &self.config)
+                };
+                self.emit(format!("{}\t{}\t{}", args[0], args[1], ok as u8));
+            }
+            "busy_remove" => {
+                let fa = self.parse_addr(&args[1]);
+                self.busy.remove(&fa, args[2].as_bytes()[0], &self.config);
+            }
+            "busy_remove_all" => self.busy.remove_all(&self.config),
+            "busy_touch" => self.busy.touch(&self.config, now()),
+            "mtime" => {
+                let full = self.root.join(&args[1]);
+                let recent = fs::metadata(&full)
+                    .and_then(|m| m.modified())
+                    .ok()
+                    .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+                    .map(|d| d.as_secs() as i64 > now() - 10)
+                    .unwrap_or(false);
+                self.emit(format!(
+                    "mtime\t{}\t{}",
+                    args[1],
+                    if recent { "now" } else { "old" }
+                ));
+            }
+            "set_mtime" => {
+                let full = self.root.join(&args[1]);
+                let time = UNIX_EPOCH + Duration::from_secs(args[2].parse().unwrap_or(0));
+                if let Ok(f) = fs::OpenOptions::new().write(true).open(&full) {
+                    let _ = f.set_modified(time);
+                }
+            }
+            "setup_partial" => {
+                let hr = self
+                    .root
+                    .join(&self.session.dir)
+                    .join(format!("{}.hr", args[1]));
+                let dt = self
+                    .root
+                    .join(&self.session.dir)
+                    .join(format!("{}.dt", args[1]));
+                let node = self
+                    .session
+                    .fa
+                    .first()
+                    .map(|fa| fa.format(false))
+                    .unwrap_or_else(|| "0:0/0.0@unknown".to_string());
+                let line = format!("{} {} {} {}\n", args[2], args[3], args[4], node);
+                if let Some(parent) = hr.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::write(&hr, line);
+                let size: usize = args[3].parse().unwrap_or(0);
+                let _ = fs::write(&dt, vec![0u8; size]);
+                let time = UNIX_EPOCH + Duration::from_secs(args[4].parse().unwrap_or(0));
+                if let Ok(f) = fs::OpenOptions::new().write(true).open(&dt) {
+                    let _ = f.set_modified(time);
+                }
+            }
+            "setup_real" => {
+                let full = self.root.join(&self.session.dir).join(&args[1]);
+                let size: usize = args[2].parse().unwrap_or(0);
+                if let Some(parent) = full.parent() {
+                    let _ = fs::create_dir_all(parent);
+                }
+                let _ = fs::write(&full, vec![0u8; size]);
+            }
+            "set_scalar" => {
+                if args[1] == "pkthdr_type" {
+                    self.config.pkthdr_type = args[2].parse().unwrap_or(0);
+                }
+            }
+            "set_session" => {
+                self.session.secure = args[1] == "secure";
+            }
+            "inb_test" => {
+                let size: u64 = args[2].parse().unwrap_or(0);
+                let t: i64 = args[3].parse().unwrap_or(0);
+                let style = self.config.renamestyle;
+                match self.session.inb_test(&args[1], size, t, style) {
+                    Some(path) => {
+                        let rel = self.rel(Path::new(&path));
+                        self.emit(format!("inb_test\t{}\t{rel}", args[1]));
+                    }
+                    None => self.emit(format!("inb_test\t{}\t-", args[1])),
+                }
+            }
+            "inb_fopen" => {
+                let file = TFile {
+                    netname: args[1].clone(),
+                    size: args[2].parse().unwrap_or(0),
+                    time: args[3].parse().unwrap_or(0),
+                    start: 0,
+                };
+                let free = binkd_spool::inbound::FreeSpace::default();
+                let mut rnd = || 0u32;
+                let ok = self
+                    .session
+                    .inb_fopen(&file, &self.config, free, now(), &mut rnd)
+                    .is_some();
+                self.emit(format!("inb_fopen\t{}\t{}", args[1], ok as u8));
+            }
+            "inb_reject" => {
+                let file = TFile {
+                    netname: args[1].clone(),
+                    size: args[2].parse().unwrap_or(0),
+                    time: args[3].parse().unwrap_or(0),
+                    start: 0,
+                };
+                let mut rnd = || 0u32;
+                let ok = self
+                    .session
+                    .inb_reject(&file, &self.config, now(), &mut rnd);
+                self.emit(format!("inb_reject\t{}\t{}", args[1], ok as u8));
+            }
+            "inb_done" => {
+                let file = TFile {
+                    netname: args[1].clone(),
+                    size: args[2].parse().unwrap_or(0),
+                    time: args[3].parse().unwrap_or(0),
+                    start: 0,
+                };
+                let mut rnd = || 0u32;
+                let ok = self
+                    .session
+                    .inb_done(&file, &mut self.config, now(), &mut rnd)
+                    .is_some();
+                self.emit(format!("inb_done\t{}\t{}", args[1], ok as u8));
+            }
+            "check_pkthdr" => {
+                let (ok, name) = self.session.check_pkthdr(
+                    &args[1],
+                    &self.root.join(&args[2]).to_string_lossy(),
+                    &args[3],
+                    &mut self.config,
+                    now(),
+                );
+                self.emit(format!("check_pkthdr\t{}\t{}\t{}", args[1], ok as u8, name));
             }
             "process_hld" => {
                 let fa = self.parse_addr(&args[1]);
