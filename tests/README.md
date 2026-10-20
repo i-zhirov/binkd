@@ -120,7 +120,7 @@ The lines before `---` are:
 | `op busy_touch` | Touch the busy files. |
 | `op mtime <path>` | Print `now` or `old` for the modification time. |
 | `op set_mtime <path> <time>` | Set the modification time. |
-| `op setup_partial <name> <netname> <size> <time>` | Create the `.hr`/`.dt` pair. |
+| `op setup_partial <name> <netname> <size> <time>` | Create the partial files. |
 | `op setup_real <path> <size>` | Create the real file of a transfer. |
 | `op inb_test <name> <size> <time>` | Test the inbound file. |
 | `op inb_fopen <netname> <size> <time>` | Open the partial file. |
