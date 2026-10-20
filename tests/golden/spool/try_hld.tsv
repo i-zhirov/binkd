@@ -1,0 +1,54 @@
+# crate: binkd-spool
+# case: try_hld
+#
+# The `.try` file, the attempt counter, and the `.hld` file.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	node	2:5047/100@fidonet	example.com	-
+config	scalar	tries	3
+config	scalar	hold	3600
+config	scalar	remove_try_files	0
+setup	dir	outb
+op	write_try	2:5047/100@fidonet	2	1	first
+op	read_try	2:5047/100@fidonet
+op	hex	outb/13b70064.try
+op	good_try	2:5047/100@fidonet	ok
+op	read_try	2:5047/100@fidonet
+op	hex	outb/13b70064.try
+op	bad_try	2:5047/100@fidonet	timeout	1
+op	read_try	2:5047/100@fidonet
+op	bad_try	2:5047/100@fidonet	timeout	1
+op	read_try	2:5047/100@fidonet
+op	bad_try	2:5047/100@fidonet	timeout	1
+op	read_try	2:5047/100@fidonet
+op	hex	outb/13b70064.try
+op	nodes
+op	hold	2:5047/100@fidonet	4000000000
+op	hex	outb/13b70064.hld
+op	nodes
+op	process_hld	2:5047/100@fidonet
+op	nodes
+op	files
+op	good_try	2:5047/100@fidonet	done
+op	read_try	2:5047/100@fidonet
+op	hex	outb/13b70064.try
+op	remove_try	2:5047/100@fidonet
+op	files
+---
+try	2:5047/100@fidonet	2	1
+hex	outb/13b70064.try	02000100056669727374
+try	2:5047/100@fidonet	3	0
+hex	outb/13b70064.try	03000000026f6b
+try	2:5047/100@fidonet	3	1
+try	2:5047/100@fidonet	3	2
+try	2:5047/100@fidonet	0	0
+hex	outb/13b70064.try	000000000774696d656f7574
+node	2:5047/100@fidonet	-	-	-	future
+hex	outb/13b70064.hld	34303030303030303030
+node	2:5047/100@fidonet	-	-	-	future
+node	2:5047/100@fidonet	-	-	-	future
+file	outb/13b70064.hld	10
+file	outb/13b70064.try	12
+try	2:5047/100@fidonet	1	0
+hex	outb/13b70064.try	0100000004646f6e65
+file	outb/13b70064.hld	10

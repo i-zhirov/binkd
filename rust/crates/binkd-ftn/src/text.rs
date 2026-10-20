@@ -205,6 +205,34 @@ pub fn safe_atol(s: Option<&str>) -> Result<i64, &'static str> {
     }
 }
 
+/// Splits the source into `argc` words.
+///
+/// Returns `None` when the source has fewer words. The C code writes NUL
+/// bytes into the source and returns the rest of the string; the port returns
+/// the words.
+pub fn parse_args(argc: usize, src: &[u8]) -> Option<Vec<&[u8]>> {
+    let mut args = Vec::with_capacity(argc);
+    let mut i = 0usize;
+    while args.len() < argc {
+        while i < src.len() && is_space(src[i]) {
+            i += 1;
+        }
+        if i >= src.len() {
+            break;
+        }
+        let start = i;
+        while i < src.len() && !is_space(src[i]) {
+            i += 1;
+        }
+        args.push(&src[start..i]);
+    }
+    if args.len() < argc {
+        None
+    } else {
+        Some(args)
+    }
+}
+
 /// Returns the last directory separator of the path.
 pub fn last_slash(s: &[u8]) -> Option<&[u8]> {
     let mut ret = None;

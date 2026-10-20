@@ -27,6 +27,36 @@ int mypid = 0;
 int ext_rand = 0;
 
 /*
+ * readcfg.h: the node table resolves an unknown `defnode` node with DNS.
+ * The tests run without `defnode`, so the stub never runs.
+ */
+int get_host_and_port (int n, char *host, char *port, char *src,
+                       FTN_ADDR *fa, BINKD_CONFIG *config)
+{
+  (void) n;
+  (void) host;
+  (void) port;
+  (void) src;
+  (void) fa;
+  (void) config;
+  return 0;
+}
+
+/*
+ * srv_gai.h: the DNS SRV lookup of `srv_gai.c`. The tests run without
+ * `defnode`, so the stub never runs.
+ */
+int srv_getaddrinfo (const char *node, const char *service,
+                     const struct addrinfo *hints, struct addrinfo **res)
+{
+  (void) node;
+  (void) service;
+  (void) hints;
+  (void) res;
+  return EAI_FAIL;
+}
+
+/*
  * readcfg.h: the logger filters messages with nolog masks.
  * The tests run without masks.
  */

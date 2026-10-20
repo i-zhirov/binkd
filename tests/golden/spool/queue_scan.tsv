@@ -1,0 +1,44 @@
+# crate: binkd-spool
+# case: queue_scan
+#
+# The scan of the outbound directory, the sort, and the sizes.
+# The queue holds one entry of each kind, so the order of the C code is
+# the same on every file system.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	node	2:5047/100@fidonet	example.com	-
+config	node	2:5047/101@fidonet	127.0.0.1	-
+setup	dir	outb
+setup	file	outb/13b70064.iut	10	1000000000
+setup	file	outb/13b70064.req	20	1000000000
+setup	file	outb/13b70065.flo	0	1000000000
+setup	file	outb/13b7000d.iut	30	1000000000
+setup	file	outb/13b70066.iut	40	1000000000
+op	scan
+op	sort
+op	dump
+op	nodes
+op	sizes
+op	freq
+op	select	2:5047/100@fidonet
+op	select	2:5047/100@fidonet
+op	dump
+op	files
+---
+queue	outb/13b70064.req	h	s	r	0	-
+queue	outb/13b70064.iut	i	d	m	0	-
+queue	outb/13b70065.flo	f	d	l	0	-
+node	2:5047/100@fidonet	-	-	-	0
+node	2:5047/101@fidonet	-	-	-	0
+sizes	10	20
+freq	1
+select	outb/13b70064.req
+select	outb/13b70064.iut
+queue	outb/13b70064.req	h	s	r	20	+
+queue	outb/13b70064.iut	i	d	m	10	+
+queue	outb/13b70065.flo	f	d	l	0	-
+file	outb/13b7000d.iut	30
+file	outb/13b70064.iut	10
+file	outb/13b70064.req	20
+file	outb/13b70065.flo	0
+file	outb/13b70066.iut	40

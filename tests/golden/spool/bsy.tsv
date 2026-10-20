@@ -1,0 +1,20 @@
+# crate: binkd-spool
+# case: bsy
+#
+# An old `.bsy` file is removed, a current `.csy` file sets the busy state.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	node	2:5047/100@fidonet	example.com	-
+config	node	2:5047/101@fidonet	127.0.0.1	-
+config	scalar	kill_old_bsy	3600
+setup	dir	outb
+setup	file	outb/13b70064.bsy	0	1000000000
+setup	file	outb/13b70065.csy	0	4000000000
+op	scan
+op	sort
+op	nodes
+op	files
+---
+node	2:5047/100@fidonet	-	-	-	0
+node	2:5047/101@fidonet	-	-	c	0
+file	outb/13b70065.csy	0

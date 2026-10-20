@@ -1,0 +1,27 @@
+# crate: binkd-spool
+# case: queue_zone
+#
+# A zone directory `outb.003` of the domain `fidonet`.  The C code scans it
+# with the domain whose default zone differs from the zone of the directory.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	node	2:5047/100@fidonet	example.com	-
+config	node	3:5047/200@fidonet	example.com	-
+setup	dir	outb
+setup	file	outb/13b70064.iut	10	1000000000
+setup	file	outb/13b70065.flo	0	1000000000
+setup	dir	outb.003
+setup	file	outb.003/13b700c8.req	50	1000000000
+op	scan
+op	sort
+op	dump
+op	nodes
+op	files
+---
+queue	outb.003/13b700c8.req	h	s	r	0	-
+queue	outb/13b70064.iut	i	d	m	0	-
+node	2:5047/100@fidonet	-	-	-	0
+node	3:5047/200@fidonet	-	-	-	0
+file	outb/13b70064.iut	10
+file	outb/13b70065.flo	0
+file	outb.003/13b700c8.req	50

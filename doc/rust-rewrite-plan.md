@@ -298,7 +298,7 @@ rust/
   crates/
     binkd-ftn/             # pure FTN logic, no I/O, no unsafe
     binkd-config/          # config model and parser
-    binkd-spool/           # queue, busy flags, inbound
+    binkd-spool/           # queue, flow files, try files, busy flags
     binkd-proto/           # binkp session, compression, crypt
     binkd-net/             # listener, caller, proxy, SRV
     binkd-log/             # log and binary log
@@ -320,8 +320,9 @@ arrive in the later phases.
   The parser reports errors with a file name and a line number.
 - `binkd-proto` drives a session over `AsyncRead` and `AsyncWrite`.
   The caller supplies the transport. The crate does not open a socket.
-- `binkd-spool` uses a small `FileSystem` trait. The tests supply a
-  temporary directory or an in-memory file system.
+- `binkd-spool` uses `std::fs`. The tests run on a temporary directory
+  and compare the file system state. An in-memory file system would hide the
+  behavior of the real code.
 - `binkd-ffi` exists for tests only. It links the C objects and
   exposes them to the differential tests.
 
@@ -408,22 +409,41 @@ Exit criteria:
 The value cases moved from the inline tables of the C tests to the corpus,
 so the corpus is the only source of the cases.
 
-### Phase 2: spool layer
+### Phase 2: spool layer (partly done)
 
 Deliverables:
 
 - `binkd-spool` with `flo`, `queue`, `busy`, `inbound`, and the node
   table of `ftnnode.c`.
-- Fixture spools under `tests/fixtures/spool/`.
+- The spool corpus in `tests/golden/spool/`.
 - Differential tests that compare the file system state after each
   operation.
+
+The first part is done:
+
+- `binkd-ftn::node` holds the node table of `ftnnode.c`. The `defnode`
+  DNS resolution stays out; it belongs to the network layer.
+- `binkd-spool::queue` holds the queue scan of `ftnq.c`: the domain and
+  zone directories, the point directories, the fileboxes, the sort, the
+  sizes, and the node selection.
+- `binkd-spool::tryfile` holds the `.try` files, the `.hld` files, the
+  old `.bsy` files, and the poll files.
+- `tests/golden/spool/` holds 7 cases. The C runner in
+  `tests/test_spool.c` and the Rust test in
+  `crates/binkd-spool/tests/spool_corpus.rs` read the same files.
+
+The `bsy.c` module and the inbound part of `inbound.c` are the next step.
 
 Exit criteria:
 
 - The queue scan, the sort order, the `.try` format, and the `.hld`
-  format match the C code.
+  format match the C code. (done)
 - The inbound rename, the duplicate check, and the packet header check
   match the C code.
+
+The queue order of two entries with the same sort key follows the
+`readdir()` order in both implementations. The corpus avoids such entries,
+because the order is not the same on every file system.
 
 ### Phase 3: config
 

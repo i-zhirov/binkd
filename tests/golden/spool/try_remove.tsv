@@ -1,0 +1,21 @@
+# crate: binkd-spool
+# case: try_remove
+#
+# `remove-try-files` removes the `.try` file after a good session.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	node	2:5047/100@fidonet	example.com	-
+config	scalar	tries	3
+config	scalar	remove_try_files	1
+setup	dir	outb
+setup	text	outb/13b70064.try	\x02\x00\x01\x00t
+op	good_try	2:5047/100@fidonet	done
+op	exists	outb/13b70064.try
+op	read_try	2:5047/100@fidonet
+op	write_try	2:5047/100@fidonet	5	6	note
+op	remove_try	2:5047/100@fidonet
+op	exists	outb/13b70064.try
+---
+exists	outb/13b70064.try	0
+try	2:5047/100@fidonet	0	0
+exists	outb/13b70064.try	0

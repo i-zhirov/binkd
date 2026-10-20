@@ -78,6 +78,63 @@ The `ftn.tsv` file uses a fixed domain table and a fixed AKA. The table is
 in the header of the file and in `init_tables()` of `test_corpus.c`. The
 Rust test uses the same table.
 
+## The spool corpus
+
+The spool cases live in `tests/golden/spool/`. A case sets up a spool, runs
+the operations, and compares the output with the lines after the `---` line.
+The C runner creates the case directory in a temporary directory, so the case
+files hold relative paths only.
+
+The lines before `---` are:
+
+| Line | Meaning |
+| --- | --- |
+| `setup dir <path>` | Create a directory. |
+| `setup file <path> <size> <mtime>` | Create a file of the size and the time. |
+| `setup text <path> <content>` | Create a file with the content. |
+| `config domain <name> <dir> <z0>` | Add a domain. |
+| `config node <addr> <hosts> <obox>` | Add a node. `-` is no box. |
+| `config aka <addr>` | Add one of our addresses. |
+| `config share <sha> <addr>...` | Add a share chain. |
+| `config scalar <name> <value>` | Set a config value. |
+| `op scan` | Scan the outbound and the fileboxes. |
+| `op sort` | Sort the queue. |
+| `op select <addr>` | Select the next file for the address. |
+| `op sizes` | Sum the sizes of the files. |
+| `op freq` | Count the requests. |
+| `op read_try <addr>` | Read the `.try` file. |
+| `op write_try <addr> <nok> <nbad> <comment>` | Write the `.try` file. |
+| `op bad_try <addr> <error> <where>` | Count a bad attempt. |
+| `op good_try <addr> <comment>` | Count a good session. |
+| `op remove_try <addr>` | Remove the `.try` file. |
+| `op hold <addr> <until>` | Write the `.hld` file. |
+| `op process_hld <addr>` | Read the `.hld` file. |
+| `op dump` | Print the queue. |
+| `op nodes` | Print the nodes. |
+| `op files` | Print the files under the case root, sorted. |
+| `op hex <path>` | Print the bytes of a file. |
+| `op text <path>` | Print the text of a file. |
+| `op exists <path>` | Print 0 or 1. |
+
+The lines after `---` are the output of the operations:
+
+| Line | Meaning |
+| --- | --- |
+| `queue <path> <flvr> <action> <type> <size> <sent>` | A queue entry. |
+| `node <addr> <mail> <files> <busy> <hold>` | A node. |
+| `file <path> <size>` | A file that remains. |
+| `sizes <netsize> <filessize>` | The sum of the sizes. |
+| `freq <n>` | The number of requests. |
+| `select <path>` | The file that `select` returned. |
+| `try <addr> <nok> <nbad>` | The values of the `.try` file. |
+| `hex <path> <hex>` | The bytes of a file. |
+| `text <path> <text>` | The text of a file. |
+| `exists <path> <0\|1>` | The file exists. |
+
+A case must not hold two queue entries with the same sort key. The C code
+keeps the `readdir()` order there, and that order is not the same on every
+file system. The Rust port keeps the same order as the C code.
+
 ## What the corpus covers
 
 | File | Crate | Cases |
@@ -90,6 +147,13 @@ Rust test uses the same table.
 | `tools.tsv` | `binkd-ftn` | The pure helpers of `tools.c` |
 | `pkt.tsv` | `binkd-ftn` | Packet headers |
 | `flo.tsv` | `binkd-spool` | Flow file lines |
+| `spool/queue_scan.tsv` | `binkd-spool` | The queue scan and the sort |
+| `spool/queue_points.tsv` | `binkd-spool` | Point directories |
+| `spool/queue_zone.tsv` | `binkd-spool` | Zone directories |
+| `spool/filebox.tsv` | `binkd-spool` | Fileboxes |
+| `spool/bsy.tsv` | `binkd-spool` | `.bsy` and `.csy` files |
+| `spool/try_hld.tsv` | `binkd-spool` | `.try` and `.hld` files |
+| `spool/try_remove.tsv` | `binkd-spool` | `remove-try-files` |
 
 The corpus does not cover the modules that need the network, the process
 managers, or the config parser. See `doc/rust-rewrite-plan.md` for the
@@ -100,6 +164,7 @@ plan that adds those tests.
 | Test program | Modules | Checks |
 | --- | --- | --- |
 | `test_corpus` | All of the above | The corpus cases |
+| `test_spool` | `ftnq.c`, `ftnnode.c` | The spool corpus cases |
 | `test_crypt` | `crypt.c` | CRC table, round trip, key stream |
 | `test_md5` | `md5b.c` | NULL arguments, a new challenge |
 
@@ -116,6 +181,12 @@ daemon:
 - `mask_test()` returns `NULL`, so the logger does not filter messages.
 
 `harness.c` calls `InitLog(0, 0, "", NULL)`, so the tests stay silent.
+
+## Add a spool corpus case
+
+1. Write the case in `golden/spool/`.
+2. Run `make -C tests` to check the case against the C code.
+3. Run `cargo test` in `rust/` to check the case against the Rust code.
 
 ## Add a corpus case
 

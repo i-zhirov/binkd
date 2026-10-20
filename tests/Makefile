@@ -31,12 +31,13 @@ WARNINGS := -Wall -Wno-unused-parameter
 
 # The binkd modules that the tests link.  Add a module here when a
 # new test needs it.
-MODULES := pmatch ftndom ftnaddr getw crypt md5b readflo tools xalloc
+MODULES := pmatch ftndom ftnaddr ftnnode getw crypt md5b readflo tools xalloc ftnq
 
-TESTS := test_crypt test_md5 test_corpus
+TESTS := test_crypt test_md5 test_corpus test_spool
 
 # The golden corpus.  The Rust port reads the same files.
 CORPUS := $(wildcard $(TESTS_DIR)golden/*.tsv)
+SPOOL_CORPUS := $(wildcard $(TESTS_DIR)golden/spool/*.tsv)
 
 MODOBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODULES)))
 TESTBINS := $(addprefix $(BUILD)/,$(TESTS))
@@ -46,10 +47,11 @@ all: test
 
 test: $(TESTBINS)
 	@fail=0; \
-	for t in $(filter-out $(BUILD)/test_corpus,$(TESTBINS)); do \
+	for t in $(filter-out $(BUILD)/test_corpus $(BUILD)/test_spool,$(TESTBINS)); do \
 	  $$t || fail=1; \
 	done; \
 	$(BUILD)/test_corpus $(CORPUS) || fail=1; \
+	$(BUILD)/test_spool $(SPOOL_CORPUS) || fail=1; \
 	if [ $$fail -ne 0 ]; then \
 	  echo "TESTS FAILED"; \
 	  exit 1; \

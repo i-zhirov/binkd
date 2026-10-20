@@ -1,0 +1,26 @@
+# crate: binkd-spool
+# case: filebox
+#
+# The filebox of a node, the T-Mail filebox, and an empty filebox.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	node	2:5047/100@fidonet	example.com	box
+config	node	2:5047/101@fidonet	127.0.0.1	box2
+config	scalar	deleteablebox	1
+setup	dir	outb
+setup	dir	box
+setup	file	box/file1.pkt	10	1000000000
+setup	file	box/file2.tic	20	1000000000
+setup	dir	box2
+op	scan
+op	sort
+op	dump
+op	nodes
+op	files
+---
+queue	box/file1.pkt	f	d	-	0	-
+queue	box/file2.tic	f	d	-	0	-
+node	2:5047/100@fidonet	-	-	-	0
+node	2:5047/101@fidonet	-	-	-	0
+file	box/file1.pkt	10
+file	box/file2.tic	20
