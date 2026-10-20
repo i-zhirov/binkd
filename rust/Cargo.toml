@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/binkd-ftn", "crates/binkd-spool", "crates/binkd-corpus"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-2.0-or-later"
+repository = "https://github.com/pgul/binkd"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"

@@ -1,0 +1,35 @@
+# crate: binkd-ftn
+#
+# getwordx2(src, n, flags, fldsep, fldskip) -> word or <null>.
+#
+# Fields: src <TAB> n <TAB> flags <TAB> fldsep <TAB> fldskip <TAB> => <TAB> want
+# flags: 1 GWX_SUBST, 2 GWX_HASH, 4 GWX_NOESC.
+# A NULL result is <null>.
+# See tests/README.md for the field format.
+
+getword	hello world	1	0	\x20	\x20	=>	hello
+getword	hello world	2	0	\x20	\x20	=>	world
+getword	hello world	3	0	\x20	\x20	=>	<null>
+getword	\x20\x20hello\x20\x20\x20world\x20\x20	2	0	\x20	\x20	=>	world
+getword	a:b:c	2	0	:	\x20	=>	b
+getword	<null>	1	0	\x20	\x20	=>	<null>
+getword	a\nb	2	0	\x20\t\n\r	\x20\t\n\r	=>	b
+getword	hello # comment	1	2	\x20	\x20	=>	hello
+getword	#comment	1	2	\x20	\x20	=>	<null>
+getword	hello # comment	2	0	\x20	\x20	=>	#
+getword	"hello world" tail	1	0	\x20	\x20	=>	hello world
+getword	a "b c" d	2	0	\x20	\x20	=>	b c
+getword	a\\tb	1	0	\x20	\x20	=>	a\tb
+getword	a\\nb	1	0	\x20	\x20	=>	a\nb
+getword	a\\\\b	1	0	\x20	\x20	=>	a\\b
+getword	a\\ b	1	0	\x20	\x20	=>	a\x20b
+getword	a\nb	1	0	\x20	\x20	=>	a
+getword	\\x41\\x42	1	0	\x20	\x20	=>	AB
+getword	\\x0a	1	0	\x20	\x20	=>	\n
+getword	\\101	1	0	\x20	\x20	=>	A
+getword	a\\tb	1	4	\x20	\x20	=>	a\\tb
+getword	%BINKD_TEST_VAR%	1	1	\x20	\x20	=>	value
+getword	a%BINKD_TEST_VAR%b	1	1	\x20	\x20	=>	avalueb
+getword	%binkd_test_lower%	1	1	\x20	\x20	=>	lower
+getword	a%NO_SUCH_VAR%b	1	1	\x20	\x20	=>	ab
+getword	100%%	1	1	\x20	\x20	=>	100%

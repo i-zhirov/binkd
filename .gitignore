@@ -1,4 +1,5 @@
 *.o
 
-# Test build directory
+# Test build directories
 tests/build/
+rust/target/

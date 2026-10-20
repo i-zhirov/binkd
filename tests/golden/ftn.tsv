@@ -1,0 +1,76 @@
+# crate: binkd-ftn
+#
+# FTN addresses and domains.
+#
+# The runners use this fixed domain table:
+#   fidonet  /tmp/fido   outb   z {2,-1}   idomain none     alias4 none
+#   othernet /tmp/other  outb   z {3,-1}   idomain other.net alias4 none
+#   aliasnet /tmp/fido   outb   z {-1,-1}  idomain none     alias4 fidonet
+# The runners use this fixed AKA: 2:5047/13@fidonet.
+#
+# addr_parse(address) -> "z:net:node:p:domain" or <error>
+#   The empty domain is the last field.
+# addr_format(z, net, node, p, domain, force_point) -> string
+# addr_cmp(addr, addr) -> "<", "=", or ">"
+# addr_filename(z, net, node, p, domain) -> path
+# addr_domain(z, net, node, p, domain, root) -> FQDN
+# addr_exp(z, net, node, p, domain) -> "z:net:node:p:domain"
+# addr_get_domain(name) -> name or <null>
+# addr_matched_domain(zone) -> name
+# See tests/README.md for the field format.
+
+addr_parse	2:5047/13.1@fidonet	=>	2:5047:13:1:fidonet
+addr_parse	2:5047/13	=>	2:5047:13:0:
+addr_parse	5047/13	=>	-1:5047:13:0:
+addr_parse	5047/13.1	=>	-1:5047:13:1:
+addr_parse	2:5047/13@FIDONET	=>	2:5047:13:0:fidonet
+addr_parse	2:5047/13@aliasnet	=>	2:5047:13:0:fidonet
+addr_parse	2:5047/13@unknown	=>	2:5047:13:0:unknown
+addr_parse	0:0/0	=>	0:0:0:0:
+addr_parse	5047	=>	-1:-1:5047:0:
+addr_parse		=>	<error>
+addr_parse	@fidonet	=>	<error>
+addr_parse	2:5047	=>	<error>
+addr_parse	2:5047/	=>	<error>
+addr_parse	2:5047/13.	=>	<error>
+addr_parse	2:5047/13.1.2	=>	<error>
+addr_parse	x:5047/13	=>	<error>
+addr_parse	2:x/13	=>	<error>
+addr_parse	2:5047/13@	=>	<error>
+addr_parse	2:5047/13@1	=>	<error>
+addr_parse	<null>	=>	<error>
+addr_format	2	5047	13	1	fidonet	0	=>	2:5047/13.1@fidonet
+addr_format	2	5047	13	0	fidonet	1	=>	2:5047/13.0@fidonet
+addr_format	2	5047	13	0	fidonet	0	=>	2:5047/13@fidonet
+addr_format	-1	5047	13	0		0	=>	5047/13
+addr_format	2	5047	-1	0		0	=>	2:5047.0
+addr_cmp	2:5047/13.1@fidonet	2:5047/13.1@FIDONET	=>	=
+addr_cmp	2:5047/13.1@fidonet	2:5047/13.1@fido	=>	>
+addr_cmp	2:5047/13.1@fidonet	2:5047/13.1@a	=>	>
+addr_cmp	2:5047/13.1@fidonet	3:5047/13.1@fidonet	=>	<
+addr_cmp	2:5047/13.1@fidonet	2:5048/13.1@fidonet	=>	<
+addr_cmp	2:5047/13.1@fidonet	2:5047/14.1@fidonet	=>	<
+addr_cmp	2:5047/13.1@fidonet	2:5047/13.0@fidonet	=>	>
+addr_cmp	<null>	<null>	=>	=
+addr_cmp	<null>	2:5047/13.1@fidonet	=>	<
+addr_cmp	2:5047/13.1@fidonet	<null>	=>	>
+addr_filename	2	5047	13	0	fidonet	=>	/tmp/fido/outb/13b7000d
+addr_filename	3	5047	13	0	fidonet	=>	/tmp/fido/outb.003/13b7000d
+addr_filename	2	5047	13	1	fidonet	=>	/tmp/fido/outb/13b7000d.pnt/00000001
+addr_filename	2	5047	13	0	othernet	=>	/tmp/other/outb.002/13b7000d
+addr_filename	3	5047	13	0	othernet	=>	/tmp/other/outb/13b7000d
+addr_filename	2	5047	13	0	unknown	=>	
+addr_domain	2	5047	13	1	fidonet	binkp.net	=>	p1.f13.n5047.z2.binkp.net
+addr_domain	2	5047	13	0	fidonet	binkp.net	=>	f13.n5047.z2.binkp.net
+addr_domain	2	5047	13	0	othernet	binkp.net	=>	f13.n5047.z2.other.net
+addr_exp	2	5047	14	0	fidonet	=>	2:5047:14:0:fidonet
+addr_exp	-1	5047	14	0		=>	2:5047:14:0:fidonet
+addr_exp	-1	-1	-1	-1	othernet	=>	3:5047:13:-1:othernet
+addr_exp	3	5047	13	0		=>	3:5047:13:0:othernet
+addr_exp	9	5047	13	0		=>	9:5047:13:0:fidonet
+addr_get_domain	fidonet	=>	fidonet
+addr_get_domain	FIDONET	=>	fidonet
+addr_get_domain	nosuchnet	=>	<null>
+addr_matched_domain	2	=>	fidonet
+addr_matched_domain	3	=>	othernet
+addr_matched_domain	9	=>	fidonet

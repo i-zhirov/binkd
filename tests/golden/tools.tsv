@@ -1,0 +1,69 @@
+# crate: binkd-ftn
+#
+# The pure helpers of tools.c.
+#
+# quote(flags, string) -> string
+#   flags: 1 SQ_CNTRL, 2 SQ_SPACE.
+# dequote(string) -> string
+# wipe(string) -> string
+# ed(src, a, b) -> string
+# inboundcase(style, string) -> string
+#   style: 0 save, 1 upper, 2 lower, 3 mixed.
+# safe_atol(string) -> number or <error>
+# last_slash(path) -> suffix or <null>
+# extract_filename(path) -> string
+# ispkt(name) -> 0 or 1
+# isreq(name) -> 0 or 1
+# istic(name) -> 0 or 1
+# isarcmail(name) -> 0 or 1
+# tz_off(tzoff) -> minutes
+# See tests/README.md for the field format.
+
+quote	0	plain	=>	plain
+quote	1	a\tb	=>	a\\x09b
+quote	2	a\x20b	=>	a\\x20b
+quote	0	a\x20b	=>	a b
+quote	0	a\\b	=>	a\\x5cb
+dequote	plain	=>	plain
+dequote	a\\x09b	=>	a\tb
+dequote	a\\09b	=>	a\tb
+dequote	a\\101b	=>	a\x101b
+dequote	a\\xzz	=>	a\\xzz
+wipe	a/b:c\\d\x20e	=>	a_b_c_d\x20e
+wipe	a\tb	=>	a_b
+ed	abc	b	X	=>	aXc
+ed	aBc	b	X	=>	aXc
+ed	a.b	.	................	=>	a................b
+ed	abc	z	X	=>	abc
+ed	abc		X	=>	abc
+inboundcase	1	MiXeD.txt	=>	MIXED.TXT
+inboundcase	2	MiXeD.txt	=>	mixed.txt
+inboundcase	3	MiXeD.txt	=>	Mixed.Txt
+inboundcase	0	MiXeD.txt	=>	MiXeD.txt
+safe_atol	123	=>	123
+safe_atol	-5	=>	-5
+safe_atol	0	=>	0
+safe_atol	<null>	=>	<error>
+safe_atol	99999999999999999999999999	=>	<error>
+last_slash	/a/b/c	=>	/c
+last_slash	abc	=>	<null>
+last_slash	a\\b\\c	=>	\\c
+extract_filename	/a/b/c	=>	c
+extract_filename	abc	=>	abc
+extract_filename	c:\\dir\\file.txt	=>	file.txt
+extract_filename	c:file	=>	file
+ispkt	12345.pkt	=>	1
+ispkt	12345.pkt.bad	=>	0
+ispkt	12345.req	=>	0
+isreq	12345.req	=>	1
+isreq	12345.pkt	=>	0
+istic	12345.tic	=>	1
+istic	12345.ticx	=>	0
+istic	12345.pkt	=>	0
+isarcmail	12345.su1	=>	1
+isarcmail	12345.mo0	=>	1
+isarcmail	12345.th9	=>	1
+isarcmail	12345.pkt	=>	0
+tz_off	0	=>	0
+tz_off	3600	=>	60
+tz_off	-3600	=>	-60

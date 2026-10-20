@@ -1,0 +1,13 @@
+[package]
+name = "binkd-ftn"
+description = "Pure FTN logic of binkd: addresses, domains, patterns, tokens, CRAM, ZipCrypto, packet headers"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+binkd-corpus = { path = "../binkd-corpus" }

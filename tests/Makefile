@@ -33,7 +33,10 @@ WARNINGS := -Wall -Wno-unused-parameter
 # new test needs it.
 MODULES := pmatch ftndom ftnaddr getw crypt md5b readflo tools xalloc
 
-TESTS := test_pmatch test_ftnaddr test_getw test_crypt test_md5 test_tools test_readflo
+TESTS := test_crypt test_md5 test_corpus
+
+# The golden corpus.  The Rust port reads the same files.
+CORPUS := $(wildcard $(TESTS_DIR)golden/*.tsv)
 
 MODOBJS := $(addprefix $(BUILD)/,$(addsuffix .o,$(MODULES)))
 TESTBINS := $(addprefix $(BUILD)/,$(TESTS))
@@ -43,9 +46,10 @@ all: test
 
 test: $(TESTBINS)
 	@fail=0; \
-	for t in $(TESTBINS); do \
+	for t in $(filter-out $(BUILD)/test_corpus,$(TESTBINS)); do \
 	  $$t || fail=1; \
 	done; \
+	$(BUILD)/test_corpus $(CORPUS) || fail=1; \
 	if [ $$fail -ne 0 ]; then \
 	  echo "TESTS FAILED"; \
 	  exit 1; \

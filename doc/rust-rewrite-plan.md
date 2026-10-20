@@ -108,12 +108,22 @@ for OS/2, DOS, and Amiga until a decision (section 7).
 The repository had no test suite. Only `snprintf.c` has a self-test with
 the `TEST_SNPRINTF` define.
 
-The first test step is complete:
+Phase 0 is complete:
 
 - `tests/` holds a unit test harness for the pure C modules.
-- 7 test programs cover 488 checks.
-- The tests run with `make -C tests`.
-- The tests also run with AddressSanitizer.
+- The tests run with `make -C tests` and with AddressSanitizer.
+
+Phase 1 is complete:
+
+- `tests/golden/` holds the golden corpus. The C runner in
+  `tests/test_corpus.c` checks 223 cases against the C code.
+- `rust/` holds the Cargo workspace. The tests check the same corpus
+  against the Rust code.
+- `rust/crates/binkd-ftn` holds the pure FTN logic: patterns, tokens,
+  addresses, domains, CRAM-MD5, ZipCrypto, packet headers, and the pure
+  helpers of `tools.c`.
+- `rust/crates/binkd-spool` holds the flow file code.
+- `rust/crates/binkd-corpus` holds the corpus reader of the tests.
 
 ### 2.5 Observability surfaces
 
@@ -160,34 +170,39 @@ Unit tests check single functions.
 The corpus holds the cases in text files. Both implementations read the
 same files. A difference in one case fails the test.
 
-Proposed layout:
+Layout:
 
 ```
-tests/golden/pmatch.tsv
-tests/golden/ftnaddr_parse.tsv
-tests/golden/ftnaddr_format.tsv
-tests/golden/ftnaddr_filename.tsv
-tests/golden/getword.tsv
-tests/golden/crypt.tsv
-tests/golden/cram.tsv
-tests/golden/pkt_hdr.tsv
-tests/golden/flo.tsv
+tests/golden/pmatch.tsv     xpmatch
+tests/golden/getword.tsv     getwordx2
+tests/golden/crypt.tsv       ZipCrypto keys and buffers
+tests/golden/cram.tsv        HMAC-MD5 and CRAM-MD5
+tests/golden/ftn.tsv         FTN addresses and domains
+tests/golden/tools.tsv       the pure helpers of tools.c
+tests/golden/pkt.tsv         packet headers
+tests/golden/flo.tsv         flow file lines
 ```
 
-Format: one case per line. Fields use a tab separator. A field with a
-tab, a newline, or a backslash uses the same escape form as
-`strquote()` and `strdequote()`.
+Format: one case per line. A line has the fields `<func> <arg>... =>
+<want>`, separated by a tab. A field escapes a tab, a newline, and a
+backslash with the `\`, `\t`, `\n`, and `\xHH` forms. The text
+`<null>` means a NULL value. A `# crate:` header names the crate that
+owns the file.
 
 Example for `pmatch.tsv`:
 
 ```
-pattern	string	ncase	want
-*.pkt	12345.pkt	1	1
-*.pkt	12345.pkt.bad	1	0
+pmatch	*.pkt	12345.pkt	1	=>	1
+pmatch	*.pkt	12345.pkt.bad	1	=>	0
 ```
 
-The C runner and the Rust runner read the same file. The plan moves the
-current inline tables of the C tests into this format in phase 1.
+The C runner in `tests/test_corpus.c` and the Rust tests read the same
+files. The runner of the C code rejects a file without a known crate name,
+so no case stays unchecked.
+
+The corpus is the differential oracle. An in-process binding to the C code
+(`binkd-ffi`) is not necessary for the corpus tests. The plan adds
+`binkd-ffi` in phase 4 for randomized differential tests.
 
 ### Level 3: session replay
 
@@ -253,6 +268,23 @@ The tests found these behaviours. The Rust port must reproduce them.
 - `getwordx2()` can under-allocate the buffer for a `%VAR%` expansion.
   The Rust port returns a correct string. This item is an intentional
   difference.
+- `MD_getChallenge()` writes one byte past the buffer for an odd number of
+  hex digits. The Rust port takes the full pairs. The corpus has no such
+  case.
+- `getwordx2()` does not stop for `n <= 0`, and it reads past the end of
+  the source for a `%VAR` without the closing `%`. The Rust port returns
+  `None` in both cases.
+- `trans_flo_line()` calls `strnzcpy()` with the same buffer when a rule
+  has an empty `from` field. The C code overlaps the copy. The Rust port
+  returns a new value.
+- `ed()` can read the result of a rule with an empty `from` field as the
+  source and the destination of the copy. The Rust port returns a new
+  value.
+- `tz_off()` computes the local time zone when the value is -1. The Rust
+  port of phase 1 returns the explicit value only. The platform layer of
+  phase 6 computes the local value.
+- `read_flo_line()` splits a line longer than `MAXPATHLEN` into several
+  lines with `fgets()`. The Rust port reads a whole line.
 
 ## 5. Target architecture
 
@@ -272,9 +304,13 @@ rust/
     binkd-log/             # log and binary log
     binkd-srif/            # SRIF events
     binkd/                 # binary: CLI, daemon, signals
-    binkd-ffi/             # test only: C reference bindings
+    binkd-corpus/           # test only: the golden corpus reader
+    binkd-ffi/              # test only: C reference bindings
   examples/embed.rs        # library use example
 ```
+
+`binkd-ftn`, `binkd-spool`, and `binkd-corpus` exist. The other crates
+arrive in the later phases.
 
 ### 5.1 Crate rules
 
@@ -349,21 +385,28 @@ Exit criteria:
 - `make -C tests` passes.
 - The C build works on UNIX.
 
-### Phase 1: workspace, differential harness, pure core
+### Phase 1: workspace, differential harness, pure core (done)
 
 Deliverables:
 
-- The Cargo workspace in `rust/` with `binkd-ftn` and `binkd-ffi`.
+- The Cargo workspace in `rust/` with `binkd-ftn`, `binkd-spool`, and
+  `binkd-corpus`.
 - The golden corpus in `tests/golden/`. The C runner reads the corpus.
 - Rust ports of `pmatch.c`, `getw.c`, `crypt.c`, `md5b.c`,
-  `ftnaddr.c`, `ftndom.c`, and the pure parts of `tools.c`.
-- A differential test that runs both implementations on the corpus.
+  `ftnaddr.c`, `ftndom.c`, `readflo.c`, and the pure parts of `tools.c`.
+- A differential test that runs the Rust code on the corpus.
+
+The tests cover 215 cases of `binkd-ftn` and 8 cases of `binkd-spool`.
+The C runner covers the same 223 cases.
 
 Exit criteria:
 
 - `cargo test --workspace` passes.
 - The differential test covers every corpus case.
 - `binkd-ftn` has no `unsafe` code.
+
+The value cases moved from the inline tables of the C tests to the corpus,
+so the corpus is the only source of the cases.
 
 ### Phase 2: spool layer
 
@@ -498,22 +541,22 @@ The list below holds the decisions that the plan needs before phase 4.
 
 | Risk | Effect | Mitigation |
 | --- | --- | --- |
-| `protocol.c` has hidden state in globals | A port can change the wire behaviour | Model the session state as one value. Use the replay tests |
-| The config parser has 100 keywords and side effects | A port can change the parse result | Use the corpus and the `-d` dump |
-| The C code has platform `#ifdef` blocks in the core files | A port can mix platform behaviour | Keep the platform code at the edges |
-| The concurrency model changes | `.bsy` files and the exit cleanup can differ | Keep the level 4 tests and the thread-build behaviour |
+| `protocol.c` holds state in globals | The wire behaviour can change | Model the state as one value. Use the replay tests |
+| The config parser has 100 keywords | The parse result can change | Use the corpus and the `-d` dump |
+| The core files have `#ifdef` blocks | A port can mix platform behaviour | Keep the platform code at the edges |
+| The concurrency model changes | `.bsy` files and the cleanup can differ | Keep the level 4 tests |
 | Perl hooks need the Perl interpreter | The hooks can break | Decide in phase 7. Keep the C module first |
-| The log text changes | Scripts that parse the log can break | Keep the line format. Pin the format with a test |
+| The log text changes | Log parsers can break | Keep the line format. Pin it with a test |
 | The `-d` dump changes | Config tools can break | Compare the dump in phase 3 |
-| The port has no user feedback for a long time | The port can drift | Each phase ends with a green suite |
+| The port has no user feedback for long | The port can drift | Each phase ends with a green suite |
 
 ## 9. Verification commands
 
 ```
-make -C tests                          # C unit tests
-make -C tests clean                     # remove the test build
-cargo test -p binkd-ftn                 # Rust unit tests
-cargo test --workspace                  # Rust and differential tests
+make -C tests                           # the C tests and the C corpus runner
+make -C tests clean                      # remove the test build
+cd rust && cargo test --workspace         # the Rust tests and the corpus tests
+cd rust && cargo clippy --workspace --all-targets
 ```
 
 The interop tests arrive in phase 4. They need the C binary and the Rust
@@ -528,8 +571,8 @@ cargo build -p binkd
 
 The milestones follow the phases. Each milestone is a mergeable state.
 
-1. Milestone 1: phase 0 and phase 1. The Rust pure core matches the C
-   code on the corpus.
+1. Milestone 1: phase 0 and phase 1 (done). The Rust pure core matches
+   the C code on the corpus.
 2. Milestone 2: phase 2 and phase 3. The Rust code reads and writes
    the spool and parses every config.
 3. Milestone 3: phase 4. The Rust code runs a binkp session with the C

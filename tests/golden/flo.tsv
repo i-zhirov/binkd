@@ -1,0 +1,20 @@
+# crate: binkd-spool
+#
+# Flow file (.?lo) handling.
+#
+# flo_read(content) -> "action:dst" for each line, joined by "|"
+#   The action is "-" for none, "d" for delete, "t" for truncate.
+#   The runner writes content to a temporary file and reads it back.
+# flo_trans(path, from, to, ...) -> the rewritten path
+#   The from and to arguments come in pairs.
+# See tests/README.md for the field format.
+
+flo_read	file.pkt\n~ignore\n\n^del.pkt\n#trunc.pkt\nspace.pkt\x20\x20\x20\n	=>	-:file.pkt|d:del.pkt|t:trunc.pkt|-:space.pkt
+flo_read	~\n\n	=>	
+flo_read		=>	
+flo_read	file.pkt	=>	-:file.pkt
+
+flo_trans	/old/file.pkt	/old	/new	=>	/new/file.pkt
+flo_trans	/OLD/file.pkt	/old	/new	=>	/new/file.pkt
+flo_trans	/other/file.pkt	/old	/new	=>	/other/file.pkt
+flo_trans	/a/b/c	/a	/x	/b	/y	=>	/x/y/c

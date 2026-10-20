@@ -24,44 +24,6 @@ static void test_crc_table (void)
   CHECK_INT (crc_32_tab[255], 0x2d02ef8dL);
 }
 
-static void test_init_keys (void)
-{
-  unsigned long keys[3];
-
-  init_keys (keys, "password");
-  CHECK_INT (keys[0], 0xea9b4e4dL);
-  /* The low 32 bits are the portable part of the state. */
-  CHECK_INT (keys[1] & 0xffffffffL, 0xba789085L);
-  CHECK_INT (keys[2], 0x5ff8707dL);
-
-  /* An empty password keeps the initial keys. */
-  init_keys (keys, "");
-  CHECK_INT (keys[0], 0x12345678L);
-  CHECK_INT (keys[1], 0x23456789L);
-  CHECK_INT (keys[2], 0x34567890L);
-}
-
-/*
- * Decrypt the byte sequence 00 01 ... 0f with the password "password".
- * The value comes from an independent ZipCrypto reference implementation.
- */
-static void test_known_answer (void)
-{
-  static const unsigned char want[16] = {
-    0xee, 0x79, 0x68, 0x26, 0xf3, 0x52, 0x69, 0xf0,
-    0x32, 0xb4, 0x51, 0x9f, 0x97, 0x88, 0x9b, 0xc9
-  };
-  unsigned long keys[3];
-  unsigned char buf[16];
-  int i;
-
-  init_keys (keys, "password");
-  for (i = 0; i < 16; ++i)
-    buf[i] = (unsigned char) i;
-  decrypt_buf ((char *) buf, sizeof (buf), keys);
-  CHECK_INT (memcmp (buf, want, sizeof (want)), 0);
-}
-
 static void test_round_trip (void)
 {
   static const char *passwords[] = { "", "x", "password", "very long password with spaces" };
@@ -126,8 +88,6 @@ int main (void)
 {
   test_init ();
   test_crc_table ();
-  test_init_keys ();
-  test_known_answer ();
   test_round_trip ();
   test_key_stream ();
   return test_finish ("test_crypt");

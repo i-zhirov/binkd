@@ -1,0 +1,18 @@
+# crate: binkd-ftn
+#
+# ZipCrypto (Schlafly) stream cipher.
+#
+# crypt_keys(password) -> k0 k1 k2
+#   k0 and k2 are the full key values.  k1 is the low 32 bits.
+# crypt_encrypt(password, hexplain) -> hexcipher
+# crypt_decrypt(password, hexcipher) -> hexplain
+# See tests/README.md for the field format.
+
+crypt_keys	password	=>	ea9b4e4d ba789085 5ff8707d
+crypt_keys		=>	12345678 23456789 34567890
+crypt_encrypt	password	000102030405060708090a0b0c0d0e0f	=>	ee10ed7753936e6b5c6614f7c88c9f91
+crypt_encrypt	password		=>	
+crypt_decrypt	password	ee10ed7753936e6b5c6614f7c88c9f91	=>	000102030405060708090a0b0c0d0e0f
+crypt_decrypt	password	000102030405060708090a0b0c0d0e0f	=>	ee796826f35269f032b4519f97889bc9
+crypt_decrypt			=>	
+crypt_decrypt		000102030405060708090a0b0c0d0e0f	=>	abda457db672ba2dadf6e40828c568e8

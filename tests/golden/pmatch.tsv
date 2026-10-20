@@ -1,0 +1,61 @@
+# crate: binkd-ftn
+#
+# xpmatch(pattern, string, ncase) -> 0 or 1.
+#
+# Fields: pattern <TAB> string <TAB> ncase <TAB> => <TAB> want
+# See tests/README.md for the field format.
+
+pmatch	abc	abc	0	=>	1
+pmatch	abc	abd	0	=>	0
+pmatch	abc	ab	0	=>	0
+pmatch	abc	abcd	0	=>	0
+pmatch			0	=>	1
+pmatch		a	0	=>	0
+pmatch	abc		0	=>	0
+pmatch	a?c	abc	0	=>	1
+pmatch	a?c	ac	0	=>	0
+pmatch	a?c	a/c	0	=>	1
+pmatch	a?c	a?c	0	=>	1
+pmatch	???	abc	0	=>	1
+pmatch	*		0	=>	1
+pmatch	*	abc	0	=>	1
+pmatch	a*c	ac	0	=>	1
+pmatch	a*c	abc	0	=>	1
+pmatch	a*c	abbbc	0	=>	1
+pmatch	a*c	abd	0	=>	0
+pmatch	a*b*c	aXbYc	0	=>	1
+pmatch	a*b*c	aXcYb	0	=>	0
+pmatch	abc*	abc	0	=>	1
+pmatch	abc*	abcd	0	=>	1
+pmatch	*abc	abc	0	=>	1
+pmatch	*abc	xabc	0	=>	1
+pmatch	*abc	abcx	0	=>	0
+pmatch	*a*	bbb	0	=>	0
+pmatch	[abc]d	bd	0	=>	1
+pmatch	[abc]d	dd	0	=>	0
+pmatch	[a-z]d	md	0	=>	1
+pmatch	[a-z]d	Md	0	=>	0
+pmatch	[!a-z]d	md	0	=>	0
+pmatch	[!a-z]d	1d	0	=>	1
+pmatch	[abc	[abc	0	=>	1
+pmatch	[abc	abc	0	=>	0
+pmatch	[a-z]d	Md	1	=>	0
+pmatch	ABC	abc	1	=>	1
+pmatch	abc	ABC	1	=>	1
+pmatch	ABC	abc	0	=>	0
+pmatch	a*C	abc	1	=>	1
+pmatch	*.PKT	12345.pkt	1	=>	1
+pmatch	*.PKT	12345.pkt	0	=>	0
+pmatch	a\\*c	a*c	0	=>	1
+pmatch	a\\*c	abc	0	=>	0
+pmatch	a\\?c	a?c	0	=>	1
+pmatch	a\\?c	abc	0	=>	0
+pmatch	a\\\\c	a\\c	0	=>	1
+pmatch	*.pkt	12345.pkt	1	=>	1
+pmatch	*.pkt	12345.pkt.bad	1	=>	0
+pmatch	*.req	x.req	1	=>	1
+pmatch	*.?ic	x.tic	1	=>	1
+pmatch	*.?ic	x.ticx	1	=>	0
+pmatch	*.su?	abc.su1	1	=>	1
+pmatch	*.su?	abc.sux	1	=>	1
+pmatch	*.su?	abc.pkt	1	=>	0
