@@ -149,9 +149,9 @@ async fn rust_client_to_c_server() {
 
 /// The other direction of the matrix: the C client calls the Rust server.
 ///
-/// Not enabled yet: the C client needs a poll file and the call of the C binary with
-/// `-p`. The first attempt hung; find the right call sequence first.
-#[ignore = "the C client invocation is not settled"]
+/// The C binary creates the poll file with `-P <node>` and runs the clients with `-p`
+/// in one call: `-P` alone only adds the poll and starts the daemon, which never
+/// exits. The poll file lands in the outbound directory of the domain.
 #[tokio::test]
 async fn c_client_to_rust_server() {
     let Some(_) = c_binary() else {
@@ -169,7 +169,6 @@ async fn c_client_to_rust_server() {
          location \"C location\"\n\
          nodeinfo \"C node\"\n\
          inbound in\n\
-         outbound outb\n\
          log c-client.log\n\
          loglevel 6\n\
          conlog 0\n\
@@ -206,17 +205,11 @@ async fn c_client_to_rust_server() {
         .await
     };
 
-    // The C client polls the node of the Rust server and exits.
+    // The C client creates the poll and runs it, then exits.
     let c_client_dir = dir.clone();
     let c_client = tokio::task::spawn_blocking(move || {
-        let poll = Command::new(c_binary().unwrap())
-            .args(["-P", "2:5047/13@fidonet", "binkd.conf"])
-            .current_dir(&c_client_dir)
-            .status()
-            .expect("cannot create the poll");
-        assert!(poll.success());
         let client = Command::new(c_binary().unwrap())
-            .args(["-p", "binkd.conf"])
+            .args(["-P", "2:5047/13@fidonet", "-p", "binkd.conf"])
             .current_dir(&c_client_dir)
             .status()
             .expect("cannot run the C client");

@@ -217,9 +217,14 @@ The matrix of `doc/rust-rewrite-plan.md`:
 | Client | Server | State |
 | --- | --- | --- |
 | Rust | C | done |
-| C | Rust | the call sequence of the C client is not settled |
+| C | Rust | done |
 | C | C | the C test suite of the C project |
 | Rust | Rust | `crates/binkd-proto/tests/session.rs` |
+
+The C client needs the poll file in the outbound directory of the domain. `-P`
+alone adds the poll and starts the daemon, which never exits; pass `-P <node>`
+and `-p` in one call so the daemon creates the poll, runs the clients, and
+exits.
 
 ## What the corpus covers
 

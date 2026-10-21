@@ -510,11 +510,11 @@ Progress:
 - The in-memory test `crates/binkd-proto/tests/session.rs` runs the two ends of
   a session against each other: plain, password, bad password, and a file in both
   directions. (done)
-- The interop test `crates/binkd-proto/tests/interop.rs` runs the Rust client
-  against the C server over the loopback address; the C server authenticates the
-  session and writes the file into its inbound directory. (done)
-- The direction C client to Rust server is written but not enabled: the call
-  sequence of the C client with `-P` and `-p` is not settled. (open)
+- The interop test `crates/binkd-proto/tests/interop.rs` runs the two directions
+  of the matrix over the loopback address: the Rust client against the C server,
+  where the C server authenticates the session and writes the file into its inbound
+  directory, and the C client against the Rust server, where the C binary creates
+  the poll with `-P <node>` and runs it with `-p` in one call. (done)
 - The compression, the `CRYPT` mode, the recorded sessions, and the replay test
   are open.
 
