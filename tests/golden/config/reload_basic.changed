@@ -1,0 +1,10 @@
+domain fidonet outb 2
+address 2:5047/13@fidonet
+sysname "Reload test"
+sysop "Test sysop"
+location "Test location"
+nodeinfo "Test node"
+inbound in
+loglevel 7
+try 5
+conlog 2

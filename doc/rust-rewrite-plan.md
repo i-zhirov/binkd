@@ -454,9 +454,15 @@ The queue order of two entries with the same sort key follows the
 `readdir()` order in both implementations. The corpus avoids such entries,
 because the order is not the same on every file system.
 
-### Phase 3: config (started)
+### Phase 3: config (done)
 
-The first part is done:
+Deliverables:
+
+- `binkd-config` with the full keyword table of `readcfg.c`. (done)
+- A config corpus with the sample files and one case per keyword. (done)
+- A dump test that compares the `-d` output with the C output. (done)
+
+The port holds:
 
 - `binkd-config::model` holds the `Config` value: the lists and the scalars
   of `BINKD_CONFIG`, with the spool part of `binkd-spool` for the fields that
@@ -468,26 +474,22 @@ The first part is done:
 - `binkd-config::port` holds the port names; the platform layer supplies the
   full service table.
 - `binkd-config::dump` holds the `-d` dump of `debug_readcfg()`.
-- `tests/golden/config/` holds 3 cases. The dump of the port matches the output
+- `tests/golden/config/` holds 5 cases. The dump of the port matches the output
   of the C binary byte for byte.
 
-The reload of `checkcfg()` is the next step.
+- `binkd-config::reload` holds `checkcfg()`: the `-C` option, the `SIGHUP`
+  flag, the time of every config file, the parse of the first file, and the old
+  config when the new one is broken.
 
 The C `read_syslog_facility()` inverts its argument check, so a `syslog <name>`
 line fails the C parser. The port accepts the line; the corpus has no such line.
-
-Deliverables:
-
-- `binkd-config` with the full keyword table of `readcfg.c`.
-- A config corpus with the sample files and one case per keyword.
-- A dump test that compares the `-d` output with the C output.
 
 Exit criteria:
 
 - The `-d` dump is byte-identical for every corpus file. (done)
 - Includes, the passwords file, masks, rate rules, and the skip rules
   match the C code. (done)
-- The reload on file change works.
+- The reload on file change works. (done)
 
 ### Phase 4: protocol
 

@@ -1,0 +1,9 @@
+domain fidonet outb 2
+address 2:5047/13@fidonet
+sysname "Reload test"
+sysop "Test sysop"
+location "Test location"
+nodeinfo "Test node"
+inbound in
+node 2:5047/100@fidonet new.example.com newpwd c box inbox -nr -hc
+node 2:5047/101@fidonet other.example.com otherpwd h - - -nd

@@ -1,0 +1,75 @@
+include                  
+    reload_basic.conf
+passwords                [this item cannot be displayed]
+log                      ""
+loglevel                 7
+conlog                   2
+binlog                   ""
+fdinhist                 ""
+fdouthist                ""
+tzoff                    -1s
+domain                   
+    fidonet ./outb 2
+address                  
+    2:5047/13@fidonet
+sysname                  "Reload test"
+bindaddr                 ""
+listen                   [this item cannot be displayed]
+sysop                    "Test sysop"
+location                 "Test location"
+nodeinfo                 "Test node"
+iport                    "binkp"
+oport                    "binkp"
+rescan-delay             1m
+call-delay               1m
+timeout                  5m
+oblksize                 4096
+maxservers               100
+maxclients               100
+inbound                  "in"
+inbound-nonsecure        "in"
+temp-inbound             ""
+node                     
+defnode                  <not defined>
+kill-dup-partial-files   <not defined>
+kill-old-partial-files   0s
+kill-old-bsy             0s
+percents                 <not defined>
+minfree                  -1
+minfree-nonsecure        -1
+flag                     
+exec                     
+printq                   <not defined>
+try                      5
+hold                     0s
+hold-skipped             1h
+backresolv               <not defined>
+pid-file                 ""
+remove-try-files         <not defined>
+syslog                   [this item cannot be displayed]
+ftrans                   
+send-if-pwd              <not defined>
+root-domain              "binkp.net"
+prescan                  <not defined>
+connect-timeout          0s
+filebox                  ""
+brakebox                 ""
+deletebox                <not defined>
+skip                     
+skipmask                 
+inboundcase              save
+deletedirs               <not defined>
+overwrite                
+dont-send-empty          [this item cannot be displayed]
+rename-style             postfix
+share                    
+check-pkthdr             <disabled>
+nolog                    
+hide-aka                 
+    [see present-aka]
+present-aka              
+zlevel                   0
+zminsize                 1024
+zallow                   
+zdeny                    
+    [see zallow]

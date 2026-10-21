@@ -179,6 +179,26 @@ cd rust
 BINKD_C=/path/to/binkd cargo test -p binkd-config --test dump_corpus
 ```
 
+## The reload corpus
+
+A reload case is a config file `<name>.conf` and a changed variant
+`<name>.changed`. The Rust test copies the corpus into a temporary directory,
+loads the case, writes the variant over the case file, and runs the reload. It
+compares the dump of the new config with `<name>.changed.expect`. The C binary made that
+expectation with `binkd -d <name>.conf` on the changed file.
+
+The test also checks that a check without the `-C` option does nothing, that a
+second check sees no change, and that a broken file keeps the old config.
+
+To check the reload of the C daemon by hand:
+
+```
+cd tests/golden/config
+binkd -c -C <name>.conf &        # client only, reload on change
+# change <name>.conf, wait for the rescan delay, then stop the daemon
+grep "Reloading configuration" <log>
+```
+
 ## What the corpus covers
 
 | File | Crate | Cases |
@@ -207,6 +227,8 @@ BINKD_C=/path/to/binkd cargo test -p binkd-config --test dump_corpus
 | `config/minimal.conf` | `binkd-config` | The defaults of the `-d` dump |
 | `config/full.conf` | `binkd-config` | The `-d` dump of the values |
 | `config/styles.conf` | `binkd-config` | The `-d` dump of the styles |
+| `config/reload_basic.conf` | `binkd-config` | The reload of the values |
+| `config/reload_node.conf` | `binkd-config` | The reload of the node table |
 
 The corpus does not cover the modules that need the network, the process
 managers, or the config parser. See `doc/rust-rewrite-plan.md` for the
