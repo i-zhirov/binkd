@@ -17,6 +17,9 @@ pub const NL_PASSWORDS: i32 = 2;
 /// keep the old value of the flag.
 pub const USE_OLD: i32 = -1;
 
+/// `AF_UNSPEC`: the address family of the system is not fixed.
+pub const AF_UNSPEC: i32 = 0;
+
 /// `NR_ON`.
 pub const NR_ON: i32 = 1;
 /// `NR_OFF`.

@@ -3,6 +3,14 @@
 version = 4
 
 [[package]]
+name = "binkd-config"
+version = "0.1.0"
+dependencies = [
+ "binkd-ftn",
+ "binkd-spool",
+]
+
+[[package]]
 name = "binkd-corpus"
 version = "0.1.0"
 

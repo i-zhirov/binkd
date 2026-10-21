@@ -1,6 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/binkd-ftn", "crates/binkd-spool", "crates/binkd-corpus"]
+members = [
+    "crates/binkd-ftn",
+    "crates/binkd-spool",
+    "crates/binkd-config",
+    "crates/binkd-corpus",
+]
 
 [workspace.package]
 version = "0.1.0"

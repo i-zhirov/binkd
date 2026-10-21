@@ -1,0 +1,15 @@
+[package]
+name = "binkd-config"
+description = "The config parser of binkd, the port of readcfg.c"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+binkd-ftn = { path = "../binkd-ftn" }
+binkd-spool = { path = "../binkd-spool" }
+
+[lints]
+workspace = true

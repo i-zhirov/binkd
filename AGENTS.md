@@ -85,6 +85,7 @@ binkd/
     └── crates/
         ├── binkd-ftn/          # pure FTN logic, no I/O, no globals
         ├── binkd-spool/        # BSO spool handling
+        ├── binkd-config/       # config model and parser
         └── binkd-corpus/       # test-only corpus reader
 ```
 

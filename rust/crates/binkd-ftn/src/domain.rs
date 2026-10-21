@@ -36,6 +36,23 @@ impl DomainTable {
         &self.domains
     }
 
+    /// Adds a domain. The C code appends to the list.
+    pub fn push(&mut self, domain: FtnDomain) {
+        self.domains.push(domain);
+    }
+
+    /// Returns the index of a domain by name.
+    pub fn index_of(&self, name: &str) -> Option<usize> {
+        self.domains
+            .iter()
+            .position(|d| d.name.eq_ignore_ascii_case(name))
+    }
+
+    /// Returns the last domain of the table.
+    pub fn last(&self) -> Option<&FtnDomain> {
+        self.domains.last()
+    }
+
     /// Returns the domain by name. The lookup ignores case.
     pub fn get(&self, name: &str) -> Option<&FtnDomain> {
         self.domains

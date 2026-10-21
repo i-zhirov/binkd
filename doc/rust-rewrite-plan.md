@@ -454,7 +454,21 @@ The queue order of two entries with the same sort key follows the
 `readdir()` order in both implementations. The corpus avoids such entries,
 because the order is not the same on every file system.
 
-### Phase 3: config
+### Phase 3: config (started)
+
+The first part is done:
+
+- `binkd-config::model` holds the `Config` value: the lists and the scalars
+  of `BINKD_CONFIG`, with the spool part of `binkd-spool` for the fields that
+  the spool layer uses.
+- `binkd-config::keywords` holds the keyword table in the order of the C table.
+- `binkd-config::parser` holds the line parser of `readcfg0()`, the `include`
+  nesting, the `read_*` callbacks of the keyword table, the `passwords` file,
+  and the checks of `readcfg()`.
+- `binkd-config::port` holds the port names; the platform layer supplies the
+  full service table.
+
+The dump and the corpus are the next step.
 
 Deliverables:
 
