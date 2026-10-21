@@ -154,6 +154,31 @@ A case must not hold two queue entries with the same sort key. The C code
 keeps the `readdir()` order there, and that order is not the same on every
 file system. The Rust port keeps the same order as the C code.
 
+## The config corpus
+
+The config cases live in `tests/golden/config/`. A case is a config file
+`<name>.conf` and the expected `-d` dump `<name>.expect`.
+
+The C binary makes the expectations:
+
+```
+cd tests/golden/config
+binkd -d <name>.conf > <name>.expect
+```
+
+The configs use relative paths, so the C binary runs in the case directory. The
+directories of the cases (`in`, `outb`, `box`, `inbox`, `bbox`) are in the
+repository, and the `include` fragments live in `parts/`.
+
+The Rust test `crates/binkd-config/tests/dump_corpus.rs` parses each case and
+compares the dump with the expectation. When the `BINKD_C` variable names the C
+binary, the test also runs it and checks that the expectation is current:
+
+```
+cd rust
+BINKD_C=/path/to/binkd cargo test -p binkd-config --test dump_corpus
+```
+
 ## What the corpus covers
 
 | File | Crate | Cases |
@@ -179,6 +204,9 @@ file system. The Rust port keeps the same order as the C code.
 | `spool/inbound_done.tsv` | `binkd-spool` | `inb_done` rename |
 | `spool/inbound_reject.tsv` | `binkd-spool` | `inb_reject` and `inb_fopen` |
 | `spool/inbound_pkthdr.tsv` | `binkd-spool` | `check_pkthdr` |
+| `config/minimal.conf` | `binkd-config` | The defaults of the `-d` dump |
+| `config/full.conf` | `binkd-config` | The `-d` dump of the values |
+| `config/styles.conf` | `binkd-config` | The `-d` dump of the styles |
 
 The corpus does not cover the modules that need the network, the process
 managers, or the config parser. See `doc/rust-rewrite-plan.md` for the

@@ -467,8 +467,14 @@ The first part is done:
   and the checks of `readcfg()`.
 - `binkd-config::port` holds the port names; the platform layer supplies the
   full service table.
+- `binkd-config::dump` holds the `-d` dump of `debug_readcfg()`.
+- `tests/golden/config/` holds 3 cases. The dump of the port matches the output
+  of the C binary byte for byte.
 
-The dump and the corpus are the next step.
+The reload of `checkcfg()` is the next step.
+
+The C `read_syslog_facility()` inverts its argument check, so a `syslog <name>`
+line fails the C parser. The port accepts the line; the corpus has no such line.
 
 Deliverables:
 
@@ -478,9 +484,9 @@ Deliverables:
 
 Exit criteria:
 
-- The `-d` dump is byte-identical for every corpus file.
+- The `-d` dump is byte-identical for every corpus file. (done)
 - Includes, the passwords file, masks, rate rules, and the skip rules
-  match the C code.
+  match the C code. (done)
 - The reload on file change works.
 
 ### Phase 4: protocol

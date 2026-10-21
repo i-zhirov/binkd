@@ -6,7 +6,7 @@
 
 use std::fmt;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use binkd_ftn::addr::FtnAddr;
@@ -16,7 +16,7 @@ use binkd_ftn::text::{last_slash, InbCase};
 use binkd_ftn::token::{getwordx2, GWX_HASH, GWX_SUBST};
 use binkd_spool::config::{addrtype, RenameStyle};
 
-use crate::keywords;
+use crate::keywords::{self, Features};
 use crate::model::{
     AkaChain, Config, ConfigFile, DontSendEmpty, EvtFlag, ListenChain, PerlVar, RateChain,
     SkipChain, ZRule,
@@ -87,6 +87,10 @@ pub struct Parser<'a> {
     quiet: bool,
     verbose: i32,
     now: i64,
+    /// The build features: the keywords that the table holds.
+    features: Features,
+    /// The directory of the relative paths of the config.
+    base_dir: Option<std::path::PathBuf>,
 }
 
 impl Default for Parser<'static> {
@@ -117,7 +121,27 @@ impl<'a> Parser<'a> {
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0),
+            features: Features::unix_default(),
+            base_dir: None,
         }
+    }
+
+    /// Sets the build features: the keywords that the table holds.
+    pub fn set_features(&mut self, features: Features) {
+        self.features = features;
+    }
+
+    /// Returns the build features.
+    pub fn features(&self) -> &Features {
+        &self.features
+    }
+
+    /// Sets the directory of the relative paths of the config.
+    ///
+    /// The C code resolves a relative path against the working directory. The
+    /// port resolves it against this directory.
+    pub fn set_base_dir(&mut self, dir: &Path) {
+        self.base_dir = Some(dir.to_path_buf());
     }
 
     /// Sets the quiet mode of the command line.
@@ -144,7 +168,13 @@ impl<'a> Parser<'a> {
     ///
     /// The port of `readcfg0()`.
     pub fn parse_file(&mut self, path: &str) -> Result<(), Error> {
-        let text = fs::read_to_string(path).map_err(|e| Error {
+        // The C code resolves a relative path against the working directory. The
+        // port resolves it against the base directory of the parser.
+        let full = match &self.base_dir {
+            Some(dir) => dir.join(path),
+            None => PathBuf::from(path),
+        };
+        let text = fs::read_to_string(&full).map_err(|e| Error {
             path: path.to_string(),
             line: 0,
             message: format!("cannot open {path}: {e}"),
@@ -153,7 +183,7 @@ impl<'a> Parser<'a> {
         let old_path = std::mem::replace(&mut self.path, path.to_string());
         let old_line = std::mem::replace(&mut self.line, 0);
 
-        let mtime = fs::metadata(path)
+        let mtime = fs::metadata(&full)
             .ok()
             .and_then(|m| m.modified().ok())
             .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
@@ -275,7 +305,7 @@ impl<'a> Parser<'a> {
         }
 
         let name = words[0].clone();
-        if !keywords::is_keyword(&name) {
+        if !keywords::is_keyword(&name, &self.features) {
             return Err(self.error(format!("{name}: unknown keyword")));
         }
         self.apply(&name, &words[1..])
@@ -619,8 +649,14 @@ impl<'a> Parser<'a> {
         let mut value: String = words[0].chars().take(max).collect();
         if let Some(kind) = kind {
             value = Self::check_dir_path(&value);
-            if kind == 'd' && !Path::new(&value).is_dir() {
-                return Err(self.error(format!("{value}: incorrect directory")));
+            if kind == 'd' {
+                let path = match &self.base_dir {
+                    Some(dir) => dir.join(&value),
+                    None => PathBuf::from(&value),
+                };
+                if !path.is_dir() {
+                    return Err(self.error(format!("{value}: incorrect directory")));
+                }
             }
         }
         Ok(value)
@@ -954,10 +990,10 @@ impl<'a> Parser<'a> {
         let obox = w[4].clone().map(|s| Self::check_dir_path(&s));
         let ibox = w[5].clone().map(|s| Self::check_dir_path(&s));
 
-        let (pkt_pwd, out_pwd) = split_passwords(w[2].clone());
+        let (pwd, pkt_pwd, out_pwd) = split_passwords(w[2].clone());
         let spec = NodeSpec {
             hosts: w[1].clone(),
-            pwd: w[2].clone(),
+            pwd,
             pkt_pwd,
             out_pwd,
             obox_flvr: w[3].as_ref().and_then(|s| s.bytes().next()),
@@ -1262,8 +1298,23 @@ impl<'a> Parser<'a> {
 
     /// The port of `read_passwords()`.
     fn read_passwords(&mut self, path: &str) -> Result<(), Error> {
-        let text = fs::read_to_string(path)
+        let full = match &self.base_dir {
+            Some(dir) => dir.join(path),
+            None => PathBuf::from(path),
+        };
+        let text = fs::read_to_string(&full)
             .map_err(|_| self.error(format!("unable to open password file ({path})")))?;
+        // The C code adds the file to the config list of the reload.
+        let mtime = fs::metadata(&full)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        self.config.config_list.push(ConfigFile {
+            path: path.to_string(),
+            mtime,
+        });
         let old_path = std::mem::replace(&mut self.path, path.to_string());
         let old_line = std::mem::replace(&mut self.line, 0);
 
@@ -1285,10 +1336,10 @@ impl<'a> Parser<'a> {
                 // The C code ignores a line with garbage.
                 continue;
             };
-            let (pkt_pwd, out_pwd) = split_passwords(Some(password.to_string()));
+            let (pwd, pkt_pwd, out_pwd) = split_passwords(Some(password.to_string()));
             fa.expand(&self.config.spool.aka, &self.config.spool.domains);
             let spec = NodeSpec {
-                pwd: Some(password.to_string()),
+                pwd,
                 pkt_pwd,
                 out_pwd,
                 obox_flvr: Some(b'-'),
@@ -1338,16 +1389,21 @@ impl<'a> Parser<'a> {
 
 /// Splits the `in,pkt,out` password of the `read_node_info()` callback.
 ///
-/// The port of `split_passwords()`.
-fn split_passwords(password: Option<String>) -> (Option<String>, Option<String>) {
+/// The port of `split_passwords()`. The C code replaces the commas with NUL
+/// bytes, so the main password is the part before the first comma.
+fn split_passwords(password: Option<String>) -> (Option<String>, Option<String>, Option<String>) {
     let Some(password) = password else {
-        return (None, None);
+        return (None, None, None);
     };
     let mut parts = password.splitn(3, ',');
-    let _in_pwd = parts.next();
+    let main = parts.next().unwrap_or_default().to_string();
     let pkt = parts.next().map(|s| s.to_string());
     let out = parts.next().map(|s| s.to_string());
-    (pkt.filter(|s| !s.is_empty()), out.filter(|s| !s.is_empty()))
+    (
+        Some(main),
+        pkt.filter(|s| !s.is_empty()),
+        out.filter(|s| !s.is_empty()),
+    )
 }
 
 /// Parses an address type of the `skip`, `check-pkthdr`, and `limit-rate`

@@ -199,8 +199,7 @@ impl NodeTable {
         let index = match self.nodes.iter().position(|n| n.fa.compare(fa) == 0) {
             Some(i) => i,
             None => {
-                let mut node = FtnNode::new(fa);
-                node.obox_flvr = spec.obox_flvr.unwrap_or(b'f');
+                let node = FtnNode::new(fa);
                 self.nodes.push(node);
                 self.sorted = false;
                 self.nodes.len() - 1

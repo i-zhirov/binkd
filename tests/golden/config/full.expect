@@ -1,0 +1,102 @@
+include                  
+    full.conf
+    parts/child.conf
+    pwd.txt
+passwords                [this item cannot be displayed]
+log                      ""
+loglevel                 5
+conlog                   2
+binlog                   ""
+fdinhist                 ""
+fdouthist                ""
+tzoff                    -3h
+domain                   
+    fidonet ./outb 2
+    othernet ./outb 3
+    aliasnet alias-for fidonet
+address                  
+    2:5047/13@fidonet
+    2:5047/14@fidonet
+sysname                  "Test system"
+bindaddr                 "127.0.0.1"
+listen                   [this item cannot be displayed]
+sysop                    "Test sysop"
+location                 "Test location"
+nodeinfo                 "Test node"
+iport                    "24554"
+oport                    "binkp"
+rescan-delay             5m
+call-delay               30s
+timeout                  10m
+oblksize                 4096
+maxservers               10
+maxclients               5
+inbound                  "in"
+inbound-nonsecure        "in"
+temp-inbound             "in"
+node                     
+    0:0/0@defnode        host.def.example.com defpwd h - - -sip
+    2:5047/100@fidonet   host.example.com secret,packet,out i box inbox -nr -nd -md -hc -noproxy -ip
+    2:5047/200@fidonet   - -,-,- f - -
+    2:5047/300@fidonet   - pwd1,pwd2,pwd3 f - -
+    2:5047/301@fidonet   - pwd4 f - -
+defnode                  [see 0:0/0@defnode]
+kill-dup-partial-files   [yes]
+kill-old-partial-files   1d
+kill-old-bsy             2h
+percents                 [yes]
+minfree                  10
+minfree-nonsecure        5
+flag                     
+    "/tmp/flagfile" on "*.pkt"
+exec                     
+    "echo hi" on "*.su?"
+printq                   [yes]
+try                      3
+hold                     1h30m
+hold-skipped             2h
+backresolv               [yes]
+pid-file                 ""
+remove-try-files         [yes]
+syslog                   [this item cannot be displayed]
+ftrans                   
+    "/old" => "/new"
+send-if-pwd              [yes]
+root-domain              "binkp.net"
+prescan                  [yes]
+connect-timeout          30s
+filebox                  "box"
+brakebox                 "bbox"
+deletebox                [yes]
+skip                     
+    secure !100 "*.pkt"
+    secure !100 "*.su?"
+    all !0 "*.req"
+skipmask                 
+    secure !100 "*.pkt"
+    secure !100 "*.su?"
+    all !0 "*.req"
+inboundcase              mixed
+deletedirs               [yes]
+overwrite                
+    "*.pkt"
+    "*.su?"
+dont-send-empty          [this item cannot be displayed]
+rename-style             postfix
+share                    
+    2:5047/200@fidonet 2:5047/201@fidonet 2:5047/202@fidonet
+check-pkthdr             all bad
+nolog                    
+    "*.pkt"
+hide-aka                 
+    [see present-aka]
+present-aka              
+    hide-aka 2:5047/13@fidonet  *.pkt
+    present-aka 2:5047/14@fidonet !*.su?
+zlevel                   9
+zminsize                 2048
+zallow                   
+    zallow *.pkt
+    zdeny *.su?
+zdeny                    
+    [see zallow]

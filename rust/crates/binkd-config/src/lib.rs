@@ -5,11 +5,14 @@
 
 #![forbid(unsafe_code)]
 
+pub mod dump;
 pub mod keywords;
 pub mod model;
 pub mod parser;
 pub mod port;
 
+pub use dump::{dump, dump_with};
+pub use keywords::Features;
 pub use model::Config;
 pub use parser::{parse, Error, Parser};
 pub use port::PortResolver;

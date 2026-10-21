@@ -350,7 +350,8 @@ phase of `doc/rust-rewrite-plan.md`):
   `binkd.txt`. The environment variables are `BINKD_LOG` (the log path)
   and `BINKD_ICON_FILE` (the Windows tray icon).
 - **The config format is a contract.** A change to a directive needs a
-  corpus case and a comparison of the `-d` dump with the C dump.
+  corpus case in `tests/golden/config/` and a comparison of the `-d` dump with
+  the C dump of `binkd -d`.
 - **Update the documents that the change touches**: `README.md` for the
   build and the links, `tests/README.md` for the test suite and the corpus
   format, and `doc/rust-rewrite-plan.md` for the port status and the
