@@ -199,6 +199,28 @@ binkd -c -C <name>.conf &        # client only, reload on change
 grep "Reloading configuration" <log>
 ```
 
+## The interop tests
+
+The Rust test `crates/binkd-proto/tests/interop.rs` runs the C binary and the
+Rust session against each other over the loopback address. Set `BINKD_C` to the
+path of the C binary:
+
+```sh
+cd rust
+BINKD_C=/path/to/binkd cargo test -p binkd-proto --test interop
+```
+
+Without `BINKD_C` the tests report that they are skipped.
+
+The matrix of `doc/rust-rewrite-plan.md`:
+
+| Client | Server | State |
+| --- | --- | --- |
+| Rust | C | done |
+| C | Rust | the call sequence of the C client is not settled |
+| C | C | the C test suite of the C project |
+| Rust | Rust | `crates/binkd-proto/tests/session.rs` |
+
 ## What the corpus covers
 
 | File | Crate | Cases |

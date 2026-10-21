@@ -86,6 +86,7 @@ binkd/
         ├── binkd-ftn/          # pure FTN logic, no I/O, no globals
         ├── binkd-spool/        # BSO spool handling
         ├── binkd-config/       # config model and parser
+        ├── binkd-proto/        # binkp frames and the session state machine
         └── binkd-corpus/       # test-only corpus reader
 ```
 
@@ -243,8 +244,9 @@ binkd-corpus (test-only corpus reader)
 
 Each layer calls the layer below it. No layer calls a layer above it.
 `binkd-ftn` is a leaf: it depends on `std` only. Today the workspace has
-`binkd-ftn`, `binkd-spool`, and `binkd-corpus`; the other crates arrive in
-the later phases of `doc/rust-rewrite-plan.md`.
+`binkd-ftn`, `binkd-spool`, `binkd-config`, `binkd-proto`, and
+`binkd-corpus`; the other crates arrive in the later phases of
+`doc/rust-rewrite-plan.md`.
 
 The layers of the C code, for reference:
 
@@ -319,10 +321,13 @@ fixes them):
 
 ### Dependency Management
 
-- **Pin all dependency versions explicitly.** The Rust workspace has no
-  external dependencies. Add one only with an exact version.
+- **Pin all dependency versions explicitly.** `binkd-proto` depends on
+  `tokio` with an exact version (`=1.54.0`, the features `rt`, `net`,
+  `io-util`, `macros`, and `time`); every other crate uses `std` only. Add a
+  dependency only with an exact version.
 - **Prefer vanilla solutions.** Use `std` when it solves the problem. The
-  Rust port of a C module uses `std` only.
+  Rust port of a C module uses `std` only, apart from the async runtime of
+  `binkd-proto`.
 - **Reputable sources only.** A dependency MUST be well-established and
   actively maintained.
 - **Avoid unpopular libraries.** Do not add a niche or obscure crate.

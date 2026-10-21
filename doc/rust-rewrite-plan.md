@@ -500,6 +500,24 @@ Deliverables:
 - Recorded sessions under `tests/sessions/`.
 - A replay test and the interop matrix of level 4.
 
+Progress:
+
+- `binkd-proto::frame` holds the frames of `protocol.c`: the `M_*` commands,
+  the data and the command frames, and the reader and the writer. (done)
+- `binkd-proto::session` holds the session state machine of `protocol.c` over
+  `AsyncRead` and `AsyncWrite`: the banner, `ADR`, `PWD`, the login, the file
+  transfer in both directions, `GOT`, and `EOB`. (done)
+- The in-memory test `crates/binkd-proto/tests/session.rs` runs the two ends of
+  a session against each other: plain, password, bad password, and a file in both
+  directions. (done)
+- The interop test `crates/binkd-proto/tests/interop.rs` runs the Rust client
+  against the C server over the loopback address; the C server authenticates the
+  session and writes the file into its inbound directory. (done)
+- The direction C client to Rust server is written but not enabled: the call
+  sequence of the C client with `-P` and `-p` is not settled. (open)
+- The compression, the `CRYPT` mode, the recorded sessions, and the replay test
+  are open.
+
 Exit criteria:
 
 - The frames match the recorded sessions byte for byte.
