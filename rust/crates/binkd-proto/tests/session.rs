@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
-use binkd_proto::{run, Report, Role, SendFile, SessionConfig};
+use binkd_proto::{run, Method, Methods, Report, Role, SendFile, SessionConfig, ZRule};
 
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("binkd-proto-{}-{name}", std::process::id()));
@@ -22,6 +22,11 @@ fn address(s: &str) -> FtnAddr {
 }
 
 fn config(dir: &Path, aka: &str, password: &str) -> SessionConfig {
+    config_with(dir, aka, password, Methods::none())
+}
+
+/// The settings of a session with the compression methods of a side.
+fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> SessionConfig {
     SessionConfig {
         sysname: format!("test {aka}"),
         sysop: "Test sysop".to_string(),
@@ -31,6 +36,14 @@ fn config(dir: &Path, aka: &str, password: &str) -> SessionConfig {
         password: password.to_string(),
         inbound: dir.to_path_buf(),
         version: "test/1.0".to_string(),
+        blksize: 4096,
+        zminsize: 1024,
+        zlevel: 0,
+        zrules: vec![ZRule {
+            mask: "*".to_string(),
+            allow: true,
+        }],
+        methods,
     }
 }
 
@@ -174,4 +187,131 @@ async fn session_with_files() {
     assert_eq!(received, vec![b'x'; 200]);
     let received = std::fs::read(server_dir.join("13b7000d.pkt")).unwrap();
     assert_eq!(received, vec![b'x'; 100]);
+}
+
+/// A session that compresses a file in each direction.
+async fn session_with_compression(methods: Methods) -> (Report, Report) {
+    let client_dir = temp_dir("client-gz");
+    let server_dir = temp_dir("server-gz");
+    let out = temp_dir("out-gz");
+    let client_out = out.join("client");
+    let server_out = out.join("server");
+    std::fs::create_dir_all(&client_out).unwrap();
+    std::fs::create_dir_all(&server_out).unwrap();
+
+    let client_files = vec![make_file(&client_out, "13b7000d.pkt", 5000)];
+    let server_files = vec![make_file(&server_out, "13b70064.pkt", 5000)];
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client_config = config_with(&client_dir, "2:5047/13@fidonet", "", methods);
+    let server_config = config_with(&server_dir, "2:5047/100@fidonet", "", methods);
+
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &client_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &server_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    (client.unwrap(), server.unwrap())
+}
+
+/// Both sides compress the files of 5000 bytes, above `zminsize`.
+#[tokio::test]
+async fn session_with_gz_compression() {
+    let (client, server) = session_with_compression(Methods::of(Method::Gz)).await;
+    assert_eq!(client.files_sent, 1);
+    assert_eq!(client.files_received, 1);
+    assert_eq!(server.files_sent, 1);
+    assert_eq!(server.files_received, 1);
+    assert_eq!(server.received[0].method, Some(Method::Gz));
+    assert_eq!(server.received[0].size, 5000);
+}
+
+/// bzip2 is preferred over zlib when both sides hold both.
+#[tokio::test]
+async fn session_with_bz2_compression() {
+    let (_, server) = session_with_compression(Methods::all()).await;
+    assert_eq!(server.received[0].method, Some(Method::Bz2));
+    assert_eq!(server.received[0].size, 5000);
+}
+
+/// A file below `zminsize` stays plain.
+#[tokio::test]
+async fn session_without_compression_of_a_small_file() {
+    let client_dir = temp_dir("client-small");
+    let server_dir = temp_dir("server-small");
+    let out = temp_dir("out-small");
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+
+    let client_files = vec![make_file(&client_out, "13b7000d.pkt", 100)];
+    let (client, server) =
+        session(&client_dir, &server_dir, "", "", client_files, Vec::new()).await;
+    let client = client.unwrap();
+    let server = server.unwrap();
+    assert_eq!(client.files_sent, 1);
+    assert_eq!(server.received[0].method, None);
+}
+
+/// A rule that denies the name keeps the file plain.
+#[tokio::test]
+async fn session_without_compression_of_a_denied_file() {
+    let client_dir = temp_dir("client-deny");
+    let server_dir = temp_dir("server-deny");
+    let out = temp_dir("out-deny");
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+
+    let client_files = vec![make_file(&client_out, "13b7000d.pkt", 5000)];
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let mut client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    client_config.methods = Methods::all();
+    client_config.zrules = vec![ZRule {
+        mask: "*.pkt".to_string(),
+        allow: false,
+    }];
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "");
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &client_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    let server = server.unwrap();
+    assert_eq!(server.received[0].method, None);
+    assert_eq!(server.received[0].size, 5000);
 }

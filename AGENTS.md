@@ -323,8 +323,9 @@ fixes them):
 
 - **Pin all dependency versions explicitly.** `binkd-proto` depends on
   `tokio` with an exact version (`=1.54.0`, the features `rt`, `net`,
-  `io-util`, `macros`, and `time`); every other crate uses `std` only. Add a
-  dependency only with an exact version.
+  `io-util`, `macros`, and `time`), on `flate2` with the pure Rust backend
+  (`=1.1.10`, `rust_backend`), and on `bzip2` (`=0.6.1`). Every other crate
+  uses `std` only. Add a dependency only with an exact version.
 - **Prefer vanilla solutions.** Use `std` when it solves the problem. The
   Rust port of a C module uses `std` only, apart from the async runtime of
   `binkd-proto`.

@@ -9,6 +9,10 @@ repository.workspace = true
 
 [dependencies]
 binkd-ftn = { path = "../binkd-ftn" }
+# The port of `compress.c`: zlib with the pure Rust backend and bzip2.
+flate2 = { version = "=1.1.10", default-features = false, features = ["rust_backend"] }
+bzip2 = "=0.6.1"
+
 binkd-spool = { path = "../binkd-spool" }
 tokio = { version = "=1.54.0", features = ["rt", "net", "io-util", "macros", "time"] }
 

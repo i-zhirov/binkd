@@ -5,8 +5,10 @@
 
 #![forbid(unsafe_code)]
 
+pub mod compress;
 pub mod frame;
 pub mod session;
 
+pub use compress::{Compressor, Decompressor, Method, Methods, ZRule};
 pub use frame::{read_frame, write_frame, Command, Frame};
 pub use session::{run, Error, ReceivedFile, Report, Role, SendFile, SessionConfig};

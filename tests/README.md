@@ -216,10 +216,15 @@ The matrix of `doc/rust-rewrite-plan.md`:
 
 | Client | Server | State |
 | --- | --- | --- |
-| Rust | C | done |
-| C | Rust | done |
+| Rust | C | plain, zlib, and bzip2 |
+| C | Rust | plain, zlib, and bzip2 |
 | C | C | the C test suite of the C project |
 | Rust | Rust | `crates/binkd-proto/tests/session.rs` |
+
+The compression of a file has no corpus case: the bytes of a zlib or bzip2
+stream depend on the version of the library. The unit tests of
+`crates/binkd-proto/src/compress.rs` cover a round trip of both methods, and
+the interop tests cover the C and the Rust streams against each other.
 
 The C client needs the poll file in the outbound directory of the domain. `-P`
 alone adds the poll and starts the daemon, which never exits; pass `-P <node>`

@@ -5,11 +5,13 @@
 //! drives the frames over a transport that the caller supplies.
 
 use std::fmt;
+use std::io::Read;
 use std::path::PathBuf;
 
 use binkd_ftn::addr::FtnAddr;
 use tokio::io::{AsyncRead, AsyncWrite};
 
+use crate::compress::{self, Compressor, Decompressor, Method, Methods, ZRule, BLOCK_SIZE};
 use crate::frame::{self, Command, Frame};
 
 /// The role of the session.
@@ -40,6 +42,17 @@ pub struct SessionConfig {
     pub inbound: PathBuf,
     /// The name and the version of the mailer of the banner.
     pub version: String,
+    /// The largest data block that we send, the port of `oblksize`.
+    pub blksize: usize,
+    /// The smallest file that we compress, the port of `zminsize`.
+    pub zminsize: u64,
+    /// The zlib compression level, the port of `zlevel`.
+    pub zlevel: i32,
+    /// The rules of the files that we compress, the port of the `zallow` and
+    /// `zdeny` directives. No matching rule denies the file.
+    pub zrules: Vec<ZRule>,
+    /// The compression methods of this side, the port of `z_canrecv`.
+    pub methods: Methods,
 }
 
 /// A file to send.
@@ -66,6 +79,8 @@ pub struct ReceivedFile {
     pub size: u64,
     /// The time of the file.
     pub time: i64,
+    /// The compression method of the file, or `None`.
+    pub method: Option<Method>,
 }
 
 /// The report of a session.
@@ -149,6 +164,10 @@ struct Session<S> {
     challenge: Option<Vec<u8>>,
     /// The peer holds binkp/1.1.
     peer_11: bool,
+    /// The compression methods of the peer, the port of `z_cansend`.
+    peer_methods: Methods,
+    /// The peer advertised `EXTCMD`.
+    extcmd: bool,
     /// We sent the end of the batch.
     sent_eob: bool,
     /// The peer sent the end of the batch.
@@ -167,6 +186,8 @@ where
             report: Report::default(),
             challenge: None,
             peer_11: false,
+            peer_methods: Methods::none(),
+            extcmd: false,
             sent_eob: false,
             peer_eob: false,
         }
@@ -214,6 +235,12 @@ where
             .await?;
         let version = self.config.version.clone();
         self.send_text(Command::Nul, &format!("VER {version} binkp/1.1"))
+            .await?;
+        // The options of this side, the port of the `OPT` message of
+        // `banner()` and `PWD()` of `protocol.c`.
+        let mut options = vec!["EXTCMD".to_string()];
+        options.extend(self.config.methods.names().iter().map(|n| n.to_string()));
+        self.send_text(Command::Nul, &format!("OPT {}", options.join(" ")))
             .await?;
         let addresses: Vec<String> = self
             .config
@@ -282,6 +309,14 @@ where
                         // The NR mode arrives in a later step.
                     } else if let Some(hex) = option.strip_prefix("CRAM-MD5-") {
                         self.challenge = parse_hex(hex);
+                    } else if let Some(method) = Method::from_name(option) {
+                        // The port of the `NUL()` handler: the peer can
+                        // receive the method.
+                        self.peer_methods.insert(method);
+                    } else if option == "EXTCMD" {
+                        // The port of `state->extcmd`: the peer may ask us
+                        // to compress a file.
+                        self.extcmd = true;
                     }
                 }
             }
@@ -308,19 +343,107 @@ where
     /// Sends the files and the end of the batch.
     async fn send_files(&mut self, files: &[SendFile]) -> Result<(), Error> {
         for file in files {
-            let data = std::fs::read(&file.path).map_err(|e| Error::Io(e.to_string()))?;
-            self.send_text(
-                Command::File,
-                &format!("{} {} {} 0", file.netname, data.len(), file.time),
-            )
-            .await?;
-            self.send(Frame::Data(data.clone())).await?;
+            let method = self.send_method(file);
+            self.send_file(file, method).await?;
             self.report.files_sent += 1;
-            self.report.bytes_sent += data.len() as u64;
+            self.report.bytes_sent += file.size;
         }
         // The peer may close the transport after its own end of the batch.
         let _ = self.send_text(Command::Eob, "").await;
         self.sent_eob = true;
+        Ok(())
+    }
+
+    /// Returns the compression method of a file, the port of `z_send_init()`.
+    ///
+    /// The peer must hold `EXTCMD` and the method, the file must be large
+    /// enough, and a rule must allow the name. bzip2 is preferred over zlib.
+    fn send_method(&self, file: &SendFile) -> Option<Method> {
+        if !self.extcmd || file.size < self.config.zminsize {
+            return None;
+        }
+        if !compress::allows(&self.config.zrules, &file.netname) {
+            return None;
+        }
+        self.peer_methods.preferred_between(self.config.methods)
+    }
+
+    /// Sends one file, the port of `start_file_transfer()` and `send_block()`.
+    ///
+    /// The `M_FILE` frame holds the size of the file, not the size of the
+    /// compressed data. The extra argument holds the method.
+    async fn send_file(&mut self, file: &SendFile, method: Option<Method>) -> Result<(), Error> {
+        let extra = match method {
+            Some(method) => format!(" {}", method.name()),
+            None => String::new(),
+        };
+        self.send_text(
+            Command::File,
+            &format!("{} {} {} 0{}", file.netname, file.size, file.time, extra),
+        )
+        .await?;
+        match method {
+            Some(method) => self.send_compressed(file, method).await,
+            None => self.send_plain(file).await,
+        }
+    }
+
+    /// Sends a file in blocks of at most `blksize` bytes, the port of the
+    /// plain branch of `send_block()`.
+    async fn send_plain(&mut self, file: &SendFile) -> Result<(), Error> {
+        let mut input = std::fs::File::open(&file.path).map_err(io_error)?;
+        let mut sent: u64 = 0;
+        // An empty file is one empty block, as in the C code.
+        loop {
+            let count = std::cmp::min(self.config.blksize as u64, file.size - sent) as usize;
+            let mut block = vec![0u8; count];
+            if count > 0 {
+                input.read_exact(&mut block).map_err(io_error)?;
+                sent += count as u64;
+            }
+            self.send(Frame::Data(block)).await?;
+            if count < self.config.blksize {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    /// Sends a compressed file, the port of the compressed branch of
+    /// `send_block()`.
+    ///
+    /// The compressed stream is one stream for the whole file. Each data block
+    /// holds at most `blksize` compressed bytes, as in the C code.
+    async fn send_compressed(&mut self, file: &SendFile, method: Method) -> Result<(), Error> {
+        let mut input = std::fs::File::open(&file.path).map_err(io_error)?;
+        let mut compressor = Compressor::new(method, self.config.zlevel);
+        // The bytes that were read but not compressed yet.
+        let mut pending: Vec<u8> = Vec::new();
+        // The bytes of the file that were read.
+        let mut read: u64 = 0;
+        // The compressed bytes of the block in progress.
+        let mut block: Vec<u8> = Vec::new();
+        let mut ended = false;
+        while !ended {
+            // Read at most `ZBLKSIZE` bytes after the pending bytes.
+            if pending.is_empty() && read < file.size {
+                let count = std::cmp::min(BLOCK_SIZE as u64, file.size - read) as usize;
+                let start = pending.len();
+                pending.resize(start + count, 0);
+                input.read_exact(&mut pending[start..]).map_err(io_error)?;
+                read += count as u64;
+            }
+            let finish = read == file.size;
+            let step = compressor
+                .compress(&pending, self.config.blksize - block.len(), finish)
+                .map_err(|e| Error::Protocol(format!("compression failed: {e}")))?;
+            block.extend_from_slice(&step.data);
+            pending.drain(..step.consumed);
+            ended = finish && step.ended;
+            if (block.len() == self.config.blksize || ended) && !block.is_empty() {
+                self.send(Frame::Data(std::mem::take(&mut block))).await?;
+            }
+        }
         Ok(())
     }
 
@@ -330,23 +453,96 @@ where
         receive: &mut dyn FnMut(&ReceivedFile) -> std::io::Result<()>,
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
-        let mut current: Option<(String, u64, i64, Vec<u8>)> = None;
+        let mut current: Option<Incoming> = None;
         while !self.peer_eob {
             let frame = self.read(timeout).await?;
             match frame {
                 Frame::Command(Command::File, argument) => {
-                    let (netname, size, time) = parse_file_args(&argument)?;
-                    current = Some((netname, size, time, Vec::new()));
+                    let (netname, size, time, extras) = parse_file_args(&argument)?;
+                    // The port of the `M_FILE` handler: the extra arguments
+                    // select the compression of the file.
+                    let mut methods = Methods::none();
+                    for extra in &extras {
+                        if let Some(method) = Method::from_name(extra) {
+                            methods.insert(method);
+                        }
+                    }
+                    if methods.contains(Method::Gz) && methods.contains(Method::Bz2) {
+                        let _ = self
+                            .send_text(
+                                Command::Err,
+                                &format!("Can't handle GZ and BZ2 at the same time for {netname}"),
+                            )
+                            .await;
+                        return Err(Error::Protocol(format!(
+                            "both GZ and BZ2 extras are specified for {netname}"
+                        )));
+                    }
+                    current = Some(Incoming {
+                        netname,
+                        size,
+                        time,
+                        method: methods.preferred(),
+                        decompressor: None,
+                        data: Vec::new(),
+                    });
                 }
                 Frame::Data(data) => {
-                    let Some((netname, size, time, buffer)) = &mut current else {
+                    let Some(mut file) = current.take() else {
                         // The C code discards a block without a file.
                         continue;
                     };
-                    buffer.extend_from_slice(&data);
-                    self.report.bytes_received += data.len() as u64;
-                    if buffer.len() as u64 >= *size {
-                        let file = write_inbound(&self.config.inbound, netname, *time, buffer)?;
+                    // The port of the compressed branch of `recv_block()`.
+                    let bytes = match file.method {
+                        None => data,
+                        Some(method) => {
+                            if file.decompressor.is_none() {
+                                file.decompressor = Some(Decompressor::new(method));
+                            }
+                            let mut out = Vec::new();
+                            let mut input = &data[..];
+                            loop {
+                                let decompressor = file.decompressor.as_mut().unwrap();
+                                let step =
+                                    decompressor.decompress(input, BLOCK_SIZE).map_err(|e| {
+                                        Error::Protocol(format!(
+                                            "decompression of {} failed: {e}",
+                                            file.netname
+                                        ))
+                                    })?;
+                                out.extend_from_slice(&step.data);
+                                input = &input[step.consumed..];
+                                if step.ended {
+                                    // The C code ends the stream and starts a
+                                    // new one for the next block.
+                                    file.decompressor = None;
+                                    break;
+                                }
+                                // A stream may hold input inside itself and
+                                // produce no output for a moment.
+                                if step.consumed == 0 && step.data.is_empty() {
+                                    break;
+                                }
+                            }
+                            out
+                        }
+                    };
+                    file.data.extend_from_slice(&bytes);
+                    if file.data.len() as u64 > file.size {
+                        return Err(Error::Protocol(format!(
+                            "the file {} holds {} extra bytes",
+                            file.netname,
+                            file.data.len() as u64 - file.size
+                        )));
+                    }
+                    if file.data.len() as u64 == file.size {
+                        let file = write_inbound(
+                            &self.config.inbound,
+                            &file.netname,
+                            file.time,
+                            file.method,
+                            &file.data,
+                        )?;
                         receive(&file).map_err(|e| Error::Io(e.to_string()))?;
                         let _ = self
                             .send_text(
@@ -355,8 +551,10 @@ where
                             )
                             .await;
                         self.report.files_received += 1;
+                        self.report.bytes_received += file.size;
                         self.report.received.push(file);
-                        current = None;
+                    } else {
+                        current = Some(file);
                     }
                 }
                 Frame::Command(Command::Got, _) => {}
@@ -389,11 +587,28 @@ where
     }
 }
 
+/// The file that we receive, the port of `state->in` of `protocol.c`.
+struct Incoming {
+    /// The name of the file on the wire.
+    netname: String,
+    /// The size of the file in bytes, before the compression.
+    size: u64,
+    /// The time of the file.
+    time: i64,
+    /// The compression method of the file, or `None`.
+    method: Option<Method>,
+    /// The decompression stream, the port of `z_idata`.
+    decompressor: Option<Decompressor>,
+    /// The bytes that we received.
+    data: Vec<u8>,
+}
+
 /// Writes a received file into the inbound directory.
 fn write_inbound(
     inbound: &std::path::Path,
     netname: &str,
     time: i64,
+    method: Option<Method>,
     data: &[u8],
 ) -> Result<ReceivedFile, Error> {
     let name =
@@ -405,6 +620,7 @@ fn write_inbound(
         path,
         size: data.len() as u64,
         time,
+        method,
     })
 }
 
@@ -422,8 +638,9 @@ fn parse_addresses(argument: &[u8]) -> Vec<FtnAddr> {
         .collect()
 }
 
-/// Parses the arguments of an `M_FILE` frame.
-fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64), Error> {
+/// Parses the arguments of an `M_FILE` frame: the name, the size, the time,
+/// the offset, and the extra arguments.
+fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64, Vec<String>), Error> {
     let text = text(argument);
     let mut words = text.split_whitespace();
     let netname = words.next().unwrap_or_default().to_string();
@@ -432,7 +649,16 @@ fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64), Error> {
     if netname.is_empty() {
         return Err(Error::Protocol("M_FILE without a name".to_string()));
     }
-    Ok((netname, size, time))
+    // The offset of the file follows the time, as `parse_msg_args()` of the
+    // C code does. The extra arguments follow the offset.
+    let _offset = words.next();
+    let extras = words.map(|w| w.to_string()).collect();
+    Ok((netname, size, time, extras))
+}
+
+/// Maps an I/O error.
+fn io_error(e: std::io::Error) -> Error {
+    Error::Io(e.to_string())
 }
 
 /// Parses a hex string.

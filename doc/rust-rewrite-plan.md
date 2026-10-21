@@ -515,8 +515,14 @@ Progress:
   where the C server authenticates the session and writes the file into its inbound
   directory, and the C client against the Rust server, where the C binary creates
   the poll with `-P <node>` and runs it with `-p` in one call. (done)
-- The compression, the `CRYPT` mode, the recorded sessions, and the replay test
-  are open.
+- `binkd-proto::compress` holds the compression of `compress.c`: zlib and bzip2
+  as streams, the block size of the C code, and the `zallow` and `zdeny` rules.
+  The session advertises the methods in its `OPT` message and applies them per
+  file. (done)
+- The interop test covers the compression in both directions: the Rust client
+  sends a zlib stream and a bzip2 stream to the C server, and the C client sends
+  a zlib stream and a bzip2 stream to the Rust server. (done)
+- The `CRYPT` mode, the recorded sessions, and the replay test are open.
 
 Exit criteria:
 
