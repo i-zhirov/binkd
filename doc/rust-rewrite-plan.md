@@ -542,6 +542,35 @@ Progress:
   session when the answerer does not hold the AKA that the caller calls
   (`remote has no such AKA`), so the recording of the answerer must hold the
   address of the caller. (done)
+- The NR mode and the ND mode are open. The C semantics are studied and
+  recorded here, because the two modes touch the session, the spool, and the
+  outbound queue:
+    - `NR_flag`: `WANT_NR` (1) we ask for the NR mode, `WE_NR` (2) we
+      announce files with offset -1, `THEY_NR` (4) the peer is the NR sender.
+    - `ND_flag`: `WE_ND` (1) we wait for `M_GOT` after each file,
+      `THEY_ND` (2) the peer waits, `CAN_NDA` (4) the peer supports the
+      asymmetric mode.
+    - The caller sets `WANT_NR` for a node with `-nr` or `-nd`, and `THEY_ND`
+      for `-nd`. The `-nd` option implies `-nr`.
+    - The caller announces `NDA EXTCMD`, `NR` when it wants it, and `ND` when
+      it holds `THEY_ND`. The answerer echoes `NR`/`ND` from its config and
+      adds `NDA` when exactly one side holds `WE_ND` or `THEY_ND`.
+    - An NR sender sends `M_FILE "name size time -1"`, sets `off_req_sent`,
+      and sends no data until the peer answers. The peer answers with
+      `M_GET "name size time offset"` or `M_SKIP "name size time"`.
+    - `M_GET` moves a file of `sent_fls` back to `out`, seeks to the offset,
+      and re-announces the file with that offset. `GET_FILE_balance` counts
+      the open requests and guards the end of the session.
+    - An ND sender waits for `M_GOT` after each file (`waiting_for_GOT`), and
+      an ND receiver renames a received file at the next `M_FILE` or at the
+      end of the session (`in_complete`), not at once.
+    - An ND sender keeps a `.stc` status file in the outbound and announces
+      the status as a file with offset equal to its size. The outbound scanner
+      reads those files as the queue type `s`.
+    - A session ends when the peer sent its end of the batch, we sent ours, no
+      file waits for an acknowledgement, no request is open, and no file is in
+      transfer on either side. The C code then starts the next batch when it
+      sent or received more than the two `M_EOB` frames of the batch.
 
 Exit criteria:
 
