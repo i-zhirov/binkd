@@ -40,7 +40,14 @@ fn free_port() -> u16 {
 /// Starts the C server of a spool.
 ///
 /// The extra lines hold the compression rules of the config.
-fn start_c_server(dir: &Path, port: u16, peer: &str, password: &str, extra: &str) -> Child {
+fn start_c_server(
+    dir: &Path,
+    port: u16,
+    peer: &str,
+    password: &str,
+    extra: &str,
+    flags: &str,
+) -> Child {
     let config = format!(
         "domain fidonet outb 2\n\
          address 2:5047/100@fidonet\n\
@@ -54,7 +61,7 @@ fn start_c_server(dir: &Path, port: u16, peer: &str, password: &str, extra: &str
          log c-server.log\n\
          loglevel 6\n\
          conlog 0\n\
-         node {peer} 127.0.0.1 {password}\n\
+         node {peer} 127.0.0.1 {password} {flags}\n\
          {extra}"
     );
     std::fs::write(dir.join("binkd.conf"), config).unwrap();
@@ -141,7 +148,7 @@ async fn rust_client_to_c_server() {
     std::fs::write(&packet, &content).unwrap();
 
     let port = free_port();
-    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "");
+    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "", "");
     assert!(wait_for_port(port).await, "the C server did not start");
 
     let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::none(), false);
@@ -193,7 +200,7 @@ async fn rust_client_sends_compressed(name: &str, methods: Methods, log: &str) {
 
     let port = free_port();
     // The C code denies a file without a matching rule.
-    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *");
+    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *", "");
     assert!(wait_for_port(port).await, "the C server did not start");
 
     let config = session_config(&dir, "2:5047/13@fidonet", "secret", methods, false);
@@ -389,7 +396,7 @@ async fn rust_client_to_c_server_crypt() {
     std::fs::write(&packet, &content).unwrap();
 
     let port = free_port();
-    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *");
+    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *", "");
     assert!(wait_for_port(port).await, "the C server did not start");
 
     let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::all(), true);
@@ -443,4 +450,120 @@ async fn c_client_to_rust_server_crypt() {
     assert!(report.crypt, "the Rust server did not crypt");
     // The C client logged the mode of the session.
     assert!(log.contains("session in CRYPT mode"), "{log}");
+}
+
+/// The C server holds the NR mode: the Rust client announces the file with the
+/// offset -1, and the C server asks for it with `M_GET`.
+#[tokio::test]
+async fn rust_client_to_c_server_nr() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+
+    let dir = temp_dir("rust-client-nr");
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let packet = out.join("13b7000d.pkt");
+    let content = vec![b'n'; FILE_SIZE];
+    std::fs::write(&packet, &content).unwrap();
+
+    let port = free_port();
+    // The `-nr` option of the node asks for the NR mode.
+    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *", "-nr");
+    assert!(wait_for_port(port).await, "the C server did not start");
+
+    let mut config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::all(), false);
+    config.nr = true;
+    let files = vec![SendFile {
+        netname: "13b7000d.pkt".to_string(),
+        path: Some(packet),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+
+    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let result = run(
+        stream,
+        Role::Client,
+        &config,
+        &files,
+        &mut |_| Ok(()),
+        Duration::from_secs(20),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = server.kill();
+    let _ = server.wait();
+
+    let report: Report = result.expect("the Rust session failed");
+    assert_eq!(report.files_sent, 1);
+    let received = dir.join("in/13b7000d.pkt");
+    assert!(received.is_file(), "the C server did not write the file");
+    assert_eq!(std::fs::read(&received).unwrap(), content);
+    // The C server saw the NR announcement of the file.
+    let log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
+    assert!(log.contains("remote is in NR mode"), "{log}");
+}
+
+/// The C server holds the ND mode: the Rust client asks for the ND mode, and
+/// both sides wait for the acknowledgement of a file.
+#[tokio::test]
+async fn rust_client_to_c_server_nd() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+
+    let dir = temp_dir("rust-client-nd");
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let packet = out.join("13b7000d.pkt");
+    let content = vec![b'd'; FILE_SIZE];
+    std::fs::write(&packet, &content).unwrap();
+
+    let port = free_port();
+    // The `-nd` option of the node asks for the ND mode and implies `-nr`.
+    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *", "-nd");
+    assert!(wait_for_port(port).await, "the C server did not start");
+
+    let mut config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::all(), false);
+    config.nr = true;
+    config.nd = true;
+    let files = vec![SendFile {
+        netname: "13b7000d.pkt".to_string(),
+        path: Some(packet),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+
+    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let result = run(
+        stream,
+        Role::Client,
+        &config,
+        &files,
+        &mut |_| Ok(()),
+        Duration::from_secs(20),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = server.kill();
+    let _ = server.wait();
+
+    let report: Report = result.expect("the Rust session failed");
+    assert_eq!(report.files_sent, 1);
+    let received = dir.join("in/13b7000d.pkt");
+    assert!(released(&received), "the C server did not write the file");
+    assert_eq!(std::fs::read(&received).unwrap(), content);
+    // The C server saw the ND mode of both sides.
+    let log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
+    assert!(log.contains("we are in ND mode"), "{log}");
+}
+
+/// Reports whether a path is a file.
+fn released(path: &Path) -> bool {
+    path.is_file()
 }

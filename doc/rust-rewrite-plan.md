@@ -592,9 +592,13 @@ plan keeps the steps in this order:
 4. `binkd-spool` holds the `.stc` status files and the queue type `s`
    of the outbound scanner, and the session announces a status entry and saves
    it from `M_GOT`. (done)
-5. The replay test covers the NR mode, the ND mode, and the multi-batch
-   mode in both directions. The interop matrix covers the two modes
-   against the C binary.
+5. The interop matrix covers the two modes against the C binary: the Rust
+   client asks for the NR mode and the C server answers the announcement with
+   `M_GET` and reports `remote is in NR mode`, and the Rust client asks for
+   the ND mode and the C server reports `we are in ND mode`. (done)
+   The replay test of the modes is open: a recording needs the modes of the
+   session, so `Recording` gains the two fields and the writer records a pair of
+   sessions with the modes on.
 
 The C semantics, for the port:
 
