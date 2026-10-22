@@ -233,6 +233,9 @@ struct Session<S> {
     /// The file that the receiver holds for the deferred rename, the port of
     /// `in_complete` of `protocol.c`.
     in_complete: Option<CompleteFile>,
+    /// The command frames of the batch, the port of `msgs_in_batch`. The C code
+    /// starts the next batch when the count passes the two `M_EOB` frames.
+    msgs_in_batch: usize,
     /// The peer sent the end of the batch.
     peer_eob: bool,
 }
@@ -270,6 +273,7 @@ where
             sent_fls: Vec::new(),
             get_file_balance: 0,
             in_complete: None,
+            msgs_in_batch: 0,
             peer_eob: false,
         }
     }
@@ -279,6 +283,10 @@ where
     /// The port of `msg_send2()`: the whole frame, the header included, is
     /// encrypted when the session crypts.
     async fn send(&mut self, frame: Frame) -> Result<(), Error> {
+        if matches!(frame, Frame::Command(..)) {
+            // The port of `msg_send2()`: the batch counts the messages.
+            self.msgs_in_batch += 1;
+        }
         let mut data = frame.encode();
         if let Some(crypt) = &mut self.crypt {
             binkd_ftn::crypt::encrypt_buf(&mut data, &mut crypt.keys_out);
@@ -314,7 +322,12 @@ where
         if let Some(crypt) = &mut self.crypt {
             binkd_ftn::crypt::decrypt_buf(&mut payload, &mut crypt.keys_in);
         }
-        frame::decode(raw, payload).map_err(|e| Error::Io(e.to_string()))
+        let frame = frame::decode(raw, payload).map_err(|e| Error::Io(e.to_string()))?;
+        if matches!(frame, Frame::Command(..)) {
+            // The port of `recv_block()`: the batch counts the messages.
+            self.msgs_in_batch += 1;
+        }
+        Ok(frame)
     }
 
     /// Reads the bytes of a frame.
@@ -475,6 +488,9 @@ where
             };
             self.send_text(Command::Ok, state).await?;
         }
+        // The port of `complete_login()`: the batch forgets the messages of
+        // the login.
+        self.msgs_in_batch = 0;
         // The port of `complete_login()`: the ND mode implies the NR mode.
         if self.nd.we {
             self.nr.we = true;
@@ -947,14 +963,27 @@ where
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
         let mut current: Option<Incoming> = None;
-        // The C code ends the batch when the peer sent its end, every file
-        // that we sent is acknowledged, every request that we sent is
-        // answered, and no file is in transfer.
-        while !self.peer_eob
-            || !self.sent_fls.is_empty()
-            || self.get_file_balance > 0
-            || current.is_some()
-        {
+        loop {
+            // The C code ends the batch when the peer sent its end, every file
+            // that we sent is acknowledged, every request that we sent is
+            // answered, and no file is in transfer.
+            if self.peer_eob
+                && self.sent_fls.is_empty()
+                && self.get_file_balance == 0
+                && current.is_none()
+            {
+                // The port of the end of the batch of `protocol()`: a batch of
+                // more than the two `M_EOB` frames starts the next one.
+                if self.msgs_in_batch <= 2 {
+                    break;
+                }
+                self.msgs_in_batch = 0;
+                self.peer_eob = false;
+                self.sent_eob = false;
+                let _ = self.send_text(Command::Eob, "").await;
+                self.sent_eob = true;
+                continue;
+            }
             let frame = self.read(timeout).await?;
             match frame {
                 Frame::Command(Command::File, argument) => {

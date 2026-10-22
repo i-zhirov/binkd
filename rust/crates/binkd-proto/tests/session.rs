@@ -587,3 +587,88 @@ async fn session_with_nd_status() {
     let status = std::fs::read_to_string(out.join("outb/13b70064.stc")).unwrap();
     assert_eq!(status, "13b7000d.pkt 300 1000000000");
 }
+
+/// The port starts the next batch when the batch held more than the two `M_EOB`
+/// frames, the port of the end of the batch of `protocol()`.
+///
+/// The peer speaks the protocol by hand: it answers the login, takes the end of the
+/// batch of the caller, and sends a file in the second batch.
+#[tokio::test]
+async fn session_with_multi_batch() {
+    use binkd_proto::{read_frame, write_frame, Command, Frame};
+
+    let client_dir = temp_dir("client-batch");
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        let mut stream = server_stream;
+        // The banner and the login.
+        for line in [
+            "SYS batch",
+            "ZYZ test",
+            "LOC test",
+            "NDL test",
+            "VER test binkp/1.1",
+            "OPT EXTCMD",
+        ] {
+            write_frame(&mut stream, &Frame::text(Command::Nul, line))
+                .await
+                .unwrap();
+        }
+        write_frame(
+            &mut stream,
+            &Frame::text(Command::Adr, "2:5047/100@fidonet"),
+        )
+        .await
+        .unwrap();
+        write_frame(&mut stream, &Frame::text(Command::Ok, "non-secure"))
+            .await
+            .unwrap();
+        // The first batch: the end of the batch of the caller.
+        loop {
+            if let Ok(Frame::Command(Command::Eob, _)) = read_frame(&mut stream).await {
+                break;
+            }
+        }
+        // The second batch: a file of the peer.
+        write_frame(
+            &mut stream,
+            &Frame::text(Command::File, "13b70064.pkt 5 1000000000 0"),
+        )
+        .await
+        .unwrap();
+        write_frame(&mut stream, &Frame::Data(b"hello".to_vec()))
+            .await
+            .unwrap();
+        write_frame(&mut stream, &Frame::text(Command::Eob, ""))
+            .await
+            .unwrap();
+        // The caller answers with its end of the second batch.
+        loop {
+            if let Ok(Frame::Command(Command::Eob, _)) = read_frame(&mut stream).await {
+                break;
+            }
+        }
+        write_frame(&mut stream, &Frame::text(Command::Eob, ""))
+            .await
+            .unwrap();
+        // The caller closes the session.
+        let _ = read_frame(&mut stream).await;
+    };
+    let (client, _server) = tokio::join!(client, server);
+    let client = client.unwrap();
+    assert_eq!(client.files_received, 1);
+    assert_eq!(client.received[0].netname, "13b70064.pkt");
+    assert_eq!(client.received[0].size, 5);
+}

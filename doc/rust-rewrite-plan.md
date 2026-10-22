@@ -633,7 +633,15 @@ Exit criteria:
 
 - The frames match the recorded sessions byte for byte.
 - The interop matrix passes for plain, CRAM, CRYPT, GZ, and BZ2.
-- The NR mode, the ND mode, and the multi-batch mode pass.
+- The NR mode, the ND mode, and the multi-batch mode pass. The multi-batch
+  mode starts the next batch when the batch held more than the two `M_EOB` frames,
+  the port of the end of the batch of `protocol()`: the session counts the command
+  frames of the batch (`msgs_in_batch`), the login forgets them, and the end of a
+  batch of more than two frames sends the end of the batch again and reads the next
+  one. The in-memory test covers a file of the second batch. The replay of a live
+  session of the C binary is parked: the port starts the next batch with the C
+  binary, so the bytes of the answerer differ from the recording, and the flow of the
+  C code needs the study.
 
 ### Phase 5: network, managers, SRIF, binary log
 
