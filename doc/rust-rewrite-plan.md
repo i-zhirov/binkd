@@ -638,10 +638,15 @@ Exit criteria:
   the port of the end of the batch of `protocol()`: the session counts the command
   frames of the batch (`msgs_in_batch`), the login forgets them, and the end of a
   batch of more than two frames sends the end of the batch again and reads the next
-  one. The in-memory test covers a file of the second batch. The replay of a live
-  session of the C binary is parked: the port starts the next batch with the C
-  binary, so the bytes of the answerer differ from the recording, and the flow of the
-  C code needs the study.
+  one. The in-memory test covers a file of the second batch, and the replay of a live
+  session of the C binary passes. The frame trace of that replay found the
+  divergence: the answerer of the port completed the login at the `ADR` frame of the
+  caller when it held no password, so the `OPT` frame of the caller arrived after
+  the reset of the batch and the count passed the two `M_EOB` frames. The C caller
+  always sends `M_PWD`, with `-` without a password, and the C answerer completes
+  the login at that frame, so the `OPT` frame counts before the reset. The port now
+  follows the same flow. A trace of the frames of a session is available with the
+  `BINKD_TRACE` variable and with `loglevel 10` of the C binary.
 
 ### Phase 5: network, managers, SRIF, binary log
 

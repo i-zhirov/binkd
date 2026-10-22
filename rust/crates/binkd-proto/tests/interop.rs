@@ -59,7 +59,7 @@ fn start_c_server(
          iport {port}\n\
          listen 127.0.0.1:{port}\n\
          log c-server.log\n\
-         loglevel 6\n\
+         loglevel 10\n\
          conlog 0\n\
          node {peer} 127.0.0.1 {password} {flags}\n\
          {extra}"
@@ -282,7 +282,7 @@ async fn c_client_polls_rust_server(name: &str, methods: Methods, crypt: bool) -
          nodeinfo \"C node\"\n\
          inbound in\n\
          log c-client.log\n\
-         loglevel 6\n\
+         loglevel 10\n\
          conlog 0\n\
          node 2:5047/13@fidonet 127.0.0.1:{port} secret\n\
          zallow *\n"

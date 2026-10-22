@@ -236,6 +236,8 @@ struct Session<S> {
     /// The command frames of the batch, the port of `msgs_in_batch`. The C code
     /// starts the next batch when the count passes the two `M_EOB` frames.
     msgs_in_batch: usize,
+    /// Print every frame of the session, the test mode of the port.
+    trace: bool,
     /// The peer sent the end of the batch.
     peer_eob: bool,
 }
@@ -274,6 +276,7 @@ where
             get_file_balance: 0,
             in_complete: None,
             msgs_in_batch: 0,
+            trace: std::env::var("BINKD_TRACE").is_ok(),
             peer_eob: false,
         }
     }
@@ -290,6 +293,9 @@ where
         let mut data = frame.encode();
         if let Some(crypt) = &mut self.crypt {
             binkd_ftn::crypt::encrypt_buf(&mut data, &mut crypt.keys_out);
+        }
+        if self.trace {
+            eprintln!("TRACE send {frame:?}");
         }
         self.stream
             .write_all(&data)
@@ -323,6 +329,9 @@ where
             binkd_ftn::crypt::decrypt_buf(&mut payload, &mut crypt.keys_in);
         }
         let frame = frame::decode(raw, payload).map_err(|e| Error::Io(e.to_string()))?;
+        if self.trace {
+            eprintln!("TRACE recv {frame:?}");
+        }
         if matches!(frame, Frame::Command(..)) {
             // The port of `recv_block()`: the batch counts the messages.
             self.msgs_in_batch += 1;
@@ -400,11 +409,8 @@ where
                         // The caller answers the password request of the
                         // answerer, the port of `ADR()`.
                         Role::Client => self.send_password().await?,
-                        // No password: the answerer completes the login now.
-                        Role::Server if self.config.password.is_empty() => {
-                            self.finish_login().await?;
-                            return Ok(());
-                        }
+                        // The answerer waits for the password of the caller,
+                        // the port of `PWD()`.
                         Role::Server => {}
                     }
                 }
@@ -450,10 +456,12 @@ where
     /// The caller answers the challenge with the digest of CRAM-MD5. Without a
     /// challenge it sends the password.
     async fn send_password(&mut self) -> Result<(), Error> {
-        if self.config.password.is_empty() {
-            return Ok(());
-        }
-        let password = self.config.password.clone();
+        // The port of `ADR()`: a caller without a password sends `-`.
+        let password = if self.config.password.is_empty() {
+            "-".to_string()
+        } else {
+            self.config.password.clone()
+        };
         let answer = match &self.challenge {
             Some(challenge) => {
                 // The port of `MD_flag`: we authenticated with MD5.
@@ -611,6 +619,10 @@ where
             return true;
         }
         let given = text(argument);
+        if given == "-" {
+            // The port of `PWD()`: `-` means no password.
+            return true;
+        }
         if let Some(challenge) = &self.challenge {
             let digest = binkd_ftn::cram::build_digest(self.config.password.as_bytes(), challenge);
             return digest.as_deref() == Some(given.as_str());
