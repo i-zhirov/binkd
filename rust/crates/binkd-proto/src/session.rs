@@ -64,6 +64,8 @@ pub struct SessionConfig {
     /// `THEY_ND` of `protocol.c`. The `-nd` option of the node sets it,
     /// and the option implies `nr`.
     pub nd: bool,
+    /// The domains of the spool, for the link status files of the ND mode.
+    pub domains: binkd_ftn::domain::DomainTable,
 }
 
 /// A file to send.
@@ -71,8 +73,9 @@ pub struct SessionConfig {
 pub struct SendFile {
     /// The name of the file on the wire.
     pub netname: String,
-    /// The path of the file.
-    pub path: PathBuf,
+    /// The path of the file. `None` is a link status of the ND mode: the
+    /// announcement holds no data, and the offset is the size.
+    pub path: Option<PathBuf>,
     /// The size in bytes.
     pub size: u64,
     /// The time of the file.
@@ -619,6 +622,7 @@ where
                 time: file.time,
                 path: file.path.clone(),
                 method,
+                fa: self.report.peer_addresses.first().cloned(),
             });
             if self.nd.we {
                 // The port of the `waiting_for_GOT` wait of
@@ -656,6 +660,19 @@ where
             Some(method) => format!(" {}", method.name()),
             None => String::new(),
         };
+        // The port of `start_file_transfer()`: a status entry of the ND mode
+        // holds no file, and the announcement names the size as the offset.
+        if file.path.is_none() {
+            self.send_text(
+                Command::File,
+                &format!(
+                    "{} {} {} {}{}",
+                    file.netname, file.size, file.time, file.size, extra
+                ),
+            )
+            .await?;
+            return Ok(());
+        }
         // The port of `start_file_transfer()`: an NR sender announces the
         // file with the offset -1 and waits for the answer of the peer.
         if self.nr.we {
@@ -682,16 +699,24 @@ where
         method: Option<Method>,
         offset: u64,
     ) -> Result<(), Error> {
+        let Some(path) = file.path.clone() else {
+            return Ok(());
+        };
         match method {
-            Some(method) => self.send_compressed(file, method, offset).await,
-            None => self.send_plain(file, offset).await,
+            Some(method) => self.send_compressed(&path, file, method, offset).await,
+            None => self.send_plain(&path, file, offset).await,
         }
     }
 
     /// Sends a file in blocks of at most `blksize` bytes, the port of the
     /// plain branch of `send_block()`.
-    async fn send_plain(&mut self, file: &SendFile, offset: u64) -> Result<(), Error> {
-        let mut input = std::fs::File::open(&file.path).map_err(io_error)?;
+    async fn send_plain(
+        &mut self,
+        path: &PathBuf,
+        file: &SendFile,
+        offset: u64,
+    ) -> Result<(), Error> {
+        let mut input = std::fs::File::open(path).map_err(io_error)?;
         let mut sent: u64 = offset;
         if offset > 0 {
             use std::io::Seek;
@@ -722,11 +747,12 @@ where
     /// holds at most `blksize` compressed bytes, as in the C code.
     async fn send_compressed(
         &mut self,
+        path: &PathBuf,
         file: &SendFile,
         method: Method,
         offset: u64,
     ) -> Result<(), Error> {
-        let mut input = std::fs::File::open(&file.path).map_err(io_error)?;
+        let mut input = std::fs::File::open(path).map_err(io_error)?;
         let mut compressor = Compressor::new(method, self.config.zlevel);
         // The bytes that were read but not compressed yet.
         let mut pending: Vec<u8> = Vec::new();
@@ -785,17 +811,43 @@ where
         Ok(())
     }
 
+    /// Takes the acknowledgement of a file, the port of `GOT()`.
+    ///
+    /// The port removes the file from the queue of the sent files and saves
+    /// the answer of the peer as the link status of the ND mode. A request of
+    /// the NR mode clears the status.
+    fn got_file(&mut self, argument: &[u8]) -> Result<(), Error> {
+        let (netname, size, time) = parse_sent_args(argument)?;
+        let mut address = None;
+        for file in &self.sent_fls {
+            if file.matches(&netname, size, time) {
+                address = file.fa.clone();
+                break;
+            }
+        }
+        eprintln!(
+            "DEBUG got {} off_req={} nd_we={} nd_they={} fa={:?}",
+            netname, self.off_req_sent, self.nd.we, self.nd.they, address
+        );
+        self.sent_fls
+            .retain(|file| !file.matches(&netname, size, time));
+        if let Some(fa) = address {
+            if self.off_req_sent || !self.nd.we {
+                let _ = binkd_spool::status::set_status(&self.config.domains, &fa, "");
+            } else {
+                let _ = binkd_spool::status::set_status(&self.config.domains, &fa, &text(argument));
+            }
+        }
+        Ok(())
+    }
+
     /// Reads the frames of the peer until it acknowledges the files that we
     /// sent, the port of the `waiting_for_GOT` wait of `current_file_was_sent()`.
     async fn wait_for_got(&mut self, timeout: std::time::Duration) -> Result<(), Error> {
         while !self.sent_fls.is_empty() {
             let frame = self.read(timeout).await?;
             match frame {
-                Frame::Command(Command::Got, argument) => {
-                    let (netname, size, time) = parse_sent_args(&argument)?;
-                    self.sent_fls
-                        .retain(|file| !file.matches(&netname, size, time));
-                }
+                Frame::Command(Command::Got, argument) => self.got_file(&argument)?,
                 Frame::Command(Command::Get, argument) => self.get_file(&argument).await?,
                 Frame::Command(Command::Skip, argument) => self.skip_file(&argument)?,
                 Frame::Command(Command::Nul, argument) => self.handle_nul(&argument),
@@ -999,6 +1051,10 @@ where
                         )));
                     }
                     if file.data.len() as u64 == file.size {
+                        eprintln!(
+                            "DEBUG complete role={:?} nd_they={} nd_we={}",
+                            self.role, self.nd.they, self.nd.we
+                        );
                         let complete = CompleteFile {
                             netname: file.netname,
                             time: file.time,
@@ -1032,8 +1088,33 @@ where
                 Frame::Command(Command::Got, argument) => {
                     // The port of `GOT()`: the peer acknowledged a file.
                     let (netname, size, time) = parse_sent_args(&argument)?;
+                    let mut address = None;
+                    for file in &self.sent_fls {
+                        if file.matches(&netname, size, time) {
+                            address = file.fa.clone();
+                            break;
+                        }
+                    }
                     self.sent_fls
                         .retain(|file| !file.matches(&netname, size, time));
+                    // The port of `GOT()`: a request of the NR mode clears
+                    // the link status, an ND sender saves the answer of the
+                    // peer as the new status.
+                    eprintln!(
+                        "DEBUG got off_req={} nd_we={} fa={:?}",
+                        self.off_req_sent, self.nd.we, address
+                    );
+                    if let Some(fa) = address {
+                        if self.off_req_sent || !self.nd.we {
+                            let _ = binkd_spool::status::set_status(&self.config.domains, &fa, "");
+                        } else {
+                            let _ = binkd_spool::status::set_status(
+                                &self.config.domains,
+                                &fa,
+                                &text(&argument),
+                            );
+                        }
+                    }
                 }
                 Frame::Command(Command::Get, argument) => {
                     self.get_file(&argument).await?;
@@ -1129,10 +1210,12 @@ struct SentFile {
     size: u64,
     /// The time of the file.
     time: i64,
-    /// The path of the file, for a resend.
-    path: PathBuf,
+    /// The path of the file, for a resend. `None` for a status entry.
+    path: Option<PathBuf>,
     /// The compression method of the file, for a resend.
     method: Option<Method>,
+    /// The address of the receiver, for the link status of the ND mode.
+    fa: Option<FtnAddr>,
 }
 
 impl SentFile {

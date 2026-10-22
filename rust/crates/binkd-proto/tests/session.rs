@@ -47,6 +47,7 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         crypt: true,
         nr: false,
         nd: false,
+        domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
     }
 }
 
@@ -105,7 +106,7 @@ fn make_file(dir: &Path, name: &str, size: usize) -> SendFile {
     std::fs::write(&path, vec![b'x'; size]).unwrap();
     SendFile {
         netname: name.to_string(),
-        path,
+        path: Some(path),
         size: size as u64,
         time: 1_000_000_000,
     }
@@ -525,4 +526,69 @@ async fn session_with_nd_mode_two_files() {
         std::fs::read(server_dir.join("13b7000e.pkt")).unwrap(),
         vec![b'x'; 400]
     );
+}
+
+/// The ND mode: the caller saves the answer of the peer from `M_GOT` as the
+/// link status file of the address of the peer.
+///
+/// Not enabled yet: the caller reads the `M_GOT` frame only in the receive
+/// loop, and the loop of the wait ends when the file of the queue of the sent
+/// files is gone. The flow needs the study.
+#[ignore = "the caller ends the wait before the acknowledgement"]
+#[tokio::test]
+async fn session_with_nd_status() {
+    use binkd_ftn::domain::{DomainTable, FtnDomain};
+
+    let client_dir = temp_dir("client-nd-status");
+    let server_dir = temp_dir("server-nd-status");
+    let out = temp_dir("out-nd-status");
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+    std::fs::create_dir_all(out.join("outb")).unwrap();
+    let client_files = vec![make_file(&client_out, "13b7000d.pkt", 300)];
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let mut client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    client_config.nr = true;
+    client_config.nd = true;
+    // The link status file lands in the outbound directory of the domain.
+    client_config.domains = DomainTable::new(vec![FtnDomain {
+        name: "fidonet".to_string(),
+        path: out.display().to_string(),
+        dir: "outb".to_string(),
+        z: [2, -1],
+        idomain: None,
+        alias4: None,
+    }]);
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "");
+    server_config.nr = true;
+    server_config.nd = true;
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &client_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    let server = server.unwrap();
+    assert_eq!(server.files_received, 1);
+    // The status holds the name, the size, and the time of the file.
+    let status = std::fs::read_to_string(out.join("outb/13b70064.stc")).unwrap();
+    assert_eq!(status, "13b7000d.pkt 300 1000000000");
 }

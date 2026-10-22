@@ -121,6 +121,7 @@ fn session_config(
         crypt,
         nr: false,
         nd: false,
+        domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
     }
 }
 
@@ -146,7 +147,7 @@ async fn rust_client_to_c_server() {
     let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::none(), false);
     let files = vec![SendFile {
         netname: "13b7000d.pkt".to_string(),
-        path: packet,
+        path: Some(packet),
         size: content.len() as u64,
         time: 1_000_000_000,
     }];
@@ -198,7 +199,7 @@ async fn rust_client_sends_compressed(name: &str, methods: Methods, log: &str) {
     let config = session_config(&dir, "2:5047/13@fidonet", "secret", methods, false);
     let files = vec![SendFile {
         netname: "13b7000d.pkt".to_string(),
-        path: packet,
+        path: Some(packet),
         size: content.len() as u64,
         time: 1_000_000_000,
     }];
@@ -394,7 +395,7 @@ async fn rust_client_to_c_server_crypt() {
     let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::all(), true);
     let files = vec![SendFile {
         netname: "13b7000d.pkt".to_string(),
-        path: packet,
+        path: Some(packet),
         size: content.len() as u64,
         time: 1_000_000_000,
     }];

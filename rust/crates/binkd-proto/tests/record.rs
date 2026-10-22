@@ -74,6 +74,7 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         crypt: false,
         nr: false,
         nd: false,
+        domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
     }
 }
 
@@ -84,7 +85,7 @@ fn make_file(dir: &Path) -> SendFile {
     std::fs::write(&path, vec![b'r'; FILE_SIZE]).unwrap();
     SendFile {
         netname: "13b7000d.pkt".to_string(),
-        path,
+        path: Some(path),
         size: FILE_SIZE as u64,
         time: 1_000_000_000,
     }

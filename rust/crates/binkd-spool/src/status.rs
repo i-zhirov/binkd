@@ -11,14 +11,14 @@ use std::path::PathBuf;
 
 use binkd_ftn::addr::FtnAddr;
 
-use crate::config::SpoolConfig;
+use binkd_ftn::domain::DomainTable;
 
 /// Returns the path of the status file of an address, the port of
 /// `ftnaddress_to_filename()` with the `.stc` extension of `ND_set_status()`.
 ///
 /// `None` means that the domain of the address is unknown.
-pub fn status_path(config: &SpoolConfig, fa: &FtnAddr) -> Option<PathBuf> {
-    let name = fa.to_filename(&config.domains);
+pub fn status_path(domains: &DomainTable, fa: &FtnAddr) -> Option<PathBuf> {
+    let name = fa.to_filename(domains);
     if name.is_empty() {
         return None;
     }
@@ -30,8 +30,8 @@ pub fn status_path(config: &SpoolConfig, fa: &FtnAddr) -> Option<PathBuf> {
 /// The status holds the name, the size, and the time of the file that the peer
 /// received, in the form that the queue reads. An empty status removes the file.
 /// An address without a domain does nothing, as in the C code.
-pub fn set_status(config: &SpoolConfig, fa: &FtnAddr, status: &str) -> std::io::Result<()> {
-    let Some(path) = status_path(config, fa) else {
+pub fn set_status(domains: &DomainTable, fa: &FtnAddr, status: &str) -> std::io::Result<()> {
+    let Some(path) = status_path(domains, fa) else {
         return Ok(());
     };
     if status.is_empty() {
@@ -48,6 +48,7 @@ pub fn set_status(config: &SpoolConfig, fa: &FtnAddr, status: &str) -> std::io::
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::SpoolConfig;
     use binkd_ftn::domain::{DomainTable, FtnDomain};
     use std::path::Path;
 
@@ -69,11 +70,11 @@ mod tests {
         let dir = std::env::temp_dir().join("binkd-status-path");
         let config = config(&dir);
         let fa = FtnAddr::parse("2:5047/100@fidonet", &config.domains).unwrap();
-        let path = status_path(&config, &fa).unwrap();
+        let path = status_path(&config.domains, &fa).unwrap();
         assert!(path.to_string_lossy().ends_with("13b70064.stc"));
         // An address of an unknown domain holds no status file.
         let other = FtnAddr::parse("1:1/1@other", &config.domains).unwrap();
-        assert!(status_path(&config, &other).is_none());
+        assert!(status_path(&config.domains, &other).is_none());
     }
 
     #[test]
@@ -88,7 +89,7 @@ mod tests {
             .nodes
             .add(&fa, &binkd_ftn::node::NodeSpec::default(), 0);
 
-        set_status(&config, &fa, "13b70064.pkt 300 1000000000").unwrap();
+        set_status(&config.domains, &fa, "13b70064.pkt 300 1000000000").unwrap();
         // The outbound scanner reads the file as the queue type `s`.
         let queue = crate::queue::Queue::scan(&mut config, 0);
         let entry = queue
@@ -101,9 +102,9 @@ mod tests {
         assert_eq!(entry.time, 1_000_000_000);
 
         // An empty status removes the file.
-        set_status(&config, &fa, "").unwrap();
-        assert!(!status_path(&config, &fa).unwrap().is_file());
+        set_status(&config.domains, &fa, "").unwrap();
+        assert!(!status_path(&config.domains, &fa).unwrap().is_file());
         // A second removal is not an error.
-        set_status(&config, &fa, "").unwrap();
+        set_status(&config.domains, &fa, "").unwrap();
     }
 }
