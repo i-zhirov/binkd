@@ -530,11 +530,6 @@ async fn session_with_nd_mode_two_files() {
 
 /// The ND mode: the caller saves the answer of the peer from `M_GOT` as the
 /// link status file of the address of the peer.
-///
-/// Not enabled yet: the caller reads the `M_GOT` frame only in the receive
-/// loop, and the loop of the wait ends when the file of the queue of the sent
-/// files is gone. The flow needs the study.
-#[ignore = "the caller ends the wait before the acknowledgement"]
 #[tokio::test]
 async fn session_with_nd_status() {
     use binkd_ftn::domain::{DomainTable, FtnDomain};

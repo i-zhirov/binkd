@@ -552,8 +552,11 @@ Progress:
   peer received and removes the file for an empty status, and the outbound
   scanner of `binkd-spool::queue` already reads the file as the queue type
   `s` with the flavour `h`. The session announces such an entry with the
-  offset equal to the size, and it saves the new status from `M_GOT`; that
-  part is still open. Step 3 is done: an ND sender
+  offset equal to the size, and it saves the new status from `M_GOT` or clears
+  it for a request of the NR mode, the port of `GOT()`. A file that the peer
+  asks for returns to the queue of the sent files after the resend, the port of
+  `current_file_was_sent()`: without the return the wait of the sender ends
+  before the acknowledgement arrives. Step 3 is done: an ND sender
   waits for the acknowledgement of a file before it starts the next one
   (`wait_for_got()`), and an ND receiver holds a completed file in
   `in_complete` and writes it at the next `M_FILE` or at the end of the
@@ -587,8 +590,8 @@ plan keeps the steps in this order:
    sender and the deferred rename of the ND receiver, the port of
    `in_complete`. (done)
 4. `binkd-spool` holds the `.stc` status files and the queue type `s`
-   of the outbound scanner. (done; the announcement of the session and the
-   save of the status from `M_GOT` are still open)
+   of the outbound scanner, and the session announces a status entry and saves
+   it from `M_GOT`. (done)
 5. The replay test covers the NR mode, the ND mode, and the multi-batch
    mode in both directions. The interop matrix covers the two modes
    against the C binary.

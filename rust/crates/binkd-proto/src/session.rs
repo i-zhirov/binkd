@@ -825,10 +825,6 @@ where
                 break;
             }
         }
-        eprintln!(
-            "DEBUG got {} off_req={} nd_we={} nd_they={} fa={:?}",
-            netname, self.off_req_sent, self.nd.we, self.nd.they, address
-        );
         self.sent_fls
             .retain(|file| !file.matches(&netname, size, time));
         if let Some(fa) = address {
@@ -930,6 +926,16 @@ where
             offset as u64,
         )
         .await?;
+        // The port of `current_file_was_sent()`: the file returns to the queue
+        // of the sent files and waits for the acknowledgement of the peer.
+        self.sent_fls.push(SentFile {
+            netname: file.netname.clone(),
+            size: file.size,
+            time: file.time,
+            path: file.path.clone(),
+            method,
+            fa: file.fa.clone(),
+        });
         self.off_req_sent = false;
         Ok(())
     }
@@ -1051,10 +1057,6 @@ where
                         )));
                     }
                     if file.data.len() as u64 == file.size {
-                        eprintln!(
-                            "DEBUG complete role={:?} nd_they={} nd_we={}",
-                            self.role, self.nd.they, self.nd.we
-                        );
                         let complete = CompleteFile {
                             netname: file.netname,
                             time: file.time,
@@ -1100,10 +1102,6 @@ where
                     // The port of `GOT()`: a request of the NR mode clears
                     // the link status, an ND sender saves the answer of the
                     // peer as the new status.
-                    eprintln!(
-                        "DEBUG got off_req={} nd_we={} fa={:?}",
-                        self.off_req_sent, self.nd.we, address
-                    );
                     if let Some(fa) = address {
                         if self.off_req_sent || !self.nd.we {
                             let _ = binkd_spool::status::set_status(&self.config.domains, &fa, "");
