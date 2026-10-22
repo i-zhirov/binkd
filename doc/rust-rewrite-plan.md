@@ -545,7 +545,12 @@ Progress:
   session when the answerer does not hold the AKA that the caller calls
   (`remote has no such AKA`), so the recording of the answerer must hold the
   address of the caller. (done)
-- The NR mode and the ND mode are open. Step 2 is done: the session holds
+- The NR mode and the ND mode are open. Step 3 is done: an ND sender
+  waits for the acknowledgement of a file before it starts the next one
+  (`wait_for_got()`), and an ND receiver holds a completed file in
+  `in_complete` and writes it at the next `M_FILE` or at the end of the
+  batch (`finish_file()`, the port of `inb_done()`), the port of the
+  `waiting_for_GOT` and `in_complete` states of `protocol.c`. Step 2 is done: the session holds
   the flags (`NrMode`, `NdMode`), the `OPT` negotiation of both roles, the
   `M_FILE "name size time -1"` announcement of an NR sender, the `M_GET`
   handler with the offset and the `NZ` extra, the `M_SKIP` handler, the
@@ -572,7 +577,7 @@ plan keeps the steps in this order:
    handlers, the `sent_fls` list, and the `GET_FILE_balance` counter. (done)
 3. `binkd-proto::session` holds the `waiting_for_GOT` wait of the ND
    sender and the deferred rename of the ND receiver, the port of
-   `in_complete`.
+   `in_complete`. (done)
 4. `binkd-spool` holds the `.stc` status files and the queue type `s`
    of the outbound scanner.
 5. The replay test covers the NR mode, the ND mode, and the multi-batch

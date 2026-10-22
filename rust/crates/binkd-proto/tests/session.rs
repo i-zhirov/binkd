@@ -464,3 +464,65 @@ async fn session_with_nd_mode() {
     assert_eq!(server.files_received, 1);
     assert_eq!(server.received[0].size, 300);
 }
+
+/// The ND mode defers the rename of a received file to the next file or to
+/// the end of the batch. Two files of the caller arrive with the right
+/// contents, and the receiver runs the callback of each of them.
+#[tokio::test]
+async fn session_with_nd_mode_two_files() {
+    let client_dir = temp_dir("client-nd2");
+    let server_dir = temp_dir("server-nd2");
+    let out = temp_dir("out-nd2");
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+    let client_files = vec![
+        make_file(&client_out, "13b7000d.pkt", 300),
+        make_file(&client_out, "13b7000e.pkt", 400),
+    ];
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let mut client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    client_config.nr = true;
+    client_config.nd = true;
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "");
+    server_config.nr = true;
+    server_config.nd = true;
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &client_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        let mut names = Vec::new();
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |file| {
+                names.push(file.netname.clone());
+                Ok(())
+            },
+            Duration::from_secs(5),
+        )
+        .await
+        .map(|report| (report, names))
+    };
+    let (client, server) = tokio::join!(client, server);
+    let client = client.unwrap();
+    let (server, names) = server.unwrap();
+    assert_eq!(client.files_sent, 2);
+    assert_eq!(server.files_received, 2);
+    assert_eq!(names, vec!["13b7000d.pkt", "13b7000e.pkt"]);
+    assert_eq!(server.received[0].size, 300);
+    assert_eq!(server.received[1].size, 400);
+    assert_eq!(
+        std::fs::read(server_dir.join("13b7000e.pkt")).unwrap(),
+        vec![b'x'; 400]
+    );
+}

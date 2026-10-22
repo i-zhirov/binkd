@@ -184,7 +184,7 @@ where
 {
     let mut session = Session::new(stream, role, config);
     session.handshake(timeout).await?;
-    session.send_files(files).await?;
+    session.send_files(files, timeout).await?;
     session.receive_files(receive, timeout).await?;
     session.report.crypt = session.crypt.is_some();
     Ok(session.report)
@@ -227,6 +227,9 @@ struct Session<S> {
     /// The requests that we sent and the peer did not answer yet, the port of
     /// `GET_FILE_balance`.
     get_file_balance: usize,
+    /// The file that the receiver holds for the deferred rename, the port of
+    /// `in_complete` of `protocol.c`.
+    in_complete: Option<CompleteFile>,
     /// The peer sent the end of the batch.
     peer_eob: bool,
 }
@@ -263,6 +266,7 @@ where
             off_req_sent: false,
             sent_fls: Vec::new(),
             get_file_balance: 0,
+            in_complete: None,
             peer_eob: false,
         }
     }
@@ -596,7 +600,11 @@ where
     }
 
     /// Sends the files and the end of the batch.
-    async fn send_files(&mut self, files: &[SendFile]) -> Result<(), Error> {
+    async fn send_files(
+        &mut self,
+        files: &[SendFile],
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
         for file in files {
             let method = self.send_method(file);
             self.send_file(file, method).await?;
@@ -612,6 +620,12 @@ where
                 path: file.path.clone(),
                 method,
             });
+            if self.nd.we {
+                // The port of the `waiting_for_GOT` wait of
+                // `current_file_was_sent()`: an ND sender starts the next
+                // file only after the peer acknowledged this one.
+                self.wait_for_got(timeout).await?;
+            }
         }
         // The peer may close the transport after its own end of the batch.
         let _ = self.send_text(Command::Eob, "").await;
@@ -750,6 +764,65 @@ where
         Ok(())
     }
 
+    /// Writes a received file and runs the callback, the port of `inb_done()`.
+    ///
+    /// The ND mode defers the call to the next file or to the end of the
+    /// batch, the port of `in_complete` of `protocol.c`.
+    fn finish_file(
+        &mut self,
+        complete: CompleteFile,
+        receive: &mut dyn FnMut(&ReceivedFile) -> std::io::Result<()>,
+    ) -> Result<(), Error> {
+        let file = write_inbound(
+            &self.config.inbound,
+            &complete.netname,
+            complete.time,
+            complete.method,
+            &complete.data,
+        )?;
+        receive(&file).map_err(|e| Error::Io(e.to_string()))?;
+        self.report.received.push(file);
+        Ok(())
+    }
+
+    /// Reads the frames of the peer until it acknowledges the files that we
+    /// sent, the port of the `waiting_for_GOT` wait of `current_file_was_sent()`.
+    async fn wait_for_got(&mut self, timeout: std::time::Duration) -> Result<(), Error> {
+        while !self.sent_fls.is_empty() {
+            let frame = self.read(timeout).await?;
+            match frame {
+                Frame::Command(Command::Got, argument) => {
+                    let (netname, size, time) = parse_sent_args(&argument)?;
+                    self.sent_fls
+                        .retain(|file| !file.matches(&netname, size, time));
+                }
+                Frame::Command(Command::Get, argument) => self.get_file(&argument).await?,
+                Frame::Command(Command::Skip, argument) => self.skip_file(&argument)?,
+                Frame::Command(Command::Nul, argument) => self.handle_nul(&argument),
+                Frame::Command(Command::Eob, _) => self.peer_eob = true,
+                Frame::Command(Command::Err, argument) => return Err(peer_error(&argument)),
+                Frame::Command(Command::Bsy, argument) => {
+                    return Err(Error::Busy(text(&argument)));
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    /// Declines a file that we announced, the port of `SKIP()`.
+    fn skip_file(&mut self, argument: &[u8]) -> Result<(), Error> {
+        let (netname, size, time) = parse_sent_args(argument)?;
+        let before = self.sent_fls.len();
+        self.sent_fls
+            .retain(|file| !file.matches(&netname, size, time));
+        if self.sent_fls.len() == before {
+            return Err(Error::Protocol(format!("unexpected M_SKIP for {netname}")));
+        }
+        self.off_req_sent = false;
+        Ok(())
+    }
+
     /// Sends a file again from an offset, the port of `GET()`.
     ///
     /// The peer asks for a file that we announced in the NR mode. The port
@@ -827,6 +900,12 @@ where
             let frame = self.read(timeout).await?;
             match frame {
                 Frame::Command(Command::File, argument) => {
+                    // The port of the deferred rename of `start_file_recv()`:
+                    // the completed file takes its true name before the next
+                    // file starts.
+                    if let Some(complete) = self.in_complete.take() {
+                        self.finish_file(complete, receive)?;
+                    }
                     let (netname, size, time, offset, extras) = parse_file_args(&argument)?;
                     if offset == NR_REQUEST {
                         // The port of `start_file_recv()`: the peer is the
@@ -920,23 +999,28 @@ where
                         )));
                     }
                     if file.data.len() as u64 == file.size {
-                        let file = write_inbound(
-                            &self.config.inbound,
-                            &file.netname,
-                            file.time,
-                            file.method,
-                            &file.data,
-                        )?;
-                        receive(&file).map_err(|e| Error::Io(e.to_string()))?;
+                        let complete = CompleteFile {
+                            netname: file.netname,
+                            time: file.time,
+                            method: file.method,
+                            data: file.data,
+                        };
                         let _ = self
                             .send_text(
                                 Command::Got,
-                                &format!("{} {} {}", file.netname, file.size, file.time),
+                                &format!("{} {} {}", complete.netname, file.size, complete.time),
                             )
                             .await;
                         self.report.files_received += 1;
                         self.report.bytes_received += file.size;
-                        self.report.received.push(file);
+                        if self.nd.they {
+                            // The port of the `THEY_ND` branch of
+                            // `recv_block()`: the rename waits for the
+                            // next file or for the end of the batch.
+                            self.in_complete = Some(complete);
+                        } else {
+                            self.finish_file(complete, receive)?;
+                        }
                     } else {
                         current = Some(file);
                     }
@@ -955,16 +1039,7 @@ where
                     self.get_file(&argument).await?;
                 }
                 Frame::Command(Command::Skip, argument) => {
-                    // The port of `SKIP()`: the peer declined a file that
-                    // we announced.
-                    let (netname, size, time) = parse_sent_args(&argument)?;
-                    let before = self.sent_fls.len();
-                    self.sent_fls
-                        .retain(|file| !file.matches(&netname, size, time));
-                    if self.sent_fls.len() == before {
-                        return Err(Error::Protocol(format!("unexpected M_SKIP for {netname}")));
-                    }
-                    self.off_req_sent = false;
+                    self.skip_file(&argument)?;
                 }
                 Frame::Command(Command::Ok, _) => {
                     // The login of the peer completes with our `M_OK`.
@@ -979,6 +1054,11 @@ where
                 }
                 Frame::Command(Command::Eob, _) => {
                     self.peer_eob = true;
+                    // The port of `EOB()`: the completed file takes its
+                    // true name at the end of the batch.
+                    if let Some(complete) = self.in_complete.take() {
+                        self.finish_file(complete, receive)?;
+                    }
                 }
                 Frame::Command(Command::Err, argument) => {
                     return Err(peer_error(&argument));
@@ -1061,6 +1141,19 @@ impl SentFile {
     fn matches(&self, netname: &str, size: u64, time: i64) -> bool {
         self.netname == netname && self.size == size && self.time == time
     }
+}
+
+/// The file that the receiver holds for the deferred rename of the ND mode,
+/// the port of `in_complete` of `protocol.c`.
+struct CompleteFile {
+    /// The name of the file on the wire.
+    netname: String,
+    /// The time of the file.
+    time: i64,
+    /// The compression method of the file.
+    method: Option<Method>,
+    /// The bytes of the file.
+    data: Vec<u8>,
 }
 
 /// The file that we receive, the port of `state->in` of `protocol.c`.
