@@ -113,6 +113,28 @@ pub struct Report {
     pub crypt: bool,
 }
 
+/// The NR mode of a session, the port of `NR_flag` of `protoco2.h`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NrMode {
+    /// `WANT_NR`: we ask for the mode.
+    pub want: bool,
+    /// `WE_NR`: we announce the files with the offset -1.
+    pub we: bool,
+    /// `THEY_NR`: the peer is the NR sender.
+    pub they: bool,
+}
+
+/// The ND mode of a session, the port of `ND_flag` of `protoco2.h`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct NdMode {
+    /// `WE_ND`: we wait for `M_GOT` after each file.
+    pub we: bool,
+    /// `THEY_ND`: the peer waits for `M_GOT`.
+    pub they: bool,
+    /// `CAN_NDA`: the peer holds the asymmetric mode.
+    pub can_nda: bool,
+}
+
 /// A session error.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Error {
@@ -192,9 +214,19 @@ struct Session<S> {
     crypt: Option<Crypt>,
     /// We sent the end of the batch.
     sent_eob: bool,
-    /// The files that we sent and the peer did not acknowledge yet, the port of
-    /// `sent_fls`.
-    sent_awaiting_got: usize,
+    /// The NR mode of the session, the port of `NR_flag`.
+    nr: NrMode,
+    /// The ND mode of the session, the port of `ND_flag`.
+    nd: NdMode,
+    /// We announced a file and wait for the answer of the peer, the port of
+    /// `off_req_sent`.
+    off_req_sent: bool,
+    /// The files that we sent, the port of `sent_fls`. The peer may ask for
+    /// one of them with `M_GET`, or decline it with `M_SKIP`.
+    sent_fls: Vec<SentFile>,
+    /// The requests that we sent and the peer did not answer yet, the port of
+    /// `GET_FILE_balance`.
+    get_file_balance: usize,
     /// The peer sent the end of the batch.
     peer_eob: bool,
 }
@@ -218,7 +250,19 @@ where
             md5: false,
             crypt: None,
             sent_eob: false,
-            sent_awaiting_got: 0,
+            nr: NrMode {
+                want: config.nr,
+                we: false,
+                they: false,
+            },
+            nd: NdMode {
+                we: false,
+                they: config.nd,
+                can_nda: false,
+            },
+            off_req_sent: false,
+            sent_fls: Vec::new(),
+            get_file_balance: 0,
             peer_eob: false,
         }
     }
@@ -408,6 +452,14 @@ where
     /// the mode, we requested the mode, and the password is a real one.
     async fn finish_login(&mut self) -> Result<(), Error> {
         if self.role == Role::Server {
+            // The port of the ND fixups of `PWD()`: the answerer tells
+            // the caller about the ND mode of the node.
+            if self.nd.we && !self.nd.can_nda {
+                self.nd.they = true;
+            }
+            if !self.nd.we && !self.nd.can_nda {
+                self.nd.they = false;
+            }
             self.send_options().await?;
             let state = if self.secure() {
                 "secure"
@@ -415,6 +467,19 @@ where
                 "non-secure"
             };
             self.send_text(Command::Ok, state).await?;
+        }
+        // The port of `complete_login()`: the ND mode implies the NR mode.
+        if self.nd.we {
+            self.nr.we = true;
+        }
+        if self.role == Role::Client {
+            // The port of `OK()`: the caller keeps the ND mode only when
+            // both sides hold it, because the peer may not support the
+            // asymmetric mode.
+            if self.nd.we != self.nd.they {
+                self.nd.we = false;
+                self.nd.they = false;
+            }
         }
         if self.we_crypt && self.they_crypt && self.secure() && self.md5 && !self.any_password() {
             self.crypt = Some(Crypt::new(&self.config.password, self.role));
@@ -427,6 +492,30 @@ where
     async fn send_options(&mut self) -> Result<(), Error> {
         let mut options = vec!["EXTCMD".to_string()];
         options.extend(self.config.methods.names().iter().map(|n| n.to_string()));
+        if self.role == Role::Client {
+            // The port of the `OPT` message of `banner()`: the caller
+            // announces `NDA`, asks for the NR mode, and tells the peer
+            // about the ND mode of the node.
+            options.push("NDA".to_string());
+            if self.nr.want {
+                options.push("NR".to_string());
+            }
+            if self.nd.they {
+                options.push("ND".to_string());
+            }
+        } else {
+            // The port of the `OPT` message of `PWD()`: the answerer
+            // echoes the modes and adds `NDA` for the asymmetric mode.
+            if self.nr.want {
+                options.push("NR".to_string());
+            }
+            if self.nd.they {
+                options.push("ND".to_string());
+            }
+            if self.nd.we != self.nd.they {
+                options.push("NDA".to_string());
+            }
+        }
         // The port of `PWD()`: the answerer echoes `CRYPT` only when the
         // caller requested it.
         if self.we_crypt && (self.role == Role::Client || self.they_crypt) {
@@ -455,8 +544,18 @@ where
         match words.next() {
             Some("OPT") => {
                 for option in words {
-                    if option.eq_ignore_ascii_case("NR") {
-                        // The NR mode arrives in a later step.
+                    if option == "NR" {
+                        // The port of `NUL()`: the peer wants the NR
+                        // mode, so we announce the files.
+                        self.nr.we = true;
+                    } else if option == "ND" {
+                        // The port of `NUL()`: the peer wants the ND
+                        // mode, so we wait for `M_GOT`.
+                        self.nd.we = true;
+                    } else if option == "NDA" {
+                        // The port of `NUL()`: the peer holds the
+                        // asymmetric ND mode.
+                        self.nd.can_nda = true;
                     } else if option.starts_with(binkd_ftn::cram::PREFIX) {
                         // The port of `MD_getChallenge()`: the first byte of
                         // the challenge is its length.
@@ -503,7 +602,16 @@ where
             self.send_file(file, method).await?;
             self.report.files_sent += 1;
             self.report.bytes_sent += file.size;
-            self.sent_awaiting_got += 1;
+            // The port of `current_file_was_sent()`: the peer may ask for
+            // the file with `M_GET` or decline it with `M_SKIP`, and it
+            // acknowledges it with `M_GOT`.
+            self.sent_fls.push(SentFile {
+                netname: file.netname.clone(),
+                size: file.size,
+                time: file.time,
+                path: file.path.clone(),
+                method,
+            });
         }
         // The peer may close the transport after its own end of the batch.
         let _ = self.send_text(Command::Eob, "").await;
@@ -534,22 +642,49 @@ where
             Some(method) => format!(" {}", method.name()),
             None => String::new(),
         };
+        // The port of `start_file_transfer()`: an NR sender announces the
+        // file with the offset -1 and waits for the answer of the peer.
+        if self.nr.we {
+            self.send_text(
+                Command::File,
+                &format!("{} {} {} -1{}", file.netname, file.size, file.time, extra),
+            )
+            .await?;
+            self.off_req_sent = true;
+            return Ok(());
+        }
         self.send_text(
             Command::File,
             &format!("{} {} {} 0{}", file.netname, file.size, file.time, extra),
         )
         .await?;
+        self.send_data(file, method, 0).await
+    }
+
+    /// Sends the data of a file from an offset, the port of `send_block()`.
+    async fn send_data(
+        &mut self,
+        file: &SendFile,
+        method: Option<Method>,
+        offset: u64,
+    ) -> Result<(), Error> {
         match method {
-            Some(method) => self.send_compressed(file, method).await,
-            None => self.send_plain(file).await,
+            Some(method) => self.send_compressed(file, method, offset).await,
+            None => self.send_plain(file, offset).await,
         }
     }
 
     /// Sends a file in blocks of at most `blksize` bytes, the port of the
     /// plain branch of `send_block()`.
-    async fn send_plain(&mut self, file: &SendFile) -> Result<(), Error> {
+    async fn send_plain(&mut self, file: &SendFile, offset: u64) -> Result<(), Error> {
         let mut input = std::fs::File::open(&file.path).map_err(io_error)?;
-        let mut sent: u64 = 0;
+        let mut sent: u64 = offset;
+        if offset > 0 {
+            use std::io::Seek;
+            input
+                .seek(std::io::SeekFrom::Start(offset))
+                .map_err(io_error)?;
+        }
         // An empty file is one empty block, as in the C code.
         loop {
             let count = std::cmp::min(self.config.blksize as u64, file.size - sent) as usize;
@@ -571,13 +706,24 @@ where
     ///
     /// The compressed stream is one stream for the whole file. Each data block
     /// holds at most `blksize` compressed bytes, as in the C code.
-    async fn send_compressed(&mut self, file: &SendFile, method: Method) -> Result<(), Error> {
+    async fn send_compressed(
+        &mut self,
+        file: &SendFile,
+        method: Method,
+        offset: u64,
+    ) -> Result<(), Error> {
         let mut input = std::fs::File::open(&file.path).map_err(io_error)?;
         let mut compressor = Compressor::new(method, self.config.zlevel);
         // The bytes that were read but not compressed yet.
         let mut pending: Vec<u8> = Vec::new();
         // The bytes of the file that were read.
-        let mut read: u64 = 0;
+        let mut read: u64 = offset;
+        if offset > 0 {
+            use std::io::Seek;
+            input
+                .seek(std::io::SeekFrom::Start(offset))
+                .map_err(io_error)?;
+        }
         // The compressed bytes of the block in progress.
         let mut block: Vec<u8> = Vec::new();
         let mut ended = false;
@@ -604,6 +750,65 @@ where
         Ok(())
     }
 
+    /// Sends a file again from an offset, the port of `GET()`.
+    ///
+    /// The peer asks for a file that we announced in the NR mode. The port
+    /// moves the file of `sent_fls` back to the queue, seeks to the offset,
+    /// and announces the file again.
+    async fn get_file(&mut self, argument: &[u8]) -> Result<(), Error> {
+        let (netname, size, time, offset, extras) = parse_get_args(argument)?;
+        let index = self
+            .sent_fls
+            .iter()
+            .position(|file| file.matches(&netname, size, time));
+        let Some(index) = index else {
+            return Err(Error::Protocol(format!("unexpected M_GET for {netname}")));
+        };
+        let file = self.sent_fls.remove(index);
+        if offset < 0 || offset as u64 > file.size {
+            let _ = self
+                .send_text(
+                    Command::Err,
+                    &format!("Invalid M_GET for {netname}, offset {offset}"),
+                )
+                .await;
+            return Err(Error::Protocol(format!(
+                "the M_GET offset {offset} is after the end of {netname}"
+            )));
+        }
+        // The port of `GET()`: `NZ` suppresses the compression of the file.
+        let method = if extras.iter().any(|extra| extra == "NZ") {
+            None
+        } else {
+            file.method
+        };
+        let extra = match method {
+            Some(method) => format!(" {}", method.name()),
+            None => String::new(),
+        };
+        self.send_text(
+            Command::File,
+            &format!(
+                "{} {} {} {}{}",
+                file.netname, file.size, file.time, offset, extra
+            ),
+        )
+        .await?;
+        self.send_data(
+            &SendFile {
+                netname: file.netname.clone(),
+                path: file.path.clone(),
+                size: file.size,
+                time: file.time,
+            },
+            method,
+            offset as u64,
+        )
+        .await?;
+        self.off_req_sent = false;
+        Ok(())
+    }
+
     /// Receives the files of the peer until its end of the batch.
     async fn receive_files(
         &mut self,
@@ -611,13 +816,33 @@ where
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
         let mut current: Option<Incoming> = None;
-        // The C code ends the batch when the peer sent its end and every file
-        // that we sent is acknowledged.
-        while !self.peer_eob || self.sent_awaiting_got > 0 {
+        // The C code ends the batch when the peer sent its end, every file
+        // that we sent is acknowledged, every request that we sent is
+        // answered, and no file is in transfer.
+        while !self.peer_eob
+            || !self.sent_fls.is_empty()
+            || self.get_file_balance > 0
+            || current.is_some()
+        {
             let frame = self.read(timeout).await?;
             match frame {
                 Frame::Command(Command::File, argument) => {
-                    let (netname, size, time, extras) = parse_file_args(&argument)?;
+                    let (netname, size, time, offset, extras) = parse_file_args(&argument)?;
+                    if offset == NR_REQUEST {
+                        // The port of `start_file_recv()`: the peer is the
+                        // NR sender, and it asks us for the file.
+                        self.nr.they = true;
+                        let _ = self
+                            .send_text(Command::Get, &format!("{netname} {size} {time} 0"))
+                            .await;
+                        self.get_file_balance += 1;
+                        continue;
+                    }
+                    // The port of the `M_FILE` handler: the answer of the
+                    // peer ends a request that we sent.
+                    if self.nr.they && self.get_file_balance > 0 {
+                        self.get_file_balance -= 1;
+                    }
                     // The port of the `M_FILE` handler: the extra arguments
                     // select the compression of the file.
                     let mut methods = Methods::none();
@@ -720,9 +945,26 @@ where
                     // The C code reads an option of the peer at any time.
                     self.handle_nul(&argument);
                 }
-                Frame::Command(Command::Got, _) => {
+                Frame::Command(Command::Got, argument) => {
                     // The port of `GOT()`: the peer acknowledged a file.
-                    self.sent_awaiting_got = self.sent_awaiting_got.saturating_sub(1);
+                    let (netname, size, time) = parse_sent_args(&argument)?;
+                    self.sent_fls
+                        .retain(|file| !file.matches(&netname, size, time));
+                }
+                Frame::Command(Command::Get, argument) => {
+                    self.get_file(&argument).await?;
+                }
+                Frame::Command(Command::Skip, argument) => {
+                    // The port of `SKIP()`: the peer declined a file that
+                    // we announced.
+                    let (netname, size, time) = parse_sent_args(&argument)?;
+                    let before = self.sent_fls.len();
+                    self.sent_fls
+                        .retain(|file| !file.matches(&netname, size, time));
+                    if self.sent_fls.len() == before {
+                        return Err(Error::Protocol(format!("unexpected M_SKIP for {netname}")));
+                    }
+                    self.off_req_sent = false;
                 }
                 Frame::Command(Command::Ok, _) => {
                     // The login of the peer completes with our `M_OK`.
@@ -795,6 +1037,32 @@ fn peer_error(argument: &[u8]) -> Error {
     Error::Peer(message)
 }
 
+/// The offset of an `M_FILE` frame that asks for the file, the port of the
+/// `-1` offset of the NR mode.
+const NR_REQUEST: i64 = -1;
+
+/// A file that we sent, the port of `TFILE sent_fls` of `protocol.c`.
+struct SentFile {
+    /// The name of the file on the wire.
+    netname: String,
+    /// The size in bytes.
+    size: u64,
+    /// The time of the file.
+    time: i64,
+    /// The path of the file, for a resend.
+    path: PathBuf,
+    /// The compression method of the file, for a resend.
+    method: Option<Method>,
+}
+
+impl SentFile {
+    /// Reports whether the file holds the name, the size, and the time, the
+    /// port of `tfile_cmp()` of `tools.c`.
+    fn matches(&self, netname: &str, size: u64, time: i64) -> bool {
+        self.netname == netname && self.size == size && self.time == time
+    }
+}
+
 /// The file that we receive, the port of `state->in` of `protocol.c`.
 struct Incoming {
     /// The name of the file on the wire.
@@ -848,7 +1116,7 @@ fn parse_addresses(argument: &[u8]) -> Vec<FtnAddr> {
 
 /// Parses the arguments of an `M_FILE` frame: the name, the size, the time,
 /// the offset, and the extra arguments.
-fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64, Vec<String>), Error> {
+fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64, i64, Vec<String>), Error> {
     let text = text(argument);
     let mut words = text.split_whitespace();
     let netname = words.next().unwrap_or_default().to_string();
@@ -859,9 +1127,22 @@ fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64, Vec<String>), E
     }
     // The offset of the file follows the time, as `parse_msg_args()` of the
     // C code does. The extra arguments follow the offset.
-    let _offset = words.next();
+    let offset = words.next().and_then(|w| w.parse().ok()).unwrap_or(0);
     let extras = words.map(|w| w.to_string()).collect();
-    Ok((netname, size, time, extras))
+    Ok((netname, size, time, offset, extras))
+}
+
+/// Parses the arguments of an `M_GET` frame: the name, the size, the time,
+/// the offset, and the extra arguments.
+fn parse_get_args(argument: &[u8]) -> Result<(String, u64, i64, i64, Vec<String>), Error> {
+    parse_file_args(argument)
+}
+
+/// Parses the arguments of an `M_GOT` and `M_SKIP` frame: the name, the size,
+/// and the time.
+fn parse_sent_args(argument: &[u8]) -> Result<(String, u64, i64), Error> {
+    let (netname, size, time, _, _) = parse_file_args(argument)?;
+    Ok((netname, size, time))
 }
 
 /// Maps an I/O error.

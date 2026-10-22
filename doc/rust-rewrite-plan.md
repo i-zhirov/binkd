@@ -545,7 +545,14 @@ Progress:
   session when the answerer does not hold the AKA that the caller calls
   (`remote has no such AKA`), so the recording of the answerer must hold the
   address of the caller. (done)
-- The NR mode and the ND mode are open. Step 1 is done: the parser of
+- The NR mode and the ND mode are open. Step 2 is done: the session holds
+  the flags (`NrMode`, `NdMode`), the `OPT` negotiation of both roles, the
+  `M_FILE "name size time -1"` announcement of an NR sender, the `M_GET`
+  handler with the offset and the `NZ` extra, the `M_SKIP` handler, the
+  `sent_fls` list, the `off_req_sent` state, and the `GET_FILE_balance`
+  counter. The end of the batch waits for the answer of every request and for
+  the file in transfer, the port of `sent_fls == 0`, `GET_FILE_balance == 0`,
+  and `in.f == 0` of `protocol()`. Step 1 is done: the parser of
   `binkd-config` holds the `-nr` and `-nd` node options, the `-nd` option
   implies `-nr`, the `-d` dump prints the two options, and the session settings
   hold the `nr` and `nd` fields. The corpus pins the parse and the dump
@@ -562,7 +569,7 @@ plan keeps the steps in this order:
    `-d` dump prints the two options. (done)
 2. `binkd-proto::session` holds the flags, the `OPT` negotiation, the
    `M_FILE "name size time -1"` announcement, the `M_GET` and `M_SKIP`
-   handlers, the `sent_fls` list, and the `GET_FILE_balance` counter.
+   handlers, the `sent_fls` list, and the `GET_FILE_balance` counter. (done)
 3. `binkd-proto::session` holds the `waiting_for_GOT` wait of the ND
    sender and the deferred rename of the ND receiver, the port of
    `in_complete`.

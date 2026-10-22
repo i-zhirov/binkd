@@ -404,3 +404,63 @@ async fn session_with_nr_nd() {
     assert!(client.is_ok(), "{client:?}");
     assert!(server.is_ok(), "{server:?}");
 }
+
+/// A session with the NR and the ND modes of the two nodes.
+async fn session_with_modes(name: &str, nr: bool, nd: bool) -> (Report, Report) {
+    let client_dir = temp_dir(&format!("client-{name}"));
+    let server_dir = temp_dir(&format!("server-{name}"));
+    let out = temp_dir(&format!("out-{name}"));
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+    let client_files = vec![make_file(&client_out, "13b7000d.pkt", 300)];
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let mut client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    client_config.nr = nr;
+    client_config.nd = nd;
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "");
+    server_config.nr = nr;
+    server_config.nd = nd;
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &client_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    (client.unwrap(), server.unwrap())
+}
+
+/// The NR mode: the caller announces the file with the offset -1, the
+/// answerer asks for it with `M_GET`, and the caller sends the file.
+#[tokio::test]
+async fn session_with_nr_mode() {
+    let (client, server) = session_with_modes("nr", true, false).await;
+    assert_eq!(client.files_sent, 1);
+    assert_eq!(server.files_received, 1);
+    assert_eq!(server.received[0].size, 300);
+}
+
+/// The ND mode: the caller waits for the acknowledgement of the file.
+#[tokio::test]
+async fn session_with_nd_mode() {
+    let (client, server) = session_with_modes("nd", true, true).await;
+    assert_eq!(client.files_sent, 1);
+    assert_eq!(server.files_received, 1);
+    assert_eq!(server.received[0].size, 300);
+}
