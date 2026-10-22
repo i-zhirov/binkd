@@ -596,9 +596,10 @@ plan keeps the steps in this order:
    client asks for the NR mode and the C server answers the announcement with
    `M_GET` and reports `remote is in NR mode`, and the Rust client asks for
    the ND mode and the C server reports `we are in ND mode`. (done)
-   The replay test of the modes is open: a recording needs the modes of the
-   session, so `Recording` gains the two fields and the writer records a pair of
-   sessions with the modes on.
+   The replay test covers the modes: a recording holds the `nr` and the `nd`
+   fields with the `# nr` and `# nd` header lines, the writer records a pair of
+   sessions with the modes on, and the replay configures the session from the
+   recording. (done)
 
 The C semantics, for the port:
 

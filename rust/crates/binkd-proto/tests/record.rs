@@ -97,11 +97,14 @@ async fn replay(recording: &Recording, dir: &Path, server_aka: &str) -> (Vec<u8>
         Role::Client => vec![make_file(dir)],
         Role::Server => Vec::new(),
     };
+    let mut config = config_with(dir, recording.role, server_aka);
+    config.nr = recording.nr;
+    config.nd = recording.nd;
     let mut replay = Replay::new(recording);
     let report = run(
         &mut replay,
         recording.role,
-        &config_with(dir, recording.role, server_aka),
+        &config,
         &files,
         &mut |_| Ok(()),
         Duration::from_secs(5),
@@ -242,9 +245,16 @@ async fn replays_a_session_of_the_c_binary() {
 #[tokio::test]
 async fn write_the_recordings() {
     std::fs::create_dir_all(sessions_dir()).expect("cannot create tests/sessions");
-    for role in [Role::Client, Role::Server] {
+    for (role, modes) in [
+        (Role::Client, false),
+        (Role::Server, false),
+        (Role::Client, true),
+        (Role::Server, true),
+    ] {
         let dir = temp_dir("write");
-        let side = config(&dir, role);
+        let mut side = config(&dir, role);
+        side.nr = modes;
+        side.nd = modes;
         // The side that calls sends the file, as in the other tests.
         let files = match role {
             Role::Client => vec![make_file(&dir)],
@@ -277,13 +287,18 @@ async fn write_the_recordings() {
                     Role::Client => Role::Server,
                     Role::Server => Role::Client,
                 },
-                &config(
-                    &dir,
-                    match role {
-                        Role::Client => Role::Server,
-                        Role::Server => Role::Client,
-                    },
-                ),
+                &{
+                    let mut peer = config(
+                        &dir,
+                        match role {
+                            Role::Client => Role::Server,
+                            Role::Server => Role::Client,
+                        },
+                    );
+                    peer.nr = modes;
+                    peer.nd = modes;
+                    peer
+                },
                 &peer_files,
                 &mut |_| Ok(()),
                 Duration::from_secs(5),
@@ -292,10 +307,14 @@ async fn write_the_recordings() {
         };
         let (ours, theirs) = tokio::join!(ours, theirs);
         assert!(ours.is_ok() && theirs.is_ok());
-        let recording = recorder.into_recording();
-        let name = match role {
-            Role::Client => "rust-client.session",
-            Role::Server => "rust-server.session",
+        let mut recording = recorder.into_recording();
+        recording.nr = modes;
+        recording.nd = modes;
+        let name = match (role, modes) {
+            (Role::Client, false) => "rust-client.session",
+            (Role::Server, false) => "rust-server.session",
+            (Role::Client, true) => "rust-client-modes.session",
+            (Role::Server, true) => "rust-server-modes.session",
         };
         recording
             .write(&sessions_dir().join(name))

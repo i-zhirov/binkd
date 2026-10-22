@@ -41,6 +41,10 @@ pub enum Direction {
 pub struct Recording {
     /// The role of our side.
     pub role: Role,
+    /// The session asked for the NR mode, the port of `WANT_NR`.
+    pub nr: bool,
+    /// The session asked for the ND mode, the port of `THEY_ND`.
+    pub nd: bool,
     /// The bytes that our side sent.
     pub sent: Vec<u8>,
     /// The bytes that our side received.
@@ -52,6 +56,8 @@ impl Recording {
     pub fn new(role: Role) -> Recording {
         Recording {
             role,
+            nr: false,
+            nd: false,
             sent: Vec::new(),
             received: Vec::new(),
         }
@@ -85,6 +91,14 @@ impl Recording {
                 continue;
             }
             if let Some(comment) = line.strip_prefix('#') {
+                if comment.trim() == "nr" {
+                    recording.nr = true;
+                    continue;
+                }
+                if comment.trim() == "nd" {
+                    recording.nd = true;
+                    continue;
+                }
                 if let Some(name) = comment.trim().strip_prefix("role ") {
                     role = Some(match name.trim() {
                         "client" => Role::Client,
@@ -125,6 +139,12 @@ impl Recording {
         match self.role {
             Role::Client => text.push_str("# role client\n"),
             Role::Server => text.push_str("# role server\n"),
+        }
+        if self.nr {
+            text.push_str("# nr\n");
+        }
+        if self.nd {
+            text.push_str("# nd\n");
         }
         // The lines keep the order of the two directions of the session.
         let mut sent = &self.sent[..];
