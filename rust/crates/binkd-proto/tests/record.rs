@@ -45,11 +45,17 @@ fn address(s: &str) -> FtnAddr {
 /// The settings of one side of a recording.
 ///
 /// The values must match the ones of the recording: the banner and the `M_FILE`
-/// frames hold them.
+/// frames hold them. The answerer of the recording of the C binary holds the
+/// address that the C client calls, so the C code finds its AKA.
 fn config(dir: &Path, role: Role) -> SessionConfig {
+    config_with(dir, role, "2:5047/100@fidonet")
+}
+
+/// The settings of one side of a recording with the address of the answerer.
+fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
     let (sysname, aka) = match role {
         Role::Client => ("Rust client", "2:5047/13@fidonet"),
-        Role::Server => ("Rust server", "2:5047/100@fidonet"),
+        Role::Server => ("Rust server", server_aka),
     };
     SessionConfig {
         sysname: sysname.to_string(),
@@ -83,7 +89,7 @@ fn make_file(dir: &Path) -> SendFile {
 }
 
 /// Replays a recording and returns the bytes of our side.
-async fn replay(recording: &Recording, dir: &Path) -> (Vec<u8>, Report) {
+async fn replay(recording: &Recording, dir: &Path, server_aka: &str) -> (Vec<u8>, Report) {
     let files = match recording.role {
         Role::Client => vec![make_file(dir)],
         Role::Server => Vec::new(),
@@ -92,7 +98,7 @@ async fn replay(recording: &Recording, dir: &Path) -> (Vec<u8>, Report) {
     let report = run(
         &mut replay,
         recording.role,
-        &config(dir, recording.role),
+        &config_with(dir, recording.role, server_aka),
         &files,
         &mut |_| Ok(()),
         Duration::from_secs(5),
@@ -114,7 +120,7 @@ async fn replays_the_recorded_sessions() {
         }
         let recording = Recording::read(&path).expect("cannot read a recording");
         let dir = temp_dir("replay");
-        let (sent, report) = replay(&recording, &dir).await;
+        let (sent, report) = replay(&recording, &dir, "2:5047/100@fidonet").await;
         assert_eq!(
             sent.len(),
             recording.sent.len(),
@@ -165,7 +171,11 @@ async fn record_a_c_binary_session(dir: &Path, port: u16) -> Recording {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
         .unwrap();
-    let server_config = config(&temp_dir("c-record-server"), Role::Server);
+    let server_config = config_with(
+        &temp_dir("c-record-server"),
+        Role::Server,
+        "2:5047/13@fidonet",
+    );
     let server = async move {
         let (stream, _) = listener.accept().await.unwrap();
         let mut recorder = Recorder::new(stream, Role::Server);
@@ -199,9 +209,6 @@ async fn record_a_c_binary_session(dir: &Path, port: u16) -> Recording {
 
 /// Replays the bytes of a live session of the C binary.
 ///
-/// Not enabled yet: the session of the recording runs out of bytes while the
-/// Rust server still waits for a frame of the login. Settle the flow first.
-#[ignore = "the replayed C session runs out of bytes"]
 #[tokio::test]
 async fn replays_a_session_of_the_c_binary() {
     let Some(_) = c_binary() else {
@@ -219,7 +226,7 @@ async fn replays_a_session_of_the_c_binary() {
 
     // The replay of the recording sends the same bytes.
     let dir = temp_dir("c-binary-replay");
-    let (sent, report) = replay(&recording, &dir).await;
+    let (sent, report) = replay(&recording, &dir, "2:5047/13@fidonet").await;
     assert_eq!(sent, recording.sent, "the replay differs from the session");
     assert_eq!(report.files_received, 0);
 }

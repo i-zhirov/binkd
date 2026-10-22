@@ -243,8 +243,10 @@ The recordings come from the Rust session itself. The test
 `write_the_recordings` writes them and carries the `#[ignore]` attribute: run it
 after a change of the banner or of a frame, then commit the files.
 
-The replay of a live session of the C binary is written but not enabled: the
-recording runs out of bytes while the Rust server waits for a frame.
+The replay of a live session of the C binary runs with `BINKD_C`: the test records
+the C client that polls the Rust server, then replays the bytes. The answerer of
+that recording must hold the address that the C client calls, because the C code
+abandons a session of a remote without the called AKA.
 
 ## What the corpus covers
 

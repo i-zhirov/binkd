@@ -534,9 +534,10 @@ Progress:
   `Recorder` wraps a transport and keeps them, and `Replay` plays the bytes of the
   peer and keeps the bytes of our side. The recordings of the Rust session are in
   `tests/sessions/` and the replay test compares every byte. (done)
-- The replay of a live session of the C binary is written but not enabled: the
-  session of the recording runs out of bytes while the Rust server waits for a
-  frame. The flow of the C caller after the login needs the study. (open)
+- The replay of a live session of the C binary passes. The C client abandons a
+  session when the answerer does not hold the AKA that the caller calls
+  (`remote has no such AKA`), so the recording of the answerer must hold the
+  address of the caller. (done)
 
 Exit criteria:
 
