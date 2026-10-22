@@ -356,6 +356,8 @@ mod tests {
             zrules: Vec::new(),
             methods: crate::Methods::none(),
             crypt: false,
+            nr: false,
+            nd: false,
         };
         let (left, right) = tokio::io::duplex(1 << 16);
         let mut recorder = Recorder::new(left, Role::Client);

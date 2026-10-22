@@ -119,6 +119,8 @@ fn session_config(
         }],
         methods,
         crypt,
+        nr: false,
+        nd: false,
     }
 }
 

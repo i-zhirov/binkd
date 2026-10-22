@@ -112,6 +112,18 @@ pub struct FtnNode {
 }
 
 impl FtnNode {
+    /// Reports whether the node asks for the NR mode, the port of
+    /// `to->NR_flag == NR_ON` of `protocol.c`.
+    pub fn wants_nr(&self) -> bool {
+        self.nr_flag == NR_ON
+    }
+
+    /// Reports whether the node asks for the ND mode, the port of
+    /// `to->ND_flag == ND_ON` of `protocol.c`.
+    pub fn wants_nd(&self) -> bool {
+        self.nd_flag == ND_ON
+    }
+
     /// Creates a node with the defaults of `add_node_nolock()`.
     fn new(fa: &FtnAddr) -> FtnNode {
         FtnNode {
@@ -377,6 +389,29 @@ mod tests {
         assert_eq!(node.obox_flvr, b'f');
         assert_eq!(node.recheck, RESOLVE_TTL);
         assert_eq!(node.listed, NL_UNLISTED);
+    }
+
+    #[test]
+    fn node_modes() {
+        let mut table = NodeTable::new();
+        let spec = NodeSpec {
+            nr_flag: Some(NR_ON),
+            nd_flag: Some(ND_ON),
+            ..NodeSpec::default()
+        };
+        let index = table.add(&addr("2:5047/100@fidonet"), &spec, 0);
+        let node = &table.nodes()[index];
+        assert!(node.wants_nr());
+        assert!(node.wants_nd());
+    }
+
+    #[test]
+    fn node_modes_default_off() {
+        let mut table = NodeTable::new();
+        let index = table.add(&addr("2:5047/100@fidonet"), &NodeSpec::default(), 0);
+        let node = &table.nodes()[index];
+        assert!(!node.wants_nr());
+        assert!(!node.wants_nd());
     }
 
     #[test]

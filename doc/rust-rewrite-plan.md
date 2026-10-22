@@ -545,7 +545,11 @@ Progress:
   session when the answerer does not hold the AKA that the caller calls
   (`remote has no such AKA`), so the recording of the answerer must hold the
   address of the caller. (done)
-- The NR mode and the ND mode are open. The steps are in the section
+- The NR mode and the ND mode are open. Step 1 is done: the parser of
+  `binkd-config` holds the `-nr` and `-nd` node options, the `-nd` option
+  implies `-nr`, the `-d` dump prints the two options, and the session settings
+  hold the `nr` and `nd` fields. The corpus pins the parse and the dump
+  (`full.conf`, `reload_node.changed.conf`). The steps are in the section
   below.
 
 The NR mode and the ND mode:
@@ -555,7 +559,7 @@ plan keeps the steps in this order:
 
 1. `binkd-config` holds the `-nr` and `-nd` node options and the `nr` and
    `nd` fields of the session settings. The `-nd` option implies `-nr`. The
-   `-d` dump prints the two options.
+   `-d` dump prints the two options. (done)
 2. `binkd-proto::session` holds the flags, the `OPT` negotiation, the
    `M_FILE "name size time -1"` announcement, the `M_GET` and `M_SKIP`
    handlers, the `sent_fls` list, and the `GET_FILE_balance` counter.

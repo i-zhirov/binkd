@@ -72,6 +72,8 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         zrules: Vec::new(),
         methods: binkd_proto::Methods::none(),
         crypt: false,
+        nr: false,
+        nd: false,
     }
 }
 

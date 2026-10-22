@@ -45,6 +45,8 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         }],
         methods,
         crypt: true,
+        nr: false,
+        nd: false,
     }
 }
 
@@ -359,4 +361,46 @@ async fn session_without_crypt_without_a_password() {
     let server = server.unwrap();
     assert!(!client.crypt);
     assert!(!server.crypt);
+}
+
+/// The settings carry the NR and the ND modes of the node.
+///
+/// The negotiation of the modes arrives in the next step; the test pins that the
+/// session holds the fields and runs with them.
+#[tokio::test]
+async fn session_with_nr_nd() {
+    let client_dir = temp_dir("client-nr");
+    let server_dir = temp_dir("server-nr");
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let mut client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    client_config.nr = true;
+    client_config.nd = true;
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "");
+    server_config.nr = true;
+    server_config.nd = true;
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    assert!(server.is_ok(), "{server:?}");
 }

@@ -56,6 +56,14 @@ pub struct SessionConfig {
     /// Crypt the traffic of the session, the port of `no_crypt`. The session
     /// crypts only when both sides request it.
     pub crypt: bool,
+    /// We ask for the NR mode, the port of `to->NR_flag == NR_ON` and of
+    /// `WANT_NR` of `protocol.c`. The `-nr` and `-nd` options of the node
+    /// set it.
+    pub nr: bool,
+    /// We ask for the ND mode, the port of `to->ND_flag == ND_ON` and of
+    /// `THEY_ND` of `protocol.c`. The `-nd` option of the node sets it,
+    /// and the option implies `nr`.
+    pub nd: bool,
 }
 
 /// A file to send.
