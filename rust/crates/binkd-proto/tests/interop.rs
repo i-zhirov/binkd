@@ -716,14 +716,16 @@ fn first_divergence(ours: &[String], theirs: &[String], what: &str) {
 /// The C binary logs its frames at `loglevel 10`, and the port records the bytes
 /// of its transport. The parser keeps the frames of the process of the session,
 /// because the server of the C code forks and both processes write the banner.
-#[tokio::test]
-async fn frame_sequences_match() {
-    let Some(_) = c_binary() else {
-        eprintln!("skip: set BINKD_C to the path of the C binary");
-        return;
-    };
-
-    let dir = temp_dir("frames");
+async fn frames_match(
+    name: &str,
+    methods: Methods,
+    crypt: bool,
+    nr: bool,
+    nd: bool,
+    extra: &str,
+    flags: &str,
+) {
+    let dir = temp_dir(name);
     let out = dir.join("out");
     std::fs::create_dir_all(&out).unwrap();
     let packet = out.join("13b7000d.pkt");
@@ -731,10 +733,12 @@ async fn frame_sequences_match() {
     std::fs::write(&packet, &content).unwrap();
 
     let port = free_port();
-    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *", "");
+    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", extra, flags);
     assert!(wait_for_port(port).await, "the C server did not start");
 
-    let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::all(), false);
+    let mut config = session_config(&dir, "2:5047/13@fidonet", "secret", methods, crypt);
+    config.nr = nr;
+    config.nd = nd;
     let files = vec![SendFile {
         netname: "13b7000d.pkt".to_string(),
         path: Some(packet),
@@ -750,14 +754,14 @@ async fn frame_sequences_match() {
         &config,
         &files,
         &mut |_| Ok(()),
-        Duration::from_secs(20),
+        Duration::from_secs(60),
     )
     .await;
 
     result.expect("the Rust session failed");
     // The C binary writes its log after the session, so wait for the last frame.
     let mut log = String::new();
-    for _ in 0..50 {
+    for _ in 0..150 {
         tokio::time::sleep(Duration::from_millis(100)).await;
         log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
         if c_frames_received(&log).last().is_some() && c_frames_sent(&log).last().is_some() {
@@ -768,6 +772,16 @@ async fn frame_sequences_match() {
     let _ = server.wait();
 
     let recording = recorder.into_recording();
+
+    // The port records the bytes below the crypt layer, so the frames of a crypted
+    // session cannot be read from the recording: the C code logs the frame at the
+    // queue, before the encryption, and the port records the encrypted bytes. The
+    // session itself, the file transfer, is the check of the crypt mode here; the
+    // replay test covers its bytes.
+    if crypt {
+        eprintln!("skip the frames of the crypted session");
+        return;
+    }
 
     // The frames that the port sent are the frames that the C server received.
     first_divergence(
@@ -781,4 +795,118 @@ async fn frame_sequences_match() {
         &c_frames_sent(&log),
         "the C server sent",
     );
+}
+
+/// The frames of the plain session match.
+#[tokio::test]
+async fn frame_sequences_match() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+    frames_match(
+        "frames",
+        Methods::all(),
+        false,
+        false,
+        false,
+        "zallow *",
+        "",
+    )
+    .await;
+}
+
+/// The frames of a session with zlib compression match.
+#[tokio::test]
+async fn frame_sequences_match_gz() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+    frames_match(
+        "frames-gz",
+        Methods::of(Method::Gz),
+        false,
+        false,
+        false,
+        "zallow *",
+        "",
+    )
+    .await;
+}
+
+/// The frames of a session with bzip2 compression match.
+#[tokio::test]
+async fn frame_sequences_match_bz2() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+    frames_match(
+        "frames-bz2",
+        Methods::all(),
+        false,
+        false,
+        false,
+        "zallow *",
+        "",
+    )
+    .await;
+}
+
+/// The frames of a session with the crypt mode match.
+#[tokio::test]
+async fn frame_sequences_match_crypt() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+    frames_match(
+        "frames-crypt",
+        Methods::all(),
+        true,
+        false,
+        false,
+        "zallow *",
+        "",
+    )
+    .await;
+}
+
+/// The frames of a session with the NR mode match.
+#[tokio::test]
+async fn frame_sequences_match_nr() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+    frames_match(
+        "frames-nr",
+        Methods::all(),
+        false,
+        true,
+        false,
+        "zallow *",
+        "-nr",
+    )
+    .await;
+}
+
+/// The frames of a session with the ND mode match.
+#[tokio::test]
+async fn frame_sequences_match_nd() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+    frames_match(
+        "frames-nd",
+        Methods::all(),
+        false,
+        true,
+        true,
+        "zallow *",
+        "-nd",
+    )
+    .await;
 }
