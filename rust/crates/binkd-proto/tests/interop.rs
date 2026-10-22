@@ -18,9 +18,7 @@ use std::process::{Child, Command};
 use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
-use binkd_proto::{
-    run, Frame, Method, Methods, Recorder, Report, Role, SendFile, SessionConfig, ZRule,
-};
+use binkd_proto::{run, Method, Methods, Report, Role, SendFile, SessionConfig, ZRule};
 use tokio::net::TcpStream;
 
 /// The number of the bytes of a file that the tests send.
@@ -571,58 +569,6 @@ fn released(path: &Path) -> bool {
     path.is_file()
 }
 
-/// Returns the frames of the bytes of a direction, in the stable form.
-///
-/// The arguments that differ between two runs, the time, the challenge, and the
-/// name of a file, are not part of the form.
-async fn frames(bytes: &[u8]) -> Vec<String> {
-    let mut cursor = std::io::Cursor::new(bytes);
-    let mut out = Vec::new();
-    while cursor.position() < bytes.len() as u64 {
-        let Ok(frame) = binkd_proto::read_frame(&mut cursor).await else {
-            break;
-        };
-        if let Some(name) = frame_name(&frame) {
-            out.push(name);
-        }
-    }
-    out
-}
-
-/// Returns the stable name of a frame, or `None` for a frame that differs
-/// between two runs.
-fn frame_name(frame: &Frame) -> Option<String> {
-    match frame {
-        Frame::Data(data) => Some(format!("DATA {}", data.len())),
-        Frame::Command(command, argument) => {
-            use binkd_proto::Command;
-            let name = match command {
-                Command::Nul => "NUL",
-                Command::Adr => "ADR",
-                Command::Pwd => "PWD",
-                Command::File => "FILE",
-                Command::Ok => "OK",
-                Command::Eob => "EOB",
-                Command::Got => "GOT",
-                Command::Err => "ERR",
-                Command::Bsy => "BSY",
-                Command::Get => "GET",
-                Command::Skip => "SKIP",
-            };
-            if *command != Command::Nul {
-                return Some(name.to_string());
-            }
-            let text = String::from_utf8_lossy(argument);
-            let kind = text.split_whitespace().next().unwrap_or_default();
-            if matches!(kind, "SYS" | "ZYZ" | "LOC" | "NDL" | "VER" | "OPT") {
-                Some(format!("{name} {kind}"))
-            } else {
-                None
-            }
-        }
-    }
-}
-
 /// Returns the process id of a line of the log of the C binary.
 fn log_pid(line: &str) -> Option<&str> {
     let start = line.find('[')? + 1;
@@ -725,7 +671,7 @@ async fn frames_match(
     nd: bool,
     extra: &str,
     flags: &str,
-) {
+) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
     let dir = temp_dir(name);
     let out = dir.join("out");
     std::fs::create_dir_all(&out).unwrap();
@@ -740,6 +686,8 @@ async fn frames_match(
     let mut config = session_config(&dir, "2:5047/13@fidonet", "secret", methods, crypt);
     config.nr = nr;
     config.nd = nd;
+    // The port logs the frames of the session, before the encryption.
+    config.trace = true;
     let files = vec![SendFile {
         netname: "13b7000d.pkt".to_string(),
         path: Some(packet),
@@ -748,9 +696,8 @@ async fn frames_match(
     }];
 
     let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
-    let mut recorder = Recorder::new(stream, Role::Client);
     let result = run(
-        &mut recorder,
+        stream,
         Role::Client,
         &config,
         &files,
@@ -759,7 +706,7 @@ async fn frames_match(
     )
     .await;
 
-    result.expect("the Rust session failed");
+    let report = result.expect("the Rust session failed");
     // The C binary writes its log after the session, so wait for the last frame.
     let mut log = String::new();
     for _ in 0..150 {
@@ -772,30 +719,33 @@ async fn frames_match(
     let _ = server.kill();
     let _ = server.wait();
 
-    let recording = recorder.into_recording();
-
-    // The port records the bytes below the crypt layer, so the frames of a crypted
-    // session cannot be read from the recording: the C code logs the frame at the
-    // queue, before the encryption, and the port records the encrypted bytes. The
-    // session itself, the file transfer, is the check of the crypt mode here; the
-    // replay test covers its bytes.
-    if crypt {
-        eprintln!("skip the frames of the crypted session");
-        return;
-    }
+    let port_sent: Vec<String> = report
+        .frames
+        .iter()
+        .filter(|frame| frame.sent)
+        .map(|frame| frame.name.clone())
+        .collect();
+    let port_received: Vec<String> = report
+        .frames
+        .iter()
+        .filter(|frame| !frame.sent)
+        .map(|frame| frame.name.clone())
+        .collect();
 
     // The frames that the port sent are the frames that the C server received.
     first_divergence(
-        &frames(&recording.sent).await,
+        &port_sent,
         &c_frames_received(&log),
         "the C server received",
     );
     // The frames that the C server sent are the frames that the port received.
-    first_divergence(
-        &frames(&recording.received).await,
-        &c_frames_sent(&log),
-        "the C server sent",
-    );
+    first_divergence(&port_received, &c_frames_sent(&log), "the C server sent");
+    (
+        port_sent,
+        port_received,
+        c_frames_sent(&log),
+        c_frames_received(&log),
+    )
 }
 
 /// The frames of the plain session match.
@@ -805,7 +755,7 @@ async fn frame_sequences_match() {
         eprintln!("skip: set BINKD_C to the path of the C binary");
         return;
     };
-    frames_match(
+    let _ = frames_match(
         "frames",
         Methods::all(),
         false,
@@ -824,7 +774,7 @@ async fn frame_sequences_match_gz() {
         eprintln!("skip: set BINKD_C to the path of the C binary");
         return;
     };
-    frames_match(
+    let _ = frames_match(
         "frames-gz",
         Methods::of(Method::Gz),
         false,
@@ -843,7 +793,7 @@ async fn frame_sequences_match_bz2() {
         eprintln!("skip: set BINKD_C to the path of the C binary");
         return;
     };
-    frames_match(
+    let _ = frames_match(
         "frames-bz2",
         Methods::all(),
         false,
@@ -862,7 +812,7 @@ async fn frame_sequences_match_crypt() {
         eprintln!("skip: set BINKD_C to the path of the C binary");
         return;
     };
-    frames_match(
+    let _ = frames_match(
         "frames-crypt",
         Methods::all(),
         true,
@@ -881,7 +831,7 @@ async fn frame_sequences_match_nr() {
         eprintln!("skip: set BINKD_C to the path of the C binary");
         return;
     };
-    frames_match(
+    let _ = frames_match(
         "frames-nr",
         Methods::all(),
         false,
@@ -900,7 +850,7 @@ async fn frame_sequences_match_nd() {
         eprintln!("skip: set BINKD_C to the path of the C binary");
         return;
     };
-    frames_match(
+    let _ = frames_match(
         "frames-nd",
         Methods::all(),
         false,
@@ -910,4 +860,46 @@ async fn frame_sequences_match_nd() {
         "-nd",
     )
     .await;
+}
+
+/// A perturbed frame of the crypted session fails the diff, so the test of the
+/// frames catches a divergence and does not pass on two equal sequences.
+#[tokio::test]
+async fn frame_sequences_match_catches_a_perturbation() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+    let (port_sent, port_received, c_sent, c_received) = frames_match(
+        "frames-perturbed",
+        Methods::all(),
+        true,
+        false,
+        false,
+        "zallow *",
+        "",
+    )
+    .await;
+
+    // The sequences match before the perturbation.
+    first_divergence(&port_sent, &c_received, "the C server received");
+    first_divergence(&port_received, &c_sent, "the C server sent");
+
+    // One frame of the port is perturbed, and the diff must fail.
+    let mut perturbed = port_sent.clone();
+    let index = perturbed.len() / 2;
+    let original = perturbed[index].clone();
+    perturbed[index] = if original == "OK" {
+        "EOB".to_string()
+    } else {
+        "OK".to_string()
+    };
+    assert_ne!(perturbed, port_sent);
+    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        first_divergence(&perturbed, &c_received, "the C server received");
+    }));
+    assert!(
+        caught.is_err(),
+        "the diff did not catch the perturbed frame {original:?} at {index}"
+    );
 }

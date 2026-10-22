@@ -351,6 +351,11 @@ where
             // The port of `recv_block()`: the batch counts the messages.
             self.msgs_in_batch += 1;
         }
+        if self.config.trace {
+            if let Some(name) = frame.log_name() {
+                self.report.frames.push(FrameRecord { sent: false, name });
+            }
+        }
         Ok(frame)
     }
 
