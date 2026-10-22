@@ -8,4 +8,5 @@ pub mod flo;
 pub mod fsutil;
 pub mod inbound;
 pub mod queue;
+pub mod status;
 pub mod tryfile;

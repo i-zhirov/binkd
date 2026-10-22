@@ -545,7 +545,15 @@ Progress:
   session when the answerer does not hold the AKA that the caller calls
   (`remote has no such AKA`), so the recording of the answerer must hold the
   address of the caller. (done)
-- The NR mode and the ND mode are open. Step 3 is done: an ND sender
+- The NR mode and the ND mode are open. Step 4 is done: the spool holds the
+  link status files of the ND mode, `binkd-spool::status`, the port of
+  `ND_set_status()`: `status_path()` gives `<outbound>/<address>.stc`,
+  `set_status()` writes the name, the size, and the time of the file that the
+  peer received and removes the file for an empty status, and the outbound
+  scanner of `binkd-spool::queue` already reads the file as the queue type
+  `s` with the flavour `h`. The session announces such an entry with the
+  offset equal to the size, and it saves the new status from `M_GOT`; that
+  part is still open. Step 3 is done: an ND sender
   waits for the acknowledgement of a file before it starts the next one
   (`wait_for_got()`), and an ND receiver holds a completed file in
   `in_complete` and writes it at the next `M_FILE` or at the end of the
@@ -579,7 +587,8 @@ plan keeps the steps in this order:
    sender and the deferred rename of the ND receiver, the port of
    `in_complete`. (done)
 4. `binkd-spool` holds the `.stc` status files and the queue type `s`
-   of the outbound scanner.
+   of the outbound scanner. (done; the announcement of the session and the
+   save of the status from `M_GOT` are still open)
 5. The replay test covers the NR mode, the ND mode, and the multi-batch
    mode in both directions. The interop matrix covers the two modes
    against the C binary.
