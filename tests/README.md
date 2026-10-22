@@ -239,9 +239,11 @@ session: `s` for the bytes that the recorded side sent and `r` for the bytes tha
 it received. The test replays the bytes of the peer into a fresh session and
 compares every byte that our side sends with the recording.
 
-The recordings come from the Rust session itself. The test
-`write_the_recordings` writes them and carries the `#[ignore]` attribute: run it
-after a change of the banner or of a frame, then commit the files.
+The recordings come from the Rust session itself, one for each role, and each
+covers the full batch: the banner, the login, the file of the caller, and the
+`M_GOT` frame of the answerer. The test `write_the_recordings` writes them and
+carries the `#[ignore]` attribute: run it after a change of the banner, of a frame,
+or of the flow of the batch, then commit the files.
 
 The replay of a live session of the C binary runs with `BINKD_C`: the test records
 the C client that polls the Rust server, then replays the bytes. The answerer of

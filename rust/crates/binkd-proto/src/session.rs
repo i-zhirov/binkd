@@ -184,6 +184,9 @@ struct Session<S> {
     crypt: Option<Crypt>,
     /// We sent the end of the batch.
     sent_eob: bool,
+    /// The files that we sent and the peer did not acknowledge yet, the port of
+    /// `sent_fls`.
+    sent_awaiting_got: usize,
     /// The peer sent the end of the batch.
     peer_eob: bool,
 }
@@ -207,6 +210,7 @@ where
             md5: false,
             crypt: None,
             sent_eob: false,
+            sent_awaiting_got: 0,
             peer_eob: false,
         }
     }
@@ -491,6 +495,7 @@ where
             self.send_file(file, method).await?;
             self.report.files_sent += 1;
             self.report.bytes_sent += file.size;
+            self.sent_awaiting_got += 1;
         }
         // The peer may close the transport after its own end of the batch.
         let _ = self.send_text(Command::Eob, "").await;
@@ -598,7 +603,9 @@ where
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
         let mut current: Option<Incoming> = None;
-        while !self.peer_eob {
+        // The C code ends the batch when the peer sent its end and every file
+        // that we sent is acknowledged.
+        while !self.peer_eob || self.sent_awaiting_got > 0 {
             let frame = self.read(timeout).await?;
             match frame {
                 Frame::Command(Command::File, argument) => {
@@ -705,7 +712,10 @@ where
                     // The C code reads an option of the peer at any time.
                     self.handle_nul(&argument);
                 }
-                Frame::Command(Command::Got, _) => {}
+                Frame::Command(Command::Got, _) => {
+                    // The port of `GOT()`: the peer acknowledged a file.
+                    self.sent_awaiting_got = self.sent_awaiting_got.saturating_sub(1);
+                }
                 Frame::Command(Command::Ok, _) => {
                     // The login of the peer completes with our `M_OK`.
                 }

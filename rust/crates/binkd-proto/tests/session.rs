@@ -191,10 +191,10 @@ async fn session_with_files() {
 }
 
 /// A session that compresses a file in each direction.
-async fn session_with_compression(methods: Methods) -> (Report, Report) {
-    let client_dir = temp_dir("client-gz");
-    let server_dir = temp_dir("server-gz");
-    let out = temp_dir("out-gz");
+async fn session_with_compression(name: &str, methods: Methods) -> (Report, Report) {
+    let client_dir = temp_dir(&format!("client-{name}"));
+    let server_dir = temp_dir(&format!("server-{name}"));
+    let out = temp_dir(&format!("out-{name}"));
     let client_out = out.join("client");
     let server_out = out.join("server");
     std::fs::create_dir_all(&client_out).unwrap();
@@ -235,7 +235,7 @@ async fn session_with_compression(methods: Methods) -> (Report, Report) {
 /// Both sides compress the files of 5000 bytes, above `zminsize`.
 #[tokio::test]
 async fn session_with_gz_compression() {
-    let (client, server) = session_with_compression(Methods::of(Method::Gz)).await;
+    let (client, server) = session_with_compression("gz", Methods::of(Method::Gz)).await;
     assert_eq!(client.files_sent, 1);
     assert_eq!(client.files_received, 1);
     assert_eq!(server.files_sent, 1);
@@ -247,7 +247,7 @@ async fn session_with_gz_compression() {
 /// bzip2 is preferred over zlib when both sides hold both.
 #[tokio::test]
 async fn session_with_bz2_compression() {
-    let (_, server) = session_with_compression(Methods::all()).await;
+    let (_, server) = session_with_compression("bz2", Methods::all()).await;
     assert_eq!(server.received[0].method, Some(Method::Bz2));
     assert_eq!(server.received[0].size, 5000);
 }

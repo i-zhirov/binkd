@@ -137,7 +137,7 @@ async fn replays_the_recorded_sessions() {
         );
         match recording.role {
             Role::Client => assert_eq!(report.files_sent, 1, "{}", path.display()),
-            Role::Server => assert_eq!(report.files_received, 0, "{}", path.display()),
+            Role::Server => assert_eq!(report.files_received, 1, "{}", path.display()),
         }
         found += 1;
     }
@@ -247,10 +247,10 @@ async fn write_the_recordings() {
             Role::Client => vec![make_file(&dir)],
             Role::Server => Vec::new(),
         };
-        // The file transfer of the answerer is not replayable yet: the recorded
-        // session of the answerer holds the end of the batch without the `M_GOT`
-        // frame of the file. The caller carries the transfer.
-        let peer_files: Vec<SendFile> = Vec::new();
+        let peer_files = match role {
+            Role::Client => Vec::new(),
+            Role::Server => vec![make_file(&dir)],
+        };
         let (left, right) = tokio::io::duplex(1 << 20);
         let (mut recorder, peer) = match role {
             Role::Client => (Recorder::new(left, role), right),

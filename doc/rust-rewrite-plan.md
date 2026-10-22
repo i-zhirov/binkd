@@ -522,6 +522,10 @@ Progress:
 - The interop test covers the compression in both directions: the Rust client
   sends a zlib stream and a bzip2 stream to the C server, and the C client sends
   a zlib stream and a bzip2 stream to the Rust server. (done)
+- The session waits for the acknowledgement of every file that it sent, the port of
+  the `sent_fls` condition of the end of `protocol()`. Without the wait a caller
+  closes the transport before the answerer sends the `M_GOT` frame, so the recording
+  of the answerer lost the frame. (done)
 - The session holds the `CRYPT` mode of `protocol.c`: the challenge of CRAM-MD5
   that the answerer sends, the digest that the caller answers, the `OPT CRYPT`
   of both sides, and the `YES_CRYPT` state of `complete_login()`. The port crypts
