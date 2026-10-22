@@ -647,12 +647,13 @@ Exit criteria:
   the login at that frame, so the `OPT` frame counts before the reset. The port now
   follows the same flow. A trace of the frames of a session is available with the
   `BINKD_TRACE` variable and with `loglevel 10` of the C binary.
-- The interop test `frame_sequences_match` compares the frame sequence that the
-  port sends with the frame sequence that the C binary receives, in the order of
-  the wire, so a divergence of the flow fails the suite. Only that direction is
-  compared: the C code writes the frame of the same message at the queue and again
-  at the write, so its own log holds every sent frame twice, and the order of the
-  two copies is open.
+- The interop test `frame_sequences_match` compares the frame sequences of the
+  two implementations in both directions, in the order of the wire, so a divergence
+  of the flow fails the suite. The parser keeps the frames of the process of the
+  session of the C log: the server of the C code forks a process for the session
+  after it queues the banner, so the parent and the child both write the frames of
+  the banner to the log. The frames of the process that reads the session, the port
+  of `recv_block()`, are the frames of the session.
 
 ### Phase 5: network, managers, SRIF, binary log
 

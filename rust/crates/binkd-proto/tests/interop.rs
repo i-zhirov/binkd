@@ -622,15 +622,29 @@ fn frame_name(frame: &Frame) -> Option<String> {
     }
 }
 
+/// Returns the process id of a line of the log of the C binary.
+fn log_pid(line: &str) -> Option<&str> {
+    let start = line.find('[')? + 1;
+    let end = line[start..].find(']')? + start;
+    Some(&line[start..end])
+}
+
 /// Returns the frames that the C binary sent, in the order of its log.
 ///
-/// The C code writes the frame of the same message at the queue and again at the
-/// write, so the sequence holds each frame twice. The function is not used by the
-/// test of the diff yet.
-#[allow(dead_code)]
+/// The server of the C code forks a process for the session after it queues the
+/// banner, so the parent and the child both hold the queue and both write the
+/// frames of the banner to the log. The parser keeps the frames of the process
+/// that reads the session, the port of `recv_block()`.
 fn c_frames_sent(log: &str) -> Vec<String> {
+    let session = log
+        .lines()
+        .find(|line| line.contains("recvd hdr:"))
+        .and_then(log_pid);
     let mut out = Vec::new();
     for line in log.lines() {
+        if session.is_some() && log_pid(line) != session {
+            continue;
+        }
         if let Some(rest) = line.split("send message ").nth(1) {
             let mut words = rest.split_whitespace();
             let name = words.next().unwrap_or_default();
@@ -696,14 +710,12 @@ fn first_divergence(ours: &[String], theirs: &[String], what: &str) {
 }
 
 /// The frame sequence that the port sends matches the frame sequence that the C
-/// binary receives, so a divergence of the flow of the port fails the suite.
+/// binary receives, and the other way around, so a divergence of the flow of the
+/// port fails the suite.
 ///
 /// The C binary logs its frames at `loglevel 10`, and the port records the bytes
-/// of its transport. Only the received direction of the C log is compared: the C code
-/// writes the frame of the same message at the queue and again at the write, so its
-/// own log holds every sent frame twice, and the order of the two copies needs the
-/// study. The frames that the C binary sends are compared by the replay test of a
-/// live session and by the interop test of each mode.
+/// of its transport. The parser keeps the frames of the process of the session,
+/// because the server of the C code forks and both processes write the banner.
 #[tokio::test]
 async fn frame_sequences_match() {
     let Some(_) = c_binary() else {
@@ -748,7 +760,7 @@ async fn frame_sequences_match() {
     for _ in 0..50 {
         tokio::time::sleep(Duration::from_millis(100)).await;
         log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
-        if c_frames_received(&log).last().is_some() {
+        if c_frames_received(&log).last().is_some() && c_frames_sent(&log).last().is_some() {
             break;
         }
     }
@@ -762,5 +774,11 @@ async fn frame_sequences_match() {
         &frames(&recording.sent).await,
         &c_frames_received(&log),
         "the C server received",
+    );
+    // The frames that the C server sent are the frames that the port received.
+    first_divergence(
+        &frames(&recording.received).await,
+        &c_frames_sent(&log),
+        "the C server sent",
     );
 }
