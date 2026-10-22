@@ -13,4 +13,4 @@ pub mod session;
 pub use compress::{Compressor, Decompressor, Method, Methods, ZRule};
 pub use frame::{decode, read_frame, write_frame, Command, Frame};
 pub use record::{Direction, Recorder, Recording, Replay};
-pub use session::{run, Error, ReceivedFile, Report, Role, SendFile, SessionConfig};
+pub use session::{run, Error, FrameRecord, ReceivedFile, Report, Role, SendFile, SessionConfig};

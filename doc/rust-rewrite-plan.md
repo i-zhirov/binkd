@@ -650,10 +650,11 @@ Exit criteria:
 - The interop test `frame_sequences_match` compares the frame sequences of the
   two implementations in both directions, in the order of the wire, so a divergence
   of the flow fails the suite. The test runs the plain session and the sessions of
-  zlib compression, bzip2 compression, the NR mode, and the ND mode. The crypted
-  session is not compared: the port records the bytes below the crypt layer, so the
-  frames of the recording cannot be read, and the replay test covers the bytes of
-  that mode. The parser keeps the frames of the process of the
+  zlib compression, bzip2 compression, the crypt mode, the NR mode, and the ND
+  mode. The session logs the frames itself, before the encryption on the send path
+  and after the decryption on the receive path, as the C code logs them, so the
+  log of a crypted session is comparable. The settings hold the log in `trace`,
+  and `Report.frames` carries it. The parser keeps the frames of the process of the
   session of the C log: the server of the C code forks a process for the session
   after it queues the banner, so the parent and the child both write the frames of
   the banner to the log. The frames of the process that reads the session, the port

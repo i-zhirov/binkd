@@ -379,6 +379,7 @@ mod tests {
             nr: false,
             nd: false,
             domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
+            trace: false,
         };
         let (left, right) = tokio::io::duplex(1 << 16);
         let mut recorder = Recorder::new(left, Role::Client);

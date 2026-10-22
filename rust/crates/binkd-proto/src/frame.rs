@@ -75,6 +75,23 @@ impl Command {
         }
     }
 
+    /// Returns the short name of the command, as the C code logs it.
+    pub fn short_name(self) -> &'static str {
+        match self {
+            Command::Nul => "NUL",
+            Command::Adr => "ADR",
+            Command::Pwd => "PWD",
+            Command::File => "FILE",
+            Command::Ok => "OK",
+            Command::Eob => "EOB",
+            Command::Got => "GOT",
+            Command::Err => "ERR",
+            Command::Bsy => "BSY",
+            Command::Get => "GET",
+            Command::Skip => "SKIP",
+        }
+    }
+
     /// Returns the name of the command of the C table.
     pub fn name(self) -> &'static str {
         match self {
@@ -135,6 +152,31 @@ impl Frame {
             }
         }
         out
+    }
+
+    /// Returns the stable name of the frame, for the log of a session.
+    ///
+    /// The name holds the kind of the frame and, for a banner frame, the first
+    /// word of the argument. The arguments that differ between two runs, the time,
+    /// the challenge of CRAM-MD5, the password, and the name of a file, are not
+    /// part of the name.
+    pub fn log_name(&self) -> Option<String> {
+        match self {
+            Frame::Data(data) => Some(format!("DATA {}", data.len())),
+            Frame::Command(command, argument) => {
+                let name = command.short_name();
+                if *command != Command::Nul {
+                    return Some(name.to_string());
+                }
+                let text = String::from_utf8_lossy(argument);
+                let kind = text.split_whitespace().next().unwrap_or_default();
+                if matches!(kind, "SYS" | "ZYZ" | "LOC" | "NDL" | "VER" | "OPT") {
+                    Some(format!("{name} {kind}"))
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     /// Returns the size of the payload of a header.

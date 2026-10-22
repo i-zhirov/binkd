@@ -66,6 +66,10 @@ pub struct SessionConfig {
     pub nd: bool,
     /// The domains of the spool, for the link status files of the ND mode.
     pub domains: binkd_ftn::domain::DomainTable,
+    /// The session holds the frames of its log, the port of the frame log of the
+    /// C code at `loglevel 10`. The log of a crypted session holds the frames
+    /// before the encryption, as the C code logs them.
+    pub trace: bool,
 }
 
 /// A file to send.
@@ -112,8 +116,14 @@ pub struct Report {
     pub peer_addresses: Vec<FtnAddr>,
     /// The files that we received.
     pub received: Vec<ReceivedFile>,
+    /// The frames of the session, when the settings hold the trace.
+    pub frames: Vec<FrameRecord>,
     /// The session crypts its traffic, the port of `YES_CRYPT`.
     pub crypt: bool,
+    /// The session holds the frames of its log, the port of the frame log of the
+    /// C code at `loglevel 10`. The log of a crypted session holds the frames
+    /// before the encryption, as the C code logs them.
+    pub trace: bool,
 }
 
 /// The NR mode of a session, the port of `NR_flag` of `protoco2.h`.
@@ -136,6 +146,15 @@ pub struct NdMode {
     pub they: bool,
     /// `CAN_NDA`: the peer holds the asymmetric mode.
     pub can_nda: bool,
+}
+
+/// One frame of the log of a session.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FrameRecord {
+    /// The frame left our side.
+    pub sent: bool,
+    /// The stable name of the frame.
+    pub name: String,
 }
 
 /// A session error.
@@ -236,8 +255,6 @@ struct Session<S> {
     /// The command frames of the batch, the port of `msgs_in_batch`. The C code
     /// starts the next batch when the count passes the two `M_EOB` frames.
     msgs_in_batch: usize,
-    /// Print every frame of the session, the test mode of the port.
-    trace: bool,
     /// The peer sent the end of the batch.
     peer_eob: bool,
 }
@@ -276,7 +293,6 @@ where
             get_file_balance: 0,
             in_complete: None,
             msgs_in_batch: 0,
-            trace: std::env::var("BINKD_TRACE").is_ok(),
             peer_eob: false,
         }
     }
@@ -290,12 +306,14 @@ where
             // The port of `msg_send2()`: the batch counts the messages.
             self.msgs_in_batch += 1;
         }
+        if self.config.trace {
+            if let Some(name) = frame.log_name() {
+                self.report.frames.push(FrameRecord { sent: true, name });
+            }
+        }
         let mut data = frame.encode();
         if let Some(crypt) = &mut self.crypt {
             binkd_ftn::crypt::encrypt_buf(&mut data, &mut crypt.keys_out);
-        }
-        if self.trace {
-            eprintln!("TRACE send {frame:?}");
         }
         self.stream
             .write_all(&data)
@@ -329,9 +347,6 @@ where
             binkd_ftn::crypt::decrypt_buf(&mut payload, &mut crypt.keys_in);
         }
         let frame = frame::decode(raw, payload).map_err(|e| Error::Io(e.to_string()))?;
-        if self.trace {
-            eprintln!("TRACE recv {frame:?}");
-        }
         if matches!(frame, Frame::Command(..)) {
             // The port of `recv_block()`: the batch counts the messages.
             self.msgs_in_batch += 1;
