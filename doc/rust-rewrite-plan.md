@@ -522,7 +522,14 @@ Progress:
 - The interop test covers the compression in both directions: the Rust client
   sends a zlib stream and a bzip2 stream to the C server, and the C client sends
   a zlib stream and a bzip2 stream to the Rust server. (done)
-- The `CRYPT` mode, the recorded sessions, and the replay test are open.
+- The session holds the `CRYPT` mode of `protocol.c`: the challenge of CRAM-MD5
+  that the answerer sends, the digest that the caller answers, the `OPT CRYPT`
+  of both sides, and the `YES_CRYPT` state of `complete_login()`. The port crypts
+  every frame, the header included, with the ZipCrypto keys of `crypt.c`. (done)
+- The interop test covers the mode in both directions: the Rust client crypts a
+  session for the C server, and the C client crypts a session for the Rust server.
+  The log of the C binary reports `session in CRYPT mode` in both cases. (done)
+- The recorded sessions and the replay test are open.
 
 Exit criteria:
 

@@ -44,6 +44,7 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
             allow: true,
         }],
         methods,
+        crypt: true,
     }
 }
 
@@ -314,4 +315,48 @@ async fn session_without_compression_of_a_denied_file() {
     let server = server.unwrap();
     assert_eq!(server.received[0].method, None);
     assert_eq!(server.received[0].size, 5000);
+}
+
+/// Both sides with a password crypt the traffic of the session.
+#[tokio::test]
+async fn session_with_crypt() {
+    let client_dir = temp_dir("client-crypt");
+    let server_dir = temp_dir("server-crypt");
+    let out = temp_dir("out-crypt");
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+
+    let client_files = vec![make_file(&client_out, "13b7000d.pkt", 300)];
+    let (client, server) = session(
+        &client_dir,
+        &server_dir,
+        "secret",
+        "secret",
+        client_files,
+        Vec::new(),
+    )
+    .await;
+    let client = client.unwrap();
+    let server = server.unwrap();
+    // The answerer sent the challenge, so both sides crypted the session.
+    assert!(client.crypt, "the caller did not crypt");
+    assert!(server.crypt, "the answerer did not crypt");
+    assert_eq!(client.files_sent, 1);
+    assert_eq!(server.files_received, 1);
+    assert_eq!(
+        std::fs::read(server_dir.join("13b7000d.pkt")).unwrap(),
+        vec![b'x'; 300]
+    );
+}
+
+/// Without a password the session stays plain, even with `crypt` set.
+#[tokio::test]
+async fn session_without_crypt_without_a_password() {
+    let client_dir = temp_dir("client-nocrypt");
+    let server_dir = temp_dir("server-nocrypt");
+    let (client, server) = session(&client_dir, &server_dir, "", "", Vec::new(), Vec::new()).await;
+    let client = client.unwrap();
+    let server = server.unwrap();
+    assert!(!client.crypt);
+    assert!(!server.crypt);
 }

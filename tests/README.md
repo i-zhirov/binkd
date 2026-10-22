@@ -216,8 +216,8 @@ The matrix of `doc/rust-rewrite-plan.md`:
 
 | Client | Server | State |
 | --- | --- | --- |
-| Rust | C | plain, zlib, and bzip2 |
-| C | Rust | plain, zlib, and bzip2 |
+| Rust | C | plain, zlib, bzip2, and CRYPT |
+| C | Rust | plain, zlib, bzip2, and CRYPT |
 | C | C | the C test suite of the C project |
 | Rust | Rust | `crates/binkd-proto/tests/session.rs` |
 

@@ -9,7 +9,7 @@ use std::io::Read;
 use std::path::PathBuf;
 
 use binkd_ftn::addr::FtnAddr;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::compress::{self, Compressor, Decompressor, Method, Methods, ZRule, BLOCK_SIZE};
 use crate::frame::{self, Command, Frame};
@@ -53,6 +53,9 @@ pub struct SessionConfig {
     pub zrules: Vec<ZRule>,
     /// The compression methods of this side, the port of `z_canrecv`.
     pub methods: Methods,
+    /// Crypt the traffic of the session, the port of `no_crypt`. The session
+    /// crypts only when both sides request it.
+    pub crypt: bool,
 }
 
 /// A file to send.
@@ -98,6 +101,8 @@ pub struct Report {
     pub peer_addresses: Vec<FtnAddr>,
     /// The files that we received.
     pub received: Vec<ReceivedFile>,
+    /// The session crypts its traffic, the port of `YES_CRYPT`.
+    pub crypt: bool,
 }
 
 /// A session error.
@@ -151,6 +156,7 @@ where
     session.handshake(timeout).await?;
     session.send_files(files).await?;
     session.receive_files(receive, timeout).await?;
+    session.report.crypt = session.crypt.is_some();
     Ok(session.report)
 }
 
@@ -168,6 +174,14 @@ struct Session<S> {
     peer_methods: Methods,
     /// The peer advertised `EXTCMD`.
     extcmd: bool,
+    /// We request `CRYPT`, the port of `WE_CRYPT`.
+    we_crypt: bool,
+    /// The peer requested `CRYPT`, the port of `THEY_CRYPT`.
+    they_crypt: bool,
+    /// We authenticated with CRAM-MD5, the port of `MD_flag`.
+    md5: bool,
+    /// The encryption of the session, or `None`, the port of `YES_CRYPT`.
+    crypt: Option<Crypt>,
     /// We sent the end of the batch.
     sent_eob: bool,
     /// The peer sent the end of the batch.
@@ -188,14 +202,30 @@ where
             peer_11: false,
             peer_methods: Methods::none(),
             extcmd: false,
+            we_crypt: config.crypt,
+            they_crypt: false,
+            md5: false,
+            crypt: None,
             sent_eob: false,
             peer_eob: false,
         }
     }
 
     /// Sends a frame.
+    ///
+    /// The port of `msg_send2()`: the whole frame, the header included, is
+    /// encrypted when the session crypts.
     async fn send(&mut self, frame: Frame) -> Result<(), Error> {
-        frame::write_frame(&mut self.stream, &frame)
+        let mut data = frame.encode();
+        if let Some(crypt) = &mut self.crypt {
+            binkd_ftn::crypt::encrypt_buf(&mut data, &mut crypt.keys_out);
+        }
+        self.stream
+            .write_all(&data)
+            .await
+            .map_err(|e| Error::Io(e.to_string()))?;
+        self.stream
+            .flush()
             .await
             .map_err(|e| Error::Io(e.to_string()))
     }
@@ -206,9 +236,32 @@ where
     }
 
     /// Reads a frame.
+    ///
+    /// The port of `recv_block()`: the header and the payload are decrypted
+    /// before the frame is decoded.
     async fn read(&mut self, timeout: std::time::Duration) -> Result<Frame, Error> {
-        match tokio::time::timeout(timeout, frame::read_frame(&mut self.stream)).await {
-            Ok(Ok(frame)) => Ok(frame),
+        let mut header = [0u8; frame::HEADER_SIZE];
+        self.read_exact(&mut header, timeout).await?;
+        if let Some(crypt) = &mut self.crypt {
+            binkd_ftn::crypt::decrypt_buf(&mut header, &mut crypt.keys_in);
+        }
+        let raw = u16::from_be_bytes(header);
+        let mut payload = vec![0u8; Frame::payload_size(raw)];
+        self.read_exact(&mut payload, timeout).await?;
+        if let Some(crypt) = &mut self.crypt {
+            binkd_ftn::crypt::decrypt_buf(&mut payload, &mut crypt.keys_in);
+        }
+        frame::decode(raw, payload).map_err(|e| Error::Io(e.to_string()))
+    }
+
+    /// Reads the bytes of a frame.
+    async fn read_exact(
+        &mut self,
+        buffer: &mut [u8],
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
+        match tokio::time::timeout(timeout, self.stream.read_exact(buffer)).await {
+            Ok(Ok(_)) => Ok(()),
             Ok(Err(e)) => Err(Error::Io(e.to_string())),
             Err(_) => Err(Error::Timeout),
         }
@@ -220,6 +273,17 @@ where
     /// and waits for the password of the caller; a side without a password completes
     /// the login at once. The login is complete when the `M_OK` arrives.
     async fn handshake(&mut self, timeout: std::time::Duration) -> Result<(), Error> {
+        // The answerer sends the challenge of CRAM-MD5 as its first message,
+        // the port of `banner()`.
+        if self.role == Role::Server && self.secure() {
+            let challenge = binkd_ftn::cram::generate_challenge(b"");
+            // The first byte of the challenge is its length.
+            let digest = binkd_ftn::cram::to_string(&challenge[1..]);
+            self.send_text(Command::Nul, &format!("OPT {digest}"))
+                .await?;
+            self.challenge = Some(challenge);
+        }
+
         // The banner of both sides.
         let sysname = self.config.sysname.clone();
         self.send_text(Command::Nul, &format!("SYS {sysname}"))
@@ -236,12 +300,12 @@ where
         let version = self.config.version.clone();
         self.send_text(Command::Nul, &format!("VER {version} binkp/1.1"))
             .await?;
-        // The options of this side, the port of the `OPT` message of
-        // `banner()` and `PWD()` of `protocol.c`.
-        let mut options = vec!["EXTCMD".to_string()];
-        options.extend(self.config.methods.names().iter().map(|n| n.to_string()));
-        self.send_text(Command::Nul, &format!("OPT {}", options.join(" ")))
-            .await?;
+        // The options of the caller, the port of the `OPT` message of
+        // `banner()`. The answerer sends them with the state of the login,
+        // the port of `PWD()`.
+        if self.role == Role::Client {
+            self.send_options().await?;
+        }
         let addresses: Vec<String> = self
             .config
             .addresses
@@ -250,43 +314,50 @@ where
             .collect();
         self.send_text(Command::Adr, &addresses.join(" ")).await?;
 
-        if self.role == Role::Client && !self.config.password.is_empty() {
-            // The caller sends its password after its addresses.
-            let password = self.config.password.clone();
-            self.send_text(Command::Pwd, &password).await?;
-        }
-
         // The frames of the peer up to the login acknowledgement.
         loop {
             match self.read(timeout).await? {
                 Frame::Command(Command::Nul, argument) => self.handle_nul(&argument),
                 Frame::Command(Command::Adr, argument) => {
                     self.report.peer_addresses = parse_addresses(&argument);
-                    if self.role == Role::Server {
-                        let password = self.config.password.clone();
-                        if password.is_empty() {
-                            // No password: the server completes the login now.
-                            self.send_text(Command::Ok, "").await?;
+                    match self.role {
+                        // The caller answers the password request of the
+                        // answerer, the port of `ADR()`.
+                        Role::Client => self.send_password().await?,
+                        // No password: the answerer completes the login now.
+                        Role::Server if self.config.password.is_empty() => {
+                            self.finish_login().await?;
                             return Ok(());
                         }
-                        // The server asks the caller for its password.
-                        self.send_text(Command::Pwd, &password).await?;
+                        Role::Server => {}
                     }
                 }
                 Frame::Command(Command::Pwd, argument) => {
-                    // Both sides answer the password of the other.
+                    // The answerer checks the password of the caller, the port
+                    // of `PWD()`.
                     if !self.check_password(&argument) {
                         let _ = self.send_text(Command::Err, "Incorrect password").await;
                         return Err(Error::BadPassword);
                     }
-                    self.send_text(Command::Ok, "").await?;
+                    // The port of `MD_flag`: the caller authenticated with
+                    // the digest.
+                    self.md5 |= text(&argument).starts_with("CRAM-");
                     if self.role == Role::Server {
+                        self.finish_login().await?;
                         return Ok(());
                     }
                 }
-                Frame::Command(Command::Ok, _) => return Ok(()),
+                Frame::Command(Command::Ok, argument) => {
+                    // The port of `OK()`: the answerer reports the state of
+                    // the session.
+                    if text(&argument).contains("non-secure") {
+                        self.we_crypt = false;
+                    }
+                    self.finish_login().await?;
+                    return Ok(());
+                }
                 Frame::Command(Command::Err, argument) => {
-                    return Err(Error::Peer(text(&argument)));
+                    return Err(peer_error(&argument));
                 }
                 Frame::Command(Command::Bsy, argument) => {
                     return Err(Error::Busy(text(&argument)));
@@ -298,6 +369,73 @@ where
         }
     }
 
+    /// Sends the password of the caller, the port of `ADR()`.
+    ///
+    /// The caller answers the challenge with the digest of CRAM-MD5. Without a
+    /// challenge it sends the password.
+    async fn send_password(&mut self) -> Result<(), Error> {
+        if self.config.password.is_empty() {
+            return Ok(());
+        }
+        let password = self.config.password.clone();
+        let answer = match &self.challenge {
+            Some(challenge) => {
+                // The port of `MD_flag`: we authenticated with MD5.
+                self.md5 = true;
+                binkd_ftn::cram::build_digest(password.as_bytes(), challenge).unwrap_or(password)
+            }
+            None => password,
+        };
+        self.send_text(Command::Pwd, &answer).await
+    }
+
+    /// Completes the login, the port of `complete_login()`.
+    ///
+    /// The answerer sends its options and the state of the session. Both sides
+    /// turn the encryption on when the session is secure, the peer requested
+    /// the mode, we requested the mode, and the password is a real one.
+    async fn finish_login(&mut self) -> Result<(), Error> {
+        if self.role == Role::Server {
+            self.send_options().await?;
+            let state = if self.secure() {
+                "secure"
+            } else {
+                "non-secure"
+            };
+            self.send_text(Command::Ok, state).await?;
+        }
+        if self.we_crypt && self.they_crypt && self.secure() && self.md5 && !self.any_password() {
+            self.crypt = Some(Crypt::new(&self.config.password, self.role));
+        }
+        Ok(())
+    }
+
+    /// Sends the options of this side, the port of the `OPT` message of
+    /// `banner()` and `PWD()`.
+    async fn send_options(&mut self) -> Result<(), Error> {
+        let mut options = vec!["EXTCMD".to_string()];
+        options.extend(self.config.methods.names().iter().map(|n| n.to_string()));
+        // The port of `PWD()`: the answerer echoes `CRYPT` only when the
+        // caller requested it.
+        if self.we_crypt && (self.role == Role::Client || self.they_crypt) {
+            options.push("CRYPT".to_string());
+        }
+        self.send_text(Command::Nul, &format!("OPT {}", options.join(" ")))
+            .await
+    }
+
+    /// Reports whether the password of the session was used, the port of
+    /// `P_SECURE`.
+    fn secure(&self) -> bool {
+        !self.config.password.is_empty() && !self.any_password()
+    }
+
+    /// Reports whether the password accepts any value, the port of the `!`
+    /// password of the C code.
+    fn any_password(&self) -> bool {
+        self.config.password == "!"
+    }
+
     /// Reads the options of a `M_NUL` frame.
     fn handle_nul(&mut self, argument: &[u8]) {
         let text = text(argument);
@@ -307,8 +445,10 @@ where
                 for option in words {
                     if option.eq_ignore_ascii_case("NR") {
                         // The NR mode arrives in a later step.
-                    } else if let Some(hex) = option.strip_prefix("CRAM-MD5-") {
-                        self.challenge = parse_hex(hex);
+                    } else if option.starts_with(binkd_ftn::cram::PREFIX) {
+                        // The port of `MD_getChallenge()`: the first byte of
+                        // the challenge is its length.
+                        self.challenge = binkd_ftn::cram::parse(option);
                     } else if let Some(method) = Method::from_name(option) {
                         // The port of the `NUL()` handler: the peer can
                         // receive the method.
@@ -317,6 +457,10 @@ where
                         // The port of `state->extcmd`: the peer may ask us
                         // to compress a file.
                         self.extcmd = true;
+                    } else if option == "CRYPT" {
+                        // The port of the `NUL()` handler: the peer wants
+                        // the crypt mode.
+                        self.they_crypt = true;
                     }
                 }
             }
@@ -329,7 +473,7 @@ where
 
     /// Checks the password of the peer.
     fn check_password(&self, argument: &[u8]) -> bool {
-        if self.config.password.is_empty() {
+        if self.config.password.is_empty() || self.any_password() {
             return true;
         }
         let given = text(argument);
@@ -573,7 +717,7 @@ where
                     self.peer_eob = true;
                 }
                 Frame::Command(Command::Err, argument) => {
-                    return Err(Error::Peer(text(&argument)));
+                    return Err(peer_error(&argument));
                 }
                 Frame::Command(Command::Bsy, argument) => {
                     return Err(Error::Busy(text(&argument)));
@@ -585,6 +729,48 @@ where
         }
         Ok(())
     }
+}
+
+/// The encryption of a session, the port of `keys_out` and `keys_in` of
+/// `protoco2.h`.
+struct Crypt {
+    /// The keys of the outbound stream.
+    keys_out: [u32; 3],
+    /// The keys of the inbound stream.
+    keys_in: [u32; 3],
+}
+
+impl Crypt {
+    /// Sets the keys, the port of the crypt block of `complete_login()`.
+    ///
+    /// A side crypts its outbound stream with the key of the password and its
+    /// inbound stream with the key of `-` and the password.
+    fn new(password: &str, role: Role) -> Crypt {
+        let mut dashed = vec![b'-'];
+        dashed.extend_from_slice(password.as_bytes());
+        let key = binkd_ftn::crypt::init_keys(password.as_bytes());
+        let dashed = binkd_ftn::crypt::init_keys(&dashed);
+        match role {
+            Role::Client => Crypt {
+                keys_out: key,
+                keys_in: dashed,
+            },
+            Role::Server => Crypt {
+                keys_out: dashed,
+                keys_in: key,
+            },
+        }
+    }
+}
+
+/// Returns the error of a peer `M_ERR` frame.
+fn peer_error(argument: &[u8]) -> Error {
+    let message = text(argument);
+    // The answerer reports a bad password with this message.
+    if message.contains("Incorrect password") {
+        return Error::BadPassword;
+    }
+    Error::Peer(message)
 }
 
 /// The file that we receive, the port of `state->in` of `protocol.c`.
@@ -659,19 +845,4 @@ fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64, Vec<String>), E
 /// Maps an I/O error.
 fn io_error(e: std::io::Error) -> Error {
     Error::Io(e.to_string())
-}
-
-/// Parses a hex string.
-fn parse_hex(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 {
-        return None;
-    }
-    let mut out = Vec::with_capacity(s.len() / 2);
-    let bytes = s.as_bytes();
-    for pair in bytes.chunks(2) {
-        let hi = (pair[0] as char).to_digit(16)?;
-        let lo = (pair[1] as char).to_digit(16)?;
-        out.push((hi * 16 + lo) as u8);
-    }
-    Some(out)
 }

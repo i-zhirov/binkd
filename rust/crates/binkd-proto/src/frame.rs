@@ -148,17 +148,12 @@ impl Frame {
     }
 }
 
-/// Reads a frame.
+/// Decodes a frame from a header and its payload.
 ///
-/// The port of `recv_block()`. A data block of a size of 0 is not a frame.
-pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> std::io::Result<Frame> {
-    let mut header = [0u8; HEADER_SIZE];
-    reader.read_exact(&mut header).await?;
-    let raw = u16::from_be_bytes(header);
-    let size = Frame::payload_size(raw);
-    let mut payload = vec![0u8; size];
-    reader.read_exact(&mut payload).await?;
-    if !Frame::is_command(raw) {
+/// The port of the frame part of `recv_block()`: the caller reads the bytes,
+/// decrypts them, and gives the header and the payload here.
+pub fn decode(header: u16, payload: Vec<u8>) -> std::io::Result<Frame> {
+    if !Frame::is_command(header) {
         return Ok(Frame::Data(payload));
     }
     let Some(&code) = payload.first() else {
@@ -174,6 +169,19 @@ pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> std::io::Result
         )
     })?;
     Ok(Frame::Command(command, payload[1..].to_vec()))
+}
+
+/// Reads a frame.
+///
+/// The port of `recv_block()`. A data block of a size of 0 is not a frame.
+pub async fn read_frame<R: AsyncRead + Unpin>(reader: &mut R) -> std::io::Result<Frame> {
+    let mut header = [0u8; HEADER_SIZE];
+    reader.read_exact(&mut header).await?;
+    let raw = u16::from_be_bytes(header);
+    let size = Frame::payload_size(raw);
+    let mut payload = vec![0u8; size];
+    reader.read_exact(&mut payload).await?;
+    decode(raw, payload)
 }
 
 /// Writes a frame.

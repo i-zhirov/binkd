@@ -94,7 +94,13 @@ fn address(s: &str) -> FtnAddr {
 }
 
 /// The settings of the Rust side of a test.
-fn session_config(dir: &Path, aka: &str, password: &str, methods: Methods) -> SessionConfig {
+fn session_config(
+    dir: &Path,
+    aka: &str,
+    password: &str,
+    methods: Methods,
+    crypt: bool,
+) -> SessionConfig {
     SessionConfig {
         sysname: "Rust test".to_string(),
         sysop: "Rust sysop".to_string(),
@@ -112,6 +118,7 @@ fn session_config(dir: &Path, aka: &str, password: &str, methods: Methods) -> Se
             allow: true,
         }],
         methods,
+        crypt,
     }
 }
 
@@ -134,7 +141,7 @@ async fn rust_client_to_c_server() {
     let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "");
     assert!(wait_for_port(port).await, "the C server did not start");
 
-    let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::none());
+    let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::none(), false);
     let files = vec![SendFile {
         netname: "13b7000d.pkt".to_string(),
         path: packet,
@@ -186,7 +193,7 @@ async fn rust_client_sends_compressed(name: &str, methods: Methods, log: &str) {
     let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *");
     assert!(wait_for_port(port).await, "the C server did not start");
 
-    let config = session_config(&dir, "2:5047/13@fidonet", "secret", methods);
+    let config = session_config(&dir, "2:5047/13@fidonet", "secret", methods, false);
     let files = vec![SendFile {
         netname: "13b7000d.pkt".to_string(),
         path: packet,
@@ -253,7 +260,7 @@ async fn rust_client_to_c_server_gz() {
 ///
 /// The Rust server advertises the methods of the test. The C client polls the
 /// node, sends the file of its outbound, and exits.
-async fn c_client_polls_rust_server(name: &str, methods: Methods) -> Report {
+async fn c_client_polls_rust_server(name: &str, methods: Methods, crypt: bool) -> (Report, String) {
     let dir = temp_dir(name);
     let port = free_port();
     let config = format!(
@@ -280,7 +287,7 @@ async fn c_client_polls_rust_server(name: &str, methods: Methods) -> Report {
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
         .unwrap();
-    let server_config = session_config(&dir, "2:5047/13@fidonet", "secret", methods);
+    let server_config = session_config(&dir, "2:5047/13@fidonet", "secret", methods, crypt);
     let server = async move {
         let (stream, _) = listener.accept().await.unwrap();
         run(
@@ -314,7 +321,9 @@ async fn c_client_polls_rust_server(name: &str, methods: Methods) -> Report {
     assert_eq!(report.files_received, 1, "{report:?}");
     assert_eq!(report.received[0].size, FILE_SIZE as u64);
     assert_eq!(std::fs::read(&report.received[0].path).unwrap(), content);
-    report
+    // The log of the C client holds the mode of the session.
+    let log = std::fs::read_to_string(dir.join("c-client.log")).unwrap_or_default();
+    (report, log)
 }
 
 /// The C client compresses a file with zlib for the Rust server.
@@ -327,7 +336,8 @@ async fn c_client_to_rust_server_gz() {
         return;
     };
 
-    let report = c_client_polls_rust_server("c-client-gz", Methods::of(Method::Gz)).await;
+    let (report, _) =
+        c_client_polls_rust_server("c-client-gz", Methods::of(Method::Gz), false).await;
     assert_eq!(report.received[0].method, Some(Method::Gz));
 }
 
@@ -341,7 +351,7 @@ async fn c_client_to_rust_server_bz2() {
         return;
     };
 
-    let report = c_client_polls_rust_server("c-client-bz2", Methods::all()).await;
+    let (report, _) = c_client_polls_rust_server("c-client-bz2", Methods::all(), false).await;
     assert_eq!(report.received[0].method, Some(Method::Bz2));
 }
 
@@ -353,6 +363,81 @@ async fn c_client_to_rust_server() {
         return;
     };
 
-    let report = c_client_polls_rust_server("c-client", Methods::none()).await;
+    let (report, _) = c_client_polls_rust_server("c-client", Methods::none(), false).await;
     assert_eq!(report.received[0].method, None);
+}
+
+/// The Rust client crypts the traffic for the C server.
+///
+/// The C server sends the challenge of CRAM-MD5, the Rust client answers with
+/// the digest, and both sides crypt the session.
+#[tokio::test]
+async fn rust_client_to_c_server_crypt() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+
+    let dir = temp_dir("rust-client-crypt");
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let packet = out.join("13b7000d.pkt");
+    let content = vec![b'p'; FILE_SIZE];
+    std::fs::write(&packet, &content).unwrap();
+
+    let port = free_port();
+    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *");
+    assert!(wait_for_port(port).await, "the C server did not start");
+
+    let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::all(), true);
+    let files = vec![SendFile {
+        netname: "13b7000d.pkt".to_string(),
+        path: packet,
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+
+    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let result = run(
+        stream,
+        Role::Client,
+        &config,
+        &files,
+        &mut |_| Ok(()),
+        Duration::from_secs(20),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = server.kill();
+    let _ = server.wait();
+
+    let report: Report = result.expect("the Rust session failed");
+    assert!(report.crypt, "the Rust client did not crypt");
+
+    // The C server decrypted the traffic and wrote the file.
+    let received = dir.join("in/13b7000d.pkt");
+    assert!(received.is_file(), "the C server did not write the file");
+    assert_eq!(std::fs::read(&received).unwrap(), content);
+
+    // The C server logged the mode of the session.
+    let log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
+    assert!(log.contains("session in CRYPT mode"), "{log}");
+}
+
+/// The C client crypts the traffic for the Rust server.
+///
+/// The Rust server sends the challenge of CRAM-MD5, the C client answers with
+/// the digest, and both sides crypt the session.
+#[tokio::test]
+async fn c_client_to_rust_server_crypt() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+
+    let (report, log) = c_client_polls_rust_server("c-client-crypt", Methods::none(), true).await;
+    assert!(report.crypt, "the Rust server did not crypt");
+    // The C client logged the mode of the session.
+    assert!(log.contains("session in CRYPT mode"), "{log}");
 }
