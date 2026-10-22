@@ -231,6 +231,21 @@ alone adds the poll and starts the daemon, which never exits; pass `-P <node>`
 and `-p` in one call so the daemon creates the poll, runs the clients, and
 exits.
 
+## The recorded sessions
+
+The Rust test `crates/binkd-proto/tests/record.rs` reads the recordings of
+`tests/sessions/`. A recording holds the bytes of the two directions of one
+session: `s` for the bytes that the recorded side sent and `r` for the bytes that
+it received. The test replays the bytes of the peer into a fresh session and
+compares every byte that our side sends with the recording.
+
+The recordings come from the Rust session itself. The test
+`write_the_recordings` writes them and carries the `#[ignore]` attribute: run it
+after a change of the banner or of a frame, then commit the files.
+
+The replay of a live session of the C binary is written but not enabled: the
+recording runs out of bytes while the Rust server waits for a frame.
+
 ## What the corpus covers
 
 | File | Crate | Cases |

@@ -701,6 +701,10 @@ where
                         current = Some(file);
                     }
                 }
+                Frame::Command(Command::Nul, argument) => {
+                    // The C code reads an option of the peer at any time.
+                    self.handle_nul(&argument);
+                }
                 Frame::Command(Command::Got, _) => {}
                 Frame::Command(Command::Ok, _) => {
                     // The login of the peer completes with our `M_OK`.

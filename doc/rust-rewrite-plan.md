@@ -529,7 +529,14 @@ Progress:
 - The interop test covers the mode in both directions: the Rust client crypts a
   session for the C server, and the C client crypts a session for the Rust server.
   The log of the C binary reports `session in CRYPT mode` in both cases. (done)
-- The recorded sessions and the replay test are open.
+- `binkd-proto::record` holds the recording and the replay of a session: a
+  recording keeps the bytes of the two directions of one session in a text file,
+  `Recorder` wraps a transport and keeps them, and `Replay` plays the bytes of the
+  peer and keeps the bytes of our side. The recordings of the Rust session are in
+  `tests/sessions/` and the replay test compares every byte. (done)
+- The replay of a live session of the C binary is written but not enabled: the
+  session of the recording runs out of bytes while the Rust server waits for a
+  frame. The flow of the C caller after the login needs the study. (open)
 
 Exit criteria:
 
