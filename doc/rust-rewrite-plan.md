@@ -222,9 +222,9 @@ The interop matrix runs two real programs on the loopback address.
 | Client | Server | Options |
 | --- | --- | --- |
 | C | C | baseline |
-| Rust | C | plain, CRAM, CRYPT, GZ, BZ2 |
-| C | Rust | plain, CRAM, CRYPT, GZ, BZ2 |
-| Rust | Rust | plain, CRAM, CRYPT, GZ, BZ2 |
+| Rust | C | plain, CRAM, CRYPT, GZ, BZ2, NR, ND |
+| C | Rust | plain, CRAM, CRYPT, GZ, BZ2, NR, ND |
+| Rust | Rust | plain, CRAM, CRYPT, GZ, BZ2, NR, ND |
 
 Each case uses a fixture spool. The test sends one packet in each
 direction and compares the spool directories after the session.
@@ -497,6 +497,9 @@ Deliverables:
 
 - `binkd-proto` with the session state machine, the frame code, the
   compression, and the crypt code.
+- The NR mode and the ND mode: the `M_GET` and `M_SKIP` frames, the
+  `sent_fls` and `GET_FILE_balance` bookkeeping, the `.stc` status files,
+  and the deferred rename of the receiver.
 - Recorded sessions under `tests/sessions/`.
 - A replay test and the interop matrix of level 4.
 
@@ -542,35 +545,56 @@ Progress:
   session when the answerer does not hold the AKA that the caller calls
   (`remote has no such AKA`), so the recording of the answerer must hold the
   address of the caller. (done)
-- The NR mode and the ND mode are open. The C semantics are studied and
-  recorded here, because the two modes touch the session, the spool, and the
-  outbound queue:
-    - `NR_flag`: `WANT_NR` (1) we ask for the NR mode, `WE_NR` (2) we
-      announce files with offset -1, `THEY_NR` (4) the peer is the NR sender.
-    - `ND_flag`: `WE_ND` (1) we wait for `M_GOT` after each file,
-      `THEY_ND` (2) the peer waits, `CAN_NDA` (4) the peer supports the
-      asymmetric mode.
-    - The caller sets `WANT_NR` for a node with `-nr` or `-nd`, and `THEY_ND`
-      for `-nd`. The `-nd` option implies `-nr`.
-    - The caller announces `NDA EXTCMD`, `NR` when it wants it, and `ND` when
-      it holds `THEY_ND`. The answerer echoes `NR`/`ND` from its config and
-      adds `NDA` when exactly one side holds `WE_ND` or `THEY_ND`.
-    - An NR sender sends `M_FILE "name size time -1"`, sets `off_req_sent`,
-      and sends no data until the peer answers. The peer answers with
-      `M_GET "name size time offset"` or `M_SKIP "name size time"`.
-    - `M_GET` moves a file of `sent_fls` back to `out`, seeks to the offset,
-      and re-announces the file with that offset. `GET_FILE_balance` counts
-      the open requests and guards the end of the session.
-    - An ND sender waits for `M_GOT` after each file (`waiting_for_GOT`), and
-      an ND receiver renames a received file at the next `M_FILE` or at the
-      end of the session (`in_complete`), not at once.
-    - An ND sender keeps a `.stc` status file in the outbound and announces
-      the status as a file with offset equal to its size. The outbound scanner
-      reads those files as the queue type `s`.
-    - A session ends when the peer sent its end of the batch, we sent ours, no
-      file waits for an acknowledgement, no request is open, and no file is in
-      transfer on either side. The C code then starts the next batch when it
-      sent or received more than the two `M_EOB` frames of the batch.
+- The NR mode and the ND mode are open. The steps are in the section
+  below.
+
+The NR mode and the ND mode:
+
+The two modes touch three layers: the config, the session, and the spool. The
+plan keeps the steps in this order:
+
+1. `binkd-config` holds the `-nr` and `-nd` node options and the `nr` and
+   `nd` fields of the session settings. The `-nd` option implies `-nr`. The
+   `-d` dump prints the two options.
+2. `binkd-proto::session` holds the flags, the `OPT` negotiation, the
+   `M_FILE "name size time -1"` announcement, the `M_GET` and `M_SKIP`
+   handlers, the `sent_fls` list, and the `GET_FILE_balance` counter.
+3. `binkd-proto::session` holds the `waiting_for_GOT` wait of the ND
+   sender and the deferred rename of the ND receiver, the port of
+   `in_complete`.
+4. `binkd-spool` holds the `.stc` status files and the queue type `s`
+   of the outbound scanner.
+5. The replay test covers the NR mode, the ND mode, and the multi-batch
+   mode in both directions. The interop matrix covers the two modes
+   against the C binary.
+
+The C semantics, for the port:
+
+- `NR_flag`: `WANT_NR` (1) we ask for the NR mode, `WE_NR` (2) we
+  announce files with offset -1, `THEY_NR` (4) the peer is the NR sender.
+- `ND_flag`: `WE_ND` (1) we wait for `M_GOT` after each file,
+  `THEY_ND` (2) the peer waits, `CAN_NDA` (4) the peer supports the
+  asymmetric mode.
+- The caller sets `WANT_NR` for a node with `-nr` or `-nd`, and `THEY_ND`
+  for `-nd`. The caller announces `NDA EXTCMD`, `NR` when it wants it,
+  and `ND` when it holds `THEY_ND`. The answerer echoes `NR`/`ND` from its
+  config and adds `NDA` when exactly one side holds `WE_ND` or `THEY_ND`.
+- An NR sender sends `M_FILE "name size time -1"`, sets `off_req_sent`,
+  and sends no data until the peer answers. The peer answers with
+  `M_GET "name size time offset"` or `M_SKIP "name size time"`.
+- `M_GET` moves a file of `sent_fls` back to `out`, seeks to the offset,
+  and re-announces the file with that offset. `GET_FILE_balance` counts
+  the open requests and guards the end of the session.
+- An ND sender waits for `M_GOT` after each file (`waiting_for_GOT`), and
+  an ND receiver renames a received file at the next `M_FILE` or at the
+  end of the session (`in_complete`), not at once.
+- An ND sender keeps a `.stc` status file in the outbound and announces
+  the status as a file with offset equal to its size. The outbound scanner
+  reads those files as the queue type `s`.
+- A session ends when the peer sent its end of the batch, we sent ours, no
+  file waits for an acknowledgement, no request is open, and no file is in
+  transfer on either side. The C code then starts the next batch when it
+  sent or received more than the two `M_EOB` frames of the batch.
 
 Exit criteria:
 
