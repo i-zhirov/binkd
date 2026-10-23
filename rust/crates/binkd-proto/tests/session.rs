@@ -711,7 +711,8 @@ async fn session_with_skip(destr: bool) -> (Report, Report) {
     server_config.skip = vec![SkipRule {
         mask: "*.pkt".to_string(),
         atype: addrtype::A_ALL,
-        size: -1,
+        // A size of 0 matches a file of any size, as `skip <mask>` does.
+        size: 0,
         destr,
     }];
     let client = async move {
