@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use binkd_config::model::Config;
 use binkd_ftn::addr::FtnAddr;
+use binkd_ftn::node::NP_ON;
 use binkd_log::{DateTime, Log, ERROR, START};
 use binkd_proto::{run_with, Report, Role, SendFile};
 use binkd_spool::busy::{BusyList, F_BSY, F_CSY};
@@ -25,6 +26,8 @@ pub enum CallError {
     NoHost,
     /// The session failed.
     Session(binkd_proto::Error),
+    /// The proxy failed.
+    Proxy(crate::proxy::ProxyError),
 }
 
 /// One node to call, the port of the result of `q_next_node()`.
@@ -167,12 +170,69 @@ impl Caller {
             );
             return Err(CallError::NoHost);
         }
+        // The C code holds the node of the peer in a pointer of the config;
+        // the port copies it, so the settings may borrow the config while the
+        // node lives.
+        let node = config.spool.nodes.get(&call.fa, now().epoch).cloned();
+        // The port of `use_proxy` of `call0()`: the node asks for no proxy,
+        // the node holds no pipe, and the config holds a proxy or a socks
+        // server.
+        let use_proxy = (!config.proxy.is_empty() || !config.socks.is_empty())
+            && node.as_ref().map(|node| node.np_flag != NP_ON) == Some(true)
+            && node
+                .as_ref()
+                .and_then(|node| node.pipe.as_deref())
+                .unwrap_or("")
+                .is_empty();
+        // The C code resolves the proxy server once, before the loop of the
+        // hosts, and it gives up when the name does not resolve.
+        let proxy_addr = if use_proxy {
+            Some(
+                crate::proxy::proxy_address(&config.proxy, &config.socks, log, now)
+                    .await
+                    .map_err(CallError::Proxy)?,
+            )
+        } else {
+            None
+        };
         for entry in &entries {
             let addr = format!("{}:{}", entry.name, entry.port);
+            let target = match &proxy_addr {
+                Some(proxy) => {
+                    log.message(
+                        START,
+                        &format!(
+                            "trying {} via proxy {}:{}...",
+                            entry.name,
+                            proxy.ip(),
+                            proxy.port()
+                        ),
+                        &now(),
+                    );
+                    *proxy
+                }
+                None => {
+                    log.message(START, &format!("trying {addr}..."), &now());
+                    match tokio::net::lookup_host(&addr).await {
+                        Ok(mut addrs) => match addrs.next() {
+                            Some(addr) => addr,
+                            None => continue,
+                        },
+                        Err(e) => {
+                            log.message(
+                                ERROR,
+                                &format!("connection to {} failed: {e}", call.fa.format(false)),
+                                &now(),
+                            );
+                            continue;
+                        }
+                    }
+                }
+            };
             // The port of the `connect()` of `call0()` with the timeout of
             // the `connect-timeout` directive.
-            let stream =
-                match tokio::time::timeout(options.timeout, TcpStream::connect(&addr)).await {
+            let mut stream =
+                match tokio::time::timeout(options.timeout, TcpStream::connect(target)).await {
                     Ok(Ok(stream)) => stream,
                     Ok(Err(e)) => {
                         log.message(
@@ -192,10 +252,28 @@ impl Caller {
                     }
                 };
             log.message(START, &format!("connected to {addr}"), &now());
-            // The C code holds the node of the peer in a pointer of the
-            // config; the port copies it, so the settings may borrow the
-            // config while the node lives.
-            let node = config.spool.nodes.get(&call.fa, now().epoch).cloned();
+            // The port of `h_connect()` of `client.c`: the handshake of the
+            // proxy leaves the socket as the tunnel to the peer.
+            if proxy_addr.is_some() {
+                if let Err(e) = crate::proxy::h_connect(
+                    &mut stream,
+                    &entry.name,
+                    &entry.port.to_string(),
+                    config,
+                    options.timeout,
+                    log,
+                    now,
+                )
+                .await
+                {
+                    log.message(
+                        ERROR,
+                        &format!("connection to {} failed: {e:?}", call.fa.format(false)),
+                        &now(),
+                    );
+                    continue;
+                }
+            }
             let settings = session_config(config, node.as_ref(), options.crypt, options.trace);
             // The port of `protocol()`: the caller sends the files of the
             // queue for the peer, the port of the scan of `q_scan_boxes()`.

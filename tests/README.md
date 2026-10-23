@@ -212,6 +212,21 @@ BINKD_C=/path/to/binkd cargo test -p binkd-proto --test interop
 
 Without `BINKD_C` the tests report that they are skipped.
 
+The Rust test `crates/binkd-net/tests/proxy_interop.rs` runs the same matrix for
+the network layer, and it runs the caller of the port and the C client through a
+proxy server of the test. Set `BINKD_C_PROXY` to the path of a C binary that the
+`configure` script built with `--with-proxy` and `--with-ntlm`:
+
+```sh
+cd rust
+BINKD_C=/path/to/binkd \
+BINKD_C_PROXY=/path/to/binkd-proxy \
+    cargo test -p binkd-net --test proxy_interop
+```
+
+Without `BINKD_C_PROXY` the tests report that they are skipped. The corpus tests
+need the plain build of the C binary, so keep the two builds apart.
+
 The matrix of `doc/rust-rewrite-plan.md`:
 
 | Client | Server | State |

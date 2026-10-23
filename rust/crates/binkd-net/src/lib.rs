@@ -8,10 +8,16 @@
 
 #![forbid(unsafe_code)]
 
+pub mod base64;
 pub mod caller;
+pub mod des;
+mod des_tables;
 pub mod hosts;
 pub mod listener;
+pub mod md4;
+pub mod ntlm;
 pub mod port;
+pub mod proxy;
 pub mod session;
 
 pub use caller::{Call, CallError, Caller};

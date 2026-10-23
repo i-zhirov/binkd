@@ -754,13 +754,54 @@ Progress:
   `SessionOptions`: the timeout, the crypt flag, and the trace flag. The listener
   and the caller take the value, the port of the fields of `STATE` that
   `do_server()` and `do_client()` set.
-- The proxy, the SRV lookup, the rate limit, and `binkd-srif` are open.
+- `binkd-net::proxy` holds the proxy support, the port of `https.c`:
+  `proxy_address()` resolves the proxy server, the port of the resolution of
+  `call0()`, and `h_connect()` runs the handshake of the HTTP CONNECT proxy
+  (without auth, with the basic auth, and with the NTLM auth), of the SOCKS4
+  proxy, and of the SOCKS5 proxy (without auth and with the user and the
+  password of RFC 1929). The caller wires both, the port of `use_proxy` of
+  `call0()`, which skips the proxy for a node of `-noproxy` and for a node with
+  a pipe. (done)
+- `binkd-net::base64` holds the codec of the two `enbase64()` functions and of
+  `debase64()`: the C code stops the decode at the first character outside the
+  alphabet. (done)
+- `binkd-net::ntlm` holds the NTLM support, the port of `ntlm/helpers.c`: the
+  Type 1 and the Type 3 messages, the LM and the NT hash, and the responses.
+  `binkd-net::md4` holds the MD4 of `ntlm/md4_dgst.c`, and `binkd-net::des`
+  holds the DES of `ntlm/des_enc.c`, `ntlm/set_key.c`, and `ntlm/ecb_enc.c` with
+  the tables of `ntlm/spr.h` and `ntlm/set_key.c`. The C code vendors OpenSSL
+  and holds `des_check_key` at zero, so the port does the same. (done)
+- The tests of the proxy: `crates/binkd-net/tests/proxy_interop.rs` runs the
+  caller of the port through a proxy server of the test against the C listener for
+  every protocol, and it runs the C client through the same proxy server against
+  the listener of the port and compares the request of the C code with the request
+  of the port, byte for byte. The test of the NTLM auth compares the two
+  messages of the port with the messages that the proxy of the test received.
+  The C binary of the tests needs the `--with-proxy` and the `--with-ntlm`
+  switches of `configure`; the corpus tests need the plain build. (done)
+- The divergences of the port, for the record:
+    - The C code sends the port of the entry of `get_host_and_port()` in the
+      request line of `CONNECT`, which is the service name `binkp` for an entry
+      without a port. The port sends the number, the port of `find_port()`.
+    - A SOCKS4 server that rejects every address of the answer leaves the C code
+      with the value zero of `h_connect()`, which is a success. The port answers
+      an error, so the caller never runs a session on a socket without a tunnel.
+    - The C code waits with `select()` for every single byte of the answer, so a
+      slow peer may hold a handshake longer than `nettimeout` in total. The port
+      waits for every read.
+    - The C code holds no fixed buffer, so the port cannot answer the `-1` error of
+      `getNTLM1()` and `getNTLM2()` for a result buffer that is too small.
+    - The port holds no resolver of SRV records, so the `srv_getaddrinfo()` of the
+      C code is a plain resolution of the name.
+- The SRV lookup, the rate limit, and `binkd-srif` are open.
 
 Exit criteria:
 
 - Two Rust instances exchange a packet. (done)
 - A Rust instance and a C instance exchange a packet in both roles. (done)
-- The proxy, the SRV lookup, and the rate limit match the C code.
+- The proxy, the SRV lookup, and the rate limit match the C code. (the proxy
+  passes the interop matrix of `proxy_interop.rs`; the SRV lookup and the rate
+  limit are open)
 
 ### Phase 6: binary and library
 
