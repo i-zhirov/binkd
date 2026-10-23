@@ -76,6 +76,8 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         nd: false,
         domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
         trace: false,
+        skip: Vec::new(),
+        listed: false,
     }
 }
 

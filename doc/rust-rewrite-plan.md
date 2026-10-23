@@ -637,13 +637,16 @@ Exit criteria:
 
 Known gaps, for the start of phase 5:
 
-- The receiver never declines a file: the `skip` masks of the config are not
-  part of the settings of the session yet, so the port answers `M_GET` for every
-  announcement of the NR mode. The C code sends `M_SKIP` for a mask, and for a
-  destructive mask it sends `M_GOT` and deletes the file.
+- The receiver declines a file with the rules of the `skip` directive, the port of
+  `skip_test()` of `protocol.c`: a rule that matches the address type and the name
+  of the file sends `M_SKIP`, and a destructive rule sends `M_GOT`. (done)
 - The receiver always asks for a file from offset 0: the port keeps a received file
   in memory and holds no partial file, so a resumed transfer starts again. The C code
-  keeps the partial in the inbound directory and asks from its offset.
+  keeps the partial in the inbound directory and asks from its offset. The APIs are
+  ready (`binkd-spool::inbound::inb_fopen`, `inb_done`, and `inb_reject`), and the
+  change belongs to the receive path of the session: the file handle of the partial
+  lives in the state of the file, each data block writes to it, the announcement
+  asks from the size of the partial, and the completion renames it.
 - The counters `bytes_sent` and `files_sent` of the report grow at the send path,
   where the C code grows them at the acknowledgement of the peer.
 - The test `c_client_to_rust_server_gz` fails now and then under the parallel load

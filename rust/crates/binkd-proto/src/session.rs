@@ -66,6 +66,11 @@ pub struct SessionConfig {
     pub nd: bool,
     /// The domains of the spool, for the link status files of the ND mode.
     pub domains: binkd_ftn::domain::DomainTable,
+    /// The rules of the `skip` directive, the port of `skipmask`.
+    pub skip: Vec<SkipRule>,
+    /// The node of the peer is listed in the config, the port of
+    /// `state->listed_flag` of `skip_test()`.
+    pub listed: bool,
     /// The session holds the frames of its log, the port of the frame log of the
     /// C code at `loglevel 10`. The log of a crypted session holds the frames
     /// before the encryption, as the C code logs them.
@@ -120,6 +125,11 @@ pub struct Report {
     pub frames: Vec<FrameRecord>,
     /// The session crypts its traffic, the port of `YES_CRYPT`.
     pub crypt: bool,
+    /// The rules of the `skip` directive, the port of `skipmask`.
+    pub skip: Vec<SkipRule>,
+    /// The node of the peer is listed in the config, the port of
+    /// `state->listed_flag` of `skip_test()`.
+    pub listed: bool,
     /// The session holds the frames of its log, the port of the frame log of the
     /// C code at `loglevel 10`. The log of a crypted session holds the frames
     /// before the encryption, as the C code logs them.
@@ -155,6 +165,58 @@ pub struct FrameRecord {
     pub sent: bool,
     /// The stable name of the frame.
     pub name: String,
+}
+
+/// The address types of the `skip` rules, the port of `addrtype` of
+/// `readcfg.h`.
+pub mod addrtype {
+    /// Every address type.
+    pub const A_ALL: i32 = -1;
+    /// A listed node.
+    pub const A_LST: i32 = 1;
+    /// An unlisted node.
+    pub const A_UNLST: i32 = 2;
+    /// A secure session.
+    pub const A_PROT: i32 = 4;
+    /// A non-secure session.
+    pub const A_UNPROT: i32 = 8;
+}
+
+/// One rule of the `skip` directive, the port of `struct skipchain` of
+/// `readcfg.h`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SkipRule {
+    /// The mask.
+    pub mask: String,
+    /// The address type.
+    pub atype: i32,
+    /// The size in bytes, or -1.
+    pub size: i64,
+    /// The file is deleted, not skipped.
+    pub destr: bool,
+}
+
+/// Tests the skip rules, the port of `skip_test()` of `protocol.c`.
+///
+/// The first rule that matches the address type and the name decides. A rule with
+/// a size of 0 or more matches a file of that size or more only.
+pub fn skip_test<'a>(
+    rules: &'a [SkipRule],
+    atype: i32,
+    netname: &str,
+    size: u64,
+) -> Option<&'a SkipRule> {
+    for rule in rules {
+        if rule.atype & atype != 0
+            && binkd_ftn::pattern::pmatch_ncase(rule.mask.as_bytes(), netname.as_bytes())
+        {
+            if rule.size >= 0 && size >= rule.size as u64 {
+                return Some(rule);
+            }
+            return None;
+        }
+    }
+    None
 }
 
 /// A session error.
@@ -580,6 +642,22 @@ where
     /// `P_SECURE`.
     fn secure(&self) -> bool {
         !self.config.password.is_empty() && !self.any_password()
+    }
+
+    /// Returns the address type of the session, the port of `amask` of
+    /// `skip_test()` of `protocol.c`.
+    fn addr_type(&self) -> i32 {
+        let mut amask = if self.config.listed {
+            addrtype::A_LST
+        } else {
+            addrtype::A_UNLST
+        };
+        amask |= if self.secure() {
+            addrtype::A_PROT
+        } else {
+            addrtype::A_UNPROT
+        };
+        amask
     }
 
     /// Reports whether the password accepts any value, the port of the `!`
@@ -1059,6 +1137,22 @@ where
                         return Err(Error::Protocol(format!(
                             "both GZ and BZ2 extras are specified for {netname}"
                         )));
+                    }
+                    // The port of `skip_test()` of `start_file_recv()`: a
+                    // rule of the `skip` directive declines the file.
+                    let amask = self.addr_type();
+                    if let Some(rule) = skip_test(&self.config.skip, amask, &netname, size) {
+                        let _ = self
+                            .send_text(
+                                if rule.destr {
+                                    Command::Got
+                                } else {
+                                    Command::Skip
+                                },
+                                &format!("{netname} {size} {time}"),
+                            )
+                            .await;
+                        continue;
                     }
                     current = Some(Incoming {
                         netname,

@@ -130,6 +130,8 @@ fn session_config(
         nd: false,
         domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
         trace: false,
+        skip: Vec::new(),
+        listed: false,
     }
 }
 

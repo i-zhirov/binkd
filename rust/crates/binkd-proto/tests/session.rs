@@ -49,6 +49,8 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         nd: false,
         domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
         trace: false,
+        skip: Vec::new(),
+        listed: false,
     }
 }
 
@@ -672,4 +674,68 @@ async fn session_with_multi_batch() {
     assert_eq!(client.files_received, 1);
     assert_eq!(client.received[0].netname, "13b70064.pkt");
     assert_eq!(client.received[0].size, 5);
+}
+
+/// A session with a `skip` mask: the receiver declines the file with `M_SKIP`,
+/// and the file does not arrive.
+#[tokio::test]
+async fn session_with_skip_mask() {
+    let (client, server) = session_with_skip(false).await;
+    assert_eq!(client.files_sent, 1);
+    assert_eq!(server.files_received, 0);
+    assert!(server.received.is_empty());
+}
+
+/// A session with a destructive `skip` mask: the receiver answers with `M_GOT`,
+/// and the file does not arrive.
+#[tokio::test]
+async fn session_with_a_destructive_skip_mask() {
+    let (_, server) = session_with_skip(true).await;
+    assert_eq!(server.files_received, 0);
+    assert!(server.received.is_empty());
+}
+
+/// Runs a session where the answerer holds a `skip` mask.
+async fn session_with_skip(destr: bool) -> (Report, Report) {
+    use binkd_proto::{addrtype, SkipRule};
+
+    let client_dir = temp_dir("client-skip");
+    let server_dir = temp_dir("server-skip");
+    let out = temp_dir("out-skip");
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+    let client_files = vec![make_file(&client_out, "13b7000d.pkt", 300)];
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "");
+    server_config.skip = vec![SkipRule {
+        mask: "*.pkt".to_string(),
+        atype: addrtype::A_ALL,
+        size: -1,
+        destr,
+    }];
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &client_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    (client.unwrap(), server.unwrap())
 }
