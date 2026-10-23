@@ -666,6 +666,21 @@ Known gaps, for the start of phase 5:
 
 Exit criteria:
 
+- The frames match the recorded sessions byte for byte.
+- The interop matrix passes for plain, CRAM, CRYPT, GZ, and BZ2.
+- The NR mode, the ND mode, and the multi-batch mode pass.
+
+### Phase 5: network, managers, SRIF, binary log
+
+Deliverables:
+
+- `binkd-net` with the listener, the caller, the proxy code, the SRV
+  lookup, and the rate limit.
+- `binkd-srif` and `binkd-log`.
+- A loopback test that exchanges a packet in each direction.
+
+Exit criteria:
+
 - Two Rust instances exchange a packet.
 - A Rust instance and a C instance exchange a packet in both roles.
 - The proxy, the SRV lookup, and the rate limit match the C code.
