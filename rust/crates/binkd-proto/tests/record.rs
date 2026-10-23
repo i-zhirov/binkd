@@ -29,6 +29,18 @@ fn sessions_dir() -> PathBuf {
 }
 
 /// Makes a directory for the spool of a test.
+/// The settings of the spool of a test.
+fn spool(dir: &Path) -> binkd_spool::config::SpoolConfig {
+    // The inbound directory of the partial files.
+    std::fs::create_dir_all(dir.join("in")).unwrap();
+    let mut spool = binkd_spool::config::SpoolConfig::new();
+    // The free-space values of the C defaults, `init_config()`.
+    spool.minfree = -1;
+    spool.minfree_nonsecure = -1;
+    spool.inbound_nonsecure = dir.join("in").display().to_string();
+    spool
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("binkd-record-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -65,6 +77,7 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         addresses: vec![address(aka)],
         password: String::new(),
         inbound: dir.join("in"),
+        spool: spool(dir),
         version: "rust-test/0.1".to_string(),
         blksize: 4096,
         zminsize: 1024,
@@ -96,6 +109,31 @@ fn make_file(dir: &Path) -> SendFile {
 
 /// Replays a recording and returns the bytes of our side.
 async fn replay(recording: &Recording, dir: &Path, server_aka: &str) -> (Vec<u8>, Report) {
+    use binkd_spool::inbound::{FreeSpace, Inbound, TFile};
+
+    // The partial file that the answerer of the recording held.
+    if !recording.partial.is_empty() {
+        let tfile = TFile {
+            netname: "13b7000d.pkt".to_string(),
+            size: FILE_SIZE as u64,
+            time: 1_000_000_000,
+            start: 0,
+        };
+        let spool = spool(dir);
+        let inbound = Inbound {
+            dir: dir.join("in").display().to_string(),
+            secure: true,
+            fa: vec![address(server_aka)],
+            nfa: 1,
+            skip_all_flag: false,
+        };
+        let mut rnd = || 7u32;
+        let mut file = inbound
+            .inb_fopen(&tfile, &spool, FreeSpace::default(), 0, &mut rnd)
+            .expect("the partial file");
+        std::io::Write::write_all(&mut file, &recording.partial).unwrap();
+        drop(file);
+    }
     let files = match recording.role {
         Role::Client => vec![make_file(dir)],
         Role::Server => Vec::new(),
@@ -248,11 +286,13 @@ async fn replays_a_session_of_the_c_binary() {
 #[tokio::test]
 async fn write_the_recordings() {
     std::fs::create_dir_all(sessions_dir()).expect("cannot create tests/sessions");
-    for (role, modes) in [
-        (Role::Client, false),
-        (Role::Server, false),
-        (Role::Client, true),
-        (Role::Server, true),
+    for (role, modes, partial) in [
+        (Role::Client, false, false),
+        (Role::Server, false, false),
+        (Role::Client, true, false),
+        (Role::Server, true, false),
+        // The answerer holds the first part of the file of the caller.
+        (Role::Server, true, true),
     ] {
         let dir = temp_dir("write");
         let mut side = config(&dir, role);
@@ -266,6 +306,36 @@ async fn write_the_recordings() {
         let peer_files = match role {
             Role::Client => Vec::new(),
             Role::Server => vec![make_file(&dir)],
+        };
+        // The partial file of the answerer, the port of `inb_fopen()`.
+        let held: Vec<u8> = if partial {
+            use binkd_spool::inbound::{FreeSpace, Inbound, TFile};
+
+            let content = vec![b'r'; FILE_SIZE];
+            let tfile = TFile {
+                netname: "13b7000d.pkt".to_string(),
+                size: FILE_SIZE as u64,
+                time: 1_000_000_000,
+                start: 0,
+            };
+            let spool = spool(&dir);
+            // The inbound of the session, as the settings hold it.
+            let inbound = Inbound {
+                dir: dir.join("in").display().to_string(),
+                secure: true,
+                fa: vec![address("2:5047/100@fidonet")],
+                nfa: 1,
+                skip_all_flag: false,
+            };
+            let mut rnd = || 7u32;
+            let mut file = inbound
+                .inb_fopen(&tfile, &spool, FreeSpace::default(), 0, &mut rnd)
+                .expect("the partial file");
+            std::io::Write::write_all(&mut file, &content[..100]).unwrap();
+            drop(file);
+            content[..100].to_vec()
+        } else {
+            Vec::new()
         };
         let (left, right) = tokio::io::duplex(1 << 20);
         let (mut recorder, peer) = match role {
@@ -313,11 +383,13 @@ async fn write_the_recordings() {
         let mut recording = recorder.into_recording();
         recording.nr = modes;
         recording.nd = modes;
-        let name = match (role, modes) {
-            (Role::Client, false) => "rust-client.session",
-            (Role::Server, false) => "rust-server.session",
-            (Role::Client, true) => "rust-client-modes.session",
-            (Role::Server, true) => "rust-server-modes.session",
+        recording.partial = held;
+        let name = match (role, modes, partial) {
+            (Role::Client, false, _) => "rust-client.session",
+            (Role::Server, false, _) => "rust-server.session",
+            (Role::Client, true, _) => "rust-client-modes.session",
+            (Role::Server, true, false) => "rust-server-modes.session",
+            (Role::Server, true, true) => "rust-server-resumed.session",
         };
         recording
             .write(&sessions_dir().join(name))

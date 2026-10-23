@@ -640,52 +640,25 @@ Known gaps, for the start of phase 5:
 - The receiver declines a file with the rules of the `skip` directive, the port of
   `skip_test()` of `protocol.c`: a rule that matches the address type and the name
   of the file sends `M_SKIP`, and a destructive rule sends `M_GOT`. (done)
-- The receiver always asks for a file from offset 0: the port keeps a received file
-  in memory and holds no partial file, so a resumed transfer starts again. The C code
-  keeps the partial in the inbound directory and asks from its offset. The APIs are
-  ready (`binkd-spool::inbound::inb_fopen`, `inb_done`, and `inb_reject`), and the
-  change belongs to the receive path of the session: the file handle of the partial
-  lives in the state of the file, each data block writes to it, the announcement
-  asks from the size of the partial, and the completion renames it.
-- The counters `bytes_sent` and `files_sent` of the report grow at the send path,
-  where the C code grows them at the acknowledgement of the peer.
-- The test `c_client_to_rust_server_gz` fails now and then under the parallel load
-  of the suite: the C client of that test runs through `-P` and `-p`, and the waits
-  of the harness need a review. The multi-batch
-  mode starts the next batch when the batch held more than the two `M_EOB` frames,
-  the port of the end of the batch of `protocol()`: the session counts the command
-  frames of the batch (`msgs_in_batch`), the login forgets them, and the end of a
-  batch of more than two frames sends the end of the batch again and reads the next
-  one. The in-memory test covers a file of the second batch, and the replay of a live
-  session of the C binary passes. The frame trace of that replay found the
-  divergence: the answerer of the port completed the login at the `ADR` frame of the
-  caller when it held no password, so the `OPT` frame of the caller arrived after
-  the reset of the batch and the count passed the two `M_EOB` frames. The C caller
-  always sends `M_PWD`, with `-` without a password, and the C answerer completes
-  the login at that frame, so the `OPT` frame counts before the reset. The port now
-  follows the same flow. A trace of the frames of a session is available with the
-  `BINKD_TRACE` variable and with `loglevel 10` of the C binary.
-- The interop test `frame_sequences_match` compares the frame sequences of the
-  two implementations in both directions, in the order of the wire, so a divergence
-  of the flow fails the suite. The test runs the plain session and the sessions of
-  zlib compression, bzip2 compression, the crypt mode, the NR mode, and the ND
-  mode. The session logs the frames itself, before the encryption on the send path
-  and after the decryption on the receive path, as the C code logs them, so the
-  log of a crypted session is comparable. The settings hold the log in `trace`,
-  and `Report.frames` carries it. The parser keeps the frames of the process of the
-  session of the C log: the server of the C code forks a process for the session
-  after it queues the banner, so the parent and the child both write the frames of
-  the banner to the log. The frames of the process that reads the session, the port
-  of `recv_block()`, are the frames of the session.
-
-### Phase 5: network, managers, SRIF, binary log
-
-Deliverables:
-
-- `binkd-net` with the listener, the caller, the proxy code, the SRV
-  lookup, and the rate limit.
-- `binkd-srif` and `binkd-log`.
-- A loopback test that exchanges a packet in each direction.
+- The receiver resumes a partial file, the port of `inb_fopen()`, `inb_done()`,
+  and `inb_reject()` of the spool: the session holds the state of the file
+  (`TFile`), the handle of the partial file, and the count of the bytes that
+  arrived. On `M_FILE` it tests the duplicate with `inb_test()` and answers
+  `M_GOT` for a file that it holds, it opens the partial with `inb_fopen()` and
+  answers `M_SKIP` when the open fails, and it asks with `M_GET` from the size
+  of the partial. Each data block writes to the partial file, the completion
+  calls `inb_done()`, which renames it to its true name and returns it, and the
+  end of the batch keeps a partial of a peer of the NR mode and calls
+  `inb_reject()` otherwise. (done)
+- The tests of the resume: `session_with_a_partial_file` drives a receiver that
+  holds a partial and asks from its position, `rust_client_to_c_server_resumed`
+  resumes a partial of the C server from the port, and
+  `rust-server-resumed.session` replays a resumed transfer. The other direction
+  of the matrix is not testable: the C client names a mail packet with a random
+  name, so a test cannot hold the partial that the port would find. (done)
+- The frame tests of the interop suite are heavy and the C client of
+  `c_client_to_rust_server_gz` fails now and then under the parallel load of the
+  suite. The waits of that test need a review.
 
 Exit criteria:
 

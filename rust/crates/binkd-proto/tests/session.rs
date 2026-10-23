@@ -9,6 +9,18 @@ use std::time::Duration;
 use binkd_ftn::addr::FtnAddr;
 use binkd_proto::{run, Method, Methods, Report, Role, SendFile, SessionConfig, ZRule};
 
+/// The settings of the spool of a test.
+fn spool(dir: &Path) -> binkd_spool::config::SpoolConfig {
+    // The inbound directory of the partial files.
+    std::fs::create_dir_all(dir.join("in")).unwrap();
+    let mut spool = binkd_spool::config::SpoolConfig::new();
+    // The free-space values of the C defaults, `init_config()`.
+    spool.minfree = -1;
+    spool.minfree_nonsecure = -1;
+    spool.inbound_nonsecure = dir.join("in").display().to_string();
+    spool
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("binkd-proto-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -35,6 +47,7 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         addresses: vec![address(aka)],
         password: password.to_string(),
         inbound: dir.to_path_buf(),
+        spool: spool(dir),
         version: "test/1.0".to_string(),
         blksize: 4096,
         zminsize: 1024,
@@ -699,9 +712,10 @@ async fn session_with_a_destructive_skip_mask() {
 async fn session_with_skip(destr: bool) -> (Report, Report) {
     use binkd_proto::{addrtype, SkipRule};
 
-    let client_dir = temp_dir("client-skip");
-    let server_dir = temp_dir("server-skip");
-    let out = temp_dir("out-skip");
+    let name = if destr { "destructive" } else { "plain" };
+    let client_dir = temp_dir(&format!("client-skip-{name}"));
+    let server_dir = temp_dir(&format!("server-skip-{name}"));
+    let out = temp_dir(&format!("out-skip-{name}"));
     let client_out = out.join("client");
     std::fs::create_dir_all(&client_out).unwrap();
     let client_files = vec![make_file(&client_out, "13b7000d.pkt", 300)];
@@ -739,4 +753,88 @@ async fn session_with_skip(destr: bool) -> (Report, Report) {
     };
     let (client, server) = tokio::join!(client, server);
     (client.unwrap(), server.unwrap())
+}
+
+/// The receiver resumes a partial file: the port asks for the file from the
+/// position of the partial, and the file arrives complete.
+#[tokio::test]
+async fn session_with_a_partial_file() {
+    use binkd_spool::inbound::{FreeSpace, Inbound, TFile};
+
+    let client_dir = temp_dir("client-partial");
+    let server_dir = temp_dir("server-partial");
+    let out = temp_dir("out-partial");
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+    let content: Vec<u8> = (0..300u32).map(|i| (i % 251) as u8).collect();
+    let path = client_out.join("13b7000d.pkt");
+    std::fs::write(&path, &content).unwrap();
+    let client_files = vec![SendFile {
+        netname: "13b7000d.pkt".to_string(),
+        path: Some(path),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "");
+    server_config.trace = true;
+
+    // The partial file of a transfer that a session left behind.
+    let tfile = TFile {
+        netname: "13b7000d.pkt".to_string(),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+        start: 0,
+    };
+    let spool = spool(&server_dir);
+    // The inbound of the session, as the settings hold it.
+    let inbound = Inbound {
+        dir: server_dir.display().to_string(),
+        secure: true,
+        fa: vec![address("2:5047/100@fidonet")],
+        nfa: 1,
+        skip_all_flag: false,
+    };
+    let mut rnd = || 7u32;
+    let mut partial = inbound
+        .inb_fopen(&tfile, &spool, FreeSpace::default(), 0, &mut rnd)
+        .expect("the partial file");
+    std::io::Write::write_all(&mut partial, &content[..100]).unwrap();
+    drop(partial);
+
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &client_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    let server = server.unwrap();
+    assert_eq!(server.files_received, 1);
+    // The file holds every byte of the sender, not only the rest.
+    let received = std::fs::read(server_dir.join("13b7000d.pkt")).unwrap();
+    assert_eq!(received.len(), content.len());
+    assert_eq!(received, content);
+    // The port asked for the file from the position of the partial.
+    let names: Vec<&str> = server.frames.iter().map(|f| f.name.as_str()).collect();
+    assert!(names.contains(&"GET"), "{names:?}");
+    assert!(names.contains(&"GOT"), "{names:?}");
 }

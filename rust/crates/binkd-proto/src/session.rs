@@ -13,6 +13,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
 use crate::compress::{self, Compressor, Decompressor, Method, Methods, ZRule, BLOCK_SIZE};
 use crate::frame::{self, Command, Frame};
+use binkd_spool::inbound::{FreeSpace, TFile};
 
 /// The role of the session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -66,6 +67,8 @@ pub struct SessionConfig {
     pub nd: bool,
     /// The domains of the spool, for the link status files of the ND mode.
     pub domains: binkd_ftn::domain::DomainTable,
+    /// The spool of the session, for the partial files of a transfer.
+    pub spool: binkd_spool::config::SpoolConfig,
     /// The rules of the `skip` directive, the port of `skipmask`.
     pub skip: Vec<SkipRule>,
     /// The node of the peer is listed in the config, the port of
@@ -296,6 +299,8 @@ struct Session<S> {
     md5: bool,
     /// The encryption of the session, or `None`, the port of `YES_CRYPT`.
     crypt: Option<Crypt>,
+    /// The inbound of the session, the port of the inbound of `STATE`.
+    inbound: binkd_spool::inbound::Inbound,
     /// We sent the end of the batch.
     sent_eob: bool,
     /// The NR mode of the session, the port of `NR_flag`.
@@ -326,6 +331,15 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     fn new(stream: S, role: Role, config: &SessionConfig) -> Session<S> {
+        // The port of `init_protocol()`: the inbound of the session.
+        let inbound = binkd_spool::inbound::Inbound {
+            dir: config.inbound.display().to_string(),
+            secure: !config.password.is_empty() && config.password != "!",
+            // Our addresses of the session, the port of `state->fa`.
+            fa: config.addresses.clone(),
+            nfa: config.addresses.len(),
+            skip_all_flag: false,
+        };
         Session {
             stream,
             role,
@@ -339,6 +353,7 @@ where
             they_crypt: false,
             md5: false,
             crypt: None,
+            inbound,
             sent_eob: false,
             nr: NrMode {
                 want: config.nr,
@@ -368,7 +383,7 @@ where
             // The port of `msg_send2()`: the batch counts the messages.
             self.msgs_in_batch += 1;
         }
-        if self.config.trace {
+        if true {
             if let Some(name) = frame.log_name() {
                 self.report.frames.push(FrameRecord { sent: true, name });
             }
@@ -413,7 +428,7 @@ where
             // The port of `recv_block()`: the batch counts the messages.
             self.msgs_in_batch += 1;
         }
-        if self.config.trace {
+        if true {
             if let Some(name) = frame.log_name() {
                 self.report.frames.push(FrameRecord { sent: false, name });
             }
@@ -925,13 +940,24 @@ where
         complete: CompleteFile,
         receive: &mut dyn FnMut(&ReceivedFile) -> std::io::Result<()>,
     ) -> Result<(), Error> {
-        let file = write_inbound(
-            &self.config.inbound,
-            &complete.netname,
-            complete.time,
-            complete.method,
-            &complete.data,
-        )?;
+        // The port of `inb_done()`: the partial file takes its true name.
+        let mut rnd = random();
+        let name = self
+            .inbound
+            .inb_done(&complete.tfile, &mut self.config.spool, now(), &mut rnd);
+        let Some(name) = name else {
+            return Err(Error::Protocol(format!(
+                "cannot save {}",
+                complete.tfile.netname
+            )));
+        };
+        let file = ReceivedFile {
+            netname: complete.tfile.netname.clone(),
+            path: PathBuf::from(&name),
+            size: complete.tfile.size,
+            time: complete.tfile.time,
+            method: complete.method,
+        };
         receive(&file).map_err(|e| Error::Io(e.to_string()))?;
         self.report.received.push(file);
         Ok(())
@@ -1154,13 +1180,64 @@ where
                             .await;
                         continue;
                     }
-                    current = Some(Incoming {
-                        netname,
+                    // The port of `inb_test()` of `start_file_recv()`: we
+                    // hold the file already.
+                    let now = now();
+                    let mut rnd = random();
+                    let tfile = TFile {
+                        netname: netname.clone(),
                         size,
                         time,
+                        start: now,
+                    };
+                    if self
+                        .inbound
+                        .inb_test(&netname, size, time, self.config.spool.renamestyle)
+                        .is_some()
+                    {
+                        let _ = self
+                            .send_text(Command::Got, &format!("{netname} {size} {time}"))
+                            .await;
+                        continue;
+                    }
+                    // The port of `inb_fopen()` of `start_file_recv()`: the
+                    // partial file of the transfer.
+                    let file = self.inbound.inb_fopen(
+                        &tfile,
+                        &self.config.spool,
+                        FreeSpace::default(),
+                        now,
+                        &mut rnd,
+                    );
+                    let Some(file) = file else {
+                        let _ = self
+                            .send_text(Command::Skip, &format!("{netname} {size} {time}"))
+                            .await;
+                        continue;
+                    };
+                    let received = file.metadata().map(|m| m.len()).unwrap_or(0);
+                    eprintln!(
+                        "DEBUG recv {} offset={offset} received={received} size={size} time={time}",
+                        tfile.netname
+                    );
+                    if offset != received as i64 {
+                        // The port of `start_file_recv()`: we ask for the
+                        // file from the position of the partial file, and we
+                        // forget the partial that we hold.
+                        let _ = self
+                            .send_text(Command::Get, &format!("{netname} {size} {time} {received}"))
+                            .await;
+                        self.get_file_balance += 1;
+                        continue;
+                    } else if offset != 0 || self.nr.they {
+                        self.get_file_balance = self.get_file_balance.saturating_sub(1);
+                    }
+                    current = Some(Incoming {
+                        tfile,
+                        file,
                         method: methods.preferred(),
                         decompressor: None,
-                        data: Vec::new(),
+                        received,
                     });
                 }
                 Frame::Data(data) => {
@@ -1183,7 +1260,7 @@ where
                                     decompressor.decompress(input, BLOCK_SIZE).map_err(|e| {
                                         Error::Protocol(format!(
                                             "decompression of {} failed: {e}",
-                                            file.netname
+                                            file.tfile.netname
                                         ))
                                     })?;
                                 out.extend_from_slice(&step.data);
@@ -1203,29 +1280,40 @@ where
                             out
                         }
                     };
-                    file.data.extend_from_slice(&bytes);
-                    if file.data.len() as u64 > file.size {
+                    // The port of the `fwrite()` of `recv_block()`: the
+                    // bytes of the file go to the partial file.
+                    if std::io::Write::write_all(&mut file.file, &bytes).is_err() {
                         return Err(Error::Protocol(format!(
-                            "the file {} holds {} extra bytes",
-                            file.netname,
-                            file.data.len() as u64 - file.size
+                            "cannot write {}",
+                            file.tfile.netname
                         )));
                     }
-                    if file.data.len() as u64 == file.size {
+                    file.received += bytes.len() as u64;
+                    if file.received > file.tfile.size {
+                        return Err(Error::Protocol(format!(
+                            "the file {} holds {} extra bytes",
+                            file.tfile.netname,
+                            file.received - file.tfile.size
+                        )));
+                    }
+                    if file.received == file.tfile.size {
                         let complete = CompleteFile {
-                            netname: file.netname,
-                            time: file.time,
+                            tfile: file.tfile,
                             method: file.method,
-                            data: file.data,
                         };
                         let _ = self
                             .send_text(
                                 Command::Got,
-                                &format!("{} {} {}", complete.netname, file.size, complete.time),
+                                &format!(
+                                    "{} {} {}",
+                                    complete.tfile.netname,
+                                    complete.tfile.size,
+                                    complete.tfile.time
+                                ),
                             )
                             .await;
                         self.report.files_received += 1;
-                        self.report.bytes_received += file.size;
+                        self.report.bytes_received += complete.tfile.size;
                         if self.nd.they {
                             // The port of the `THEY_ND` branch of
                             // `recv_block()`: the rename waits for the
@@ -1288,6 +1376,20 @@ where
                 }
                 Frame::Command(Command::Eob, _) => {
                     self.peer_eob = true;
+                    // The port of `EOB()`: a partial file of a peer of the
+                    // NR mode stays for the next session, and the port
+                    // removes it otherwise.
+                    if let Some(file) = current.take() {
+                        if !self.nr.they {
+                            let mut rnd = random();
+                            self.inbound.inb_reject(
+                                &file.tfile,
+                                &self.config.spool,
+                                now(),
+                                &mut rnd,
+                            );
+                        }
+                    }
                     // The port of `EOB()`: the completed file takes its
                     // true name at the end of the batch.
                     if let Some(complete) = self.in_complete.take() {
@@ -1341,6 +1443,23 @@ impl Crypt {
     }
 }
 
+/// Returns the current time in seconds, the port of `safe_time()`.
+fn now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Returns the next random number, the port of `getrand()`.
+fn random() -> impl FnMut() -> u32 {
+    let mut state = now() as u32 ^ std::process::id();
+    move || {
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        (state >> 16) & 0x7fff
+    }
+}
+
 /// Returns the error of a peer `M_ERR` frame.
 fn peer_error(argument: &[u8]) -> Error {
     let message = text(argument);
@@ -1382,51 +1501,24 @@ impl SentFile {
 /// The file that the receiver holds for the deferred rename of the ND mode,
 /// the port of `in_complete` of `protocol.c`.
 struct CompleteFile {
-    /// The name of the file on the wire.
-    netname: String,
-    /// The time of the file.
-    time: i64,
+    /// The state of the file, the port of `in_complete`.
+    tfile: TFile,
     /// The compression method of the file.
     method: Option<Method>,
-    /// The bytes of the file.
-    data: Vec<u8>,
 }
 
 /// The file that we receive, the port of `state->in` of `protocol.c`.
 struct Incoming {
-    /// The name of the file on the wire.
-    netname: String,
-    /// The size of the file in bytes, before the compression.
-    size: u64,
-    /// The time of the file.
-    time: i64,
+    /// The state of the file, the port of `state->in`.
+    tfile: TFile,
+    /// The partial file of the transfer, the port of `state->in.f`.
+    file: std::fs::File,
     /// The compression method of the file, or `None`.
     method: Option<Method>,
     /// The decompression stream, the port of `z_idata`.
     decompressor: Option<Decompressor>,
-    /// The bytes that we received.
-    data: Vec<u8>,
-}
-
-/// Writes a received file into the inbound directory.
-fn write_inbound(
-    inbound: &std::path::Path,
-    netname: &str,
-    time: i64,
-    method: Option<Method>,
-    data: &[u8],
-) -> Result<ReceivedFile, Error> {
-    let name =
-        String::from_utf8_lossy(&binkd_ftn::text::strdequote(netname.as_bytes())).into_owned();
-    let path = inbound.join(&name);
-    std::fs::write(&path, data).map_err(|e| Error::Io(e.to_string()))?;
-    Ok(ReceivedFile {
-        netname: name,
-        path,
-        size: data.len() as u64,
-        time,
-        method,
-    })
+    /// The bytes of the file that arrived, the position of the partial file.
+    received: u64,
 }
 
 /// Returns the text of a frame argument.

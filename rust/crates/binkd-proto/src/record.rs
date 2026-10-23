@@ -49,6 +49,9 @@ pub struct Recording {
     pub sent: Vec<u8>,
     /// The bytes that our side received.
     pub received: Vec<u8>,
+    /// The bytes of the partial file of the transfer, the port of the partial
+    /// file that a session left behind. The replay creates it again.
+    pub partial: Vec<u8>,
 }
 
 impl Recording {
@@ -60,6 +63,7 @@ impl Recording {
             nd: false,
             sent: Vec::new(),
             received: Vec::new(),
+            partial: Vec::new(),
         }
     }
 
@@ -97,6 +101,10 @@ impl Recording {
                 }
                 if comment.trim() == "nd" {
                     recording.nd = true;
+                    continue;
+                }
+                if let Some(hex) = comment.trim().strip_prefix("partial ") {
+                    recording.partial = decode_hex(hex.trim())?;
                     continue;
                 }
                 if let Some(name) = comment.trim().strip_prefix("role ") {
@@ -145,6 +153,9 @@ impl Recording {
         }
         if self.nd {
             text.push_str("# nd\n");
+        }
+        if !self.partial.is_empty() {
+            text.push_str(&format!("# partial {}\n", encode_hex(&self.partial)));
         }
         // The lines keep the order of the two directions of the session.
         let mut sent = &self.sent[..];
@@ -369,6 +380,7 @@ mod tests {
             addresses: Vec::new(),
             password: String::new(),
             inbound: std::env::temp_dir(),
+            spool: binkd_spool::config::SpoolConfig::new(),
             version: "test/1.0".to_string(),
             blksize: 4096,
             zminsize: 1024,

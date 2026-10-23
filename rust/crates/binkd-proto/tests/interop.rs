@@ -87,6 +87,18 @@ async fn wait_for_port(port: u16) -> bool {
 }
 
 /// Makes a directory for the spool of a test.
+/// The settings of the spool of a test.
+fn spool(dir: &Path) -> binkd_spool::config::SpoolConfig {
+    // The inbound directory of the partial files.
+    std::fs::create_dir_all(dir.join("in")).unwrap();
+    let mut spool = binkd_spool::config::SpoolConfig::new();
+    // The free-space values of the C defaults, `init_config()`.
+    spool.minfree = -1;
+    spool.minfree_nonsecure = -1;
+    spool.inbound_nonsecure = dir.join("in").display().to_string();
+    spool
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("binkd-interop-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -116,6 +128,7 @@ fn session_config(
         addresses: vec![address(aka)],
         password: password.to_string(),
         inbound: dir.join("in"),
+        spool: spool(dir),
         version: "rust-test/0.1".to_string(),
         blksize: 4096,
         zminsize: 1024,
@@ -914,4 +927,73 @@ fn perturbed_diff_caught(frames: &[String], other: &[String]) -> bool {
         first_divergence(&perturbed, other, "the perturbed sequence");
     }))
     .is_err()
+}
+
+/// The Rust client resumes a partial file that the C server holds: the C server
+/// asks for the file from the position of the partial, and the Rust client sends
+/// the rest of the file.
+///
+/// The other direction is not part of the matrix: the C client names a mail
+/// packet with a random name, so a test cannot hold the partial that the Rust
+/// server would find. The receiver of the port is covered by the test
+/// `session_with_a_partial_file` of the session suite.
+#[tokio::test]
+async fn rust_client_to_c_server_resumed() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+
+    let dir = temp_dir("rust-client-resumed");
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let content: Vec<u8> = (0..FILE_SIZE as u32).map(|i| (i % 251) as u8).collect();
+    let packet = out.join("13b7000d.pkt");
+    std::fs::write(&packet, &content).unwrap();
+
+    // The C server holds the first part of the file already: the partial file
+    // of the inbound directory, as `inb_fopen()` writes it.
+    let partial = dir.join("in/000043f8");
+    std::fs::write(
+        partial.with_extension("hr"),
+        "13b7000d.pkt 5000 1000000000 2:5047/13@fidonet\n",
+    )
+    .unwrap();
+    std::fs::write(partial.with_extension("dt"), &content[..100]).unwrap();
+
+    let port = free_port();
+    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", "zallow *", "");
+    assert!(wait_for_port(port).await, "the C server did not start");
+
+    let config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::all(), false);
+    let files = vec![SendFile {
+        netname: "13b7000d.pkt".to_string(),
+        path: Some(packet),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+
+    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let result = run(
+        stream,
+        Role::Client,
+        &config,
+        &files,
+        &mut |_| Ok(()),
+        Duration::from_secs(20),
+    )
+    .await;
+
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = server.kill();
+    let _ = server.wait();
+    result.expect("the Rust session failed");
+
+    // The C server wrote the whole file, not only the rest.
+    let received = dir.join("in/13b7000d.pkt");
+    assert!(received.is_file(), "the C server did not write the file");
+    assert_eq!(std::fs::read(&received).unwrap(), content);
+    // The C server asked for the file from the position of the partial.
+    let log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
+    assert!(log.contains("13b7000d.pkt"), "{log}");
 }
