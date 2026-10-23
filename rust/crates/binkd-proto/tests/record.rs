@@ -91,6 +91,9 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         max_servers: 100,
         servers: 1,
         trace: false,
+        rates: Vec::new(),
+        bw_send: -100,
+        bw_recv: -100,
         skip: Vec::new(),
         listed: false,
     }

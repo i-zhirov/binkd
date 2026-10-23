@@ -31,6 +31,16 @@ fn c_binary() -> Option<String> {
         .filter(|p| Path::new(p).is_file())
 }
 
+/// Returns the path of the C binary of the rate limit, or `None`.
+///
+/// The build of the binary needs the `--with-bwlim` switch of `configure`: the
+/// plain build holds no `-bw` option and no `limit-rate` keyword.
+fn c_binary_bwlim() -> Option<String> {
+    std::env::var("BINKD_C_BWLIM")
+        .ok()
+        .filter(|p| Path::new(p).is_file())
+}
+
 /// Returns a port of the process.
 ///
 /// The port is unique in the process: a port of a closed listener is free at the
@@ -152,6 +162,9 @@ fn session_config(
         max_servers: 100,
         servers: 1,
         trace: false,
+        rates: Vec::new(),
+        bw_send: -100,
+        bw_recv: -100,
         skip: Vec::new(),
         listed: false,
     }
@@ -1086,4 +1099,115 @@ async fn rust_client_to_c_server_resumed() {
     // The C server asked for the file from the position of the partial.
     let log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
     assert!(log.contains("13b7000d.pkt"), "{log}");
+}
+
+/// The rate limit of the C code holds the transfer of the port.
+///
+/// The C server holds the node of the port with `-bw 4096`, so the C code limits
+/// the receiving of the file, and the port holds the node of the C server with the
+/// same limit, so the port limits the sending. The file of 4096 bytes needs about
+/// one second. The C code of the meter is the oracle of the port.
+#[tokio::test]
+async fn rust_client_to_c_server_rate_limited() {
+    let Some(_) = c_binary_bwlim() else {
+        eprintln!("skip: set BINKD_C_BWLIM to the path of the C binary of the rate limit");
+        return;
+    };
+
+    let dir = temp_dir("rust-client-rate");
+    let port = free_port();
+    let mut server = start_c_server_bwlim(
+        &dir,
+        port,
+        "2:5047/13@fidonet",
+        "secret",
+        "zallow *",
+        "-bw 4096",
+    );
+    assert!(wait_for_port(port).await, "the C server did not start");
+
+    let content = vec![b'p'; FILE_SIZE];
+    let mut config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::none(), false);
+    // The C code reads the `-bw` of the node of the peer, the port of `ADR()`.
+    config.spool.nodes.add(
+        &address("2:5047/100@fidonet"),
+        &binkd_ftn::node::NodeSpec {
+            bw_send: Some(4096),
+            bw_recv: Some(4096),
+            ..binkd_ftn::node::NodeSpec::default()
+        },
+        0,
+    );
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let packet = out.join("13b7000d.pkt");
+    std::fs::write(&packet, &content).unwrap();
+    let files = vec![SendFile {
+        netname: "13b7000d.pkt".to_string(),
+        path: Some(packet),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+
+    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let started = std::time::Instant::now();
+    let result = run(
+        stream,
+        Role::Client,
+        &config,
+        &files,
+        &mut |_| Ok(()),
+        Duration::from_secs(20),
+    )
+    .await;
+    let elapsed = started.elapsed();
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    let _ = server.kill();
+    let _ = server.wait();
+
+    let report = result.expect("the Rust session failed");
+    assert_eq!(report.files_sent, 1);
+    // The C server wrote the file in full, and the limit of the two sides held
+    // the transfer of 4096 bytes for about two seconds.
+    assert_eq!(
+        std::fs::read(dir.join("in").join("13b7000d.pkt")).unwrap(),
+        content
+    );
+    assert!(elapsed.as_millis() >= 500, "{elapsed:?}");
+}
+
+/// Starts the C server of the rate limit of a spool.
+fn start_c_server_bwlim(
+    dir: &Path,
+    port: u16,
+    peer: &str,
+    password: &str,
+    extra: &str,
+    flags: &str,
+) -> Child {
+    let config = format!(
+        "domain fidonet outb 2\n\
+         address 2:5047/100@fidonet\n\
+         sysname \"C server\"\n\
+         sysop \"C sysop\"\n\
+         location \"C location\"\n\
+         nodeinfo \"C node\"\n\
+         inbound in\n\
+         iport {port}\n\
+         listen 127.0.0.1:{port}\n\
+         log c-server.log\n\
+         loglevel 10\n\
+         conlog 0\n\
+         node {peer} 127.0.0.1 {password} {flags}\n\
+         {extra}"
+    );
+    std::fs::write(dir.join("binkd.conf"), config).unwrap();
+    Command::new(c_binary_bwlim().unwrap())
+        .arg("-s")
+        .arg("binkd.conf")
+        .current_dir(dir)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .expect("cannot start the C server")
 }

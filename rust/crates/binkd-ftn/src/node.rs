@@ -48,6 +48,8 @@ pub const HC_OFF: i32 = -1;
 pub const HC_USE_OLD: i32 = 0;
 /// `NP_ON`.
 pub const NP_ON: i32 = 1;
+/// `BW_DEF`: the percent of a node without a `-bw` option.
+pub const BW_DEF: i64 = -100;
 /// `NP_OFF`.
 pub const NP_OFF: i32 = 0;
 
@@ -98,6 +100,10 @@ pub struct FtnNode {
     /// 0 is off, 1 is `-ip`, 2 is `-sip`.
     pub restrict_ip: i32,
     pub np_flag: i32,
+    /// The send limit of `-bw` in bytes per second, or a negative percent.
+    pub bw_send: i64,
+    /// The recv limit of `-bw` in bytes per second, or a negative percent.
+    pub bw_recv: i64,
     /// The node is held until this time.
     pub hold_until: i64,
     /// 0 is free, `c` is a call, `b` is a session.
@@ -143,6 +149,8 @@ impl FtnNode {
             hc_flag: 0,
             restrict_ip: 0,
             np_flag: 0,
+            bw_send: BW_DEF,
+            bw_recv: BW_DEF,
             hold_until: 0,
             busy: 0,
             mail_flvr: 0,
@@ -171,6 +179,10 @@ pub struct NodeSpec {
     pub restrict_ip: Option<i32>,
     pub hc_flag: Option<i32>,
     pub np_flag: Option<i32>,
+    /// The `-bw` option of the node.
+    pub bw_send: Option<i64>,
+    /// The `-bw` option of the node.
+    pub bw_recv: Option<i64>,
     pub pipe: Option<String>,
     pub ip_afamily: Option<i32>,
 }
@@ -240,6 +252,12 @@ impl NodeTable {
             if v != USE_OLD {
                 node.nd_flag = v;
             }
+        }
+        if let Some(v) = spec.bw_send {
+            node.bw_send = v;
+        }
+        if let Some(v) = spec.bw_recv {
+            node.bw_recv = v;
         }
         if let Some(v) = spec.np_flag {
             if v != USE_OLD {

@@ -909,6 +909,8 @@ impl<'a> Parser<'a> {
         let mut hc_flag = USE_OLD;
         let mut md_flag = USE_OLD;
         let mut np_flag = USE_OLD;
+        let mut bw_send = binkd_ftn::node::BW_DEF;
+        let mut bw_recv = binkd_ftn::node::BW_DEF;
         let mut restrict_ip = USE_OLD;
         let mut ip_afamily = USE_OLD;
         let mut pipe: Option<String> = None;
@@ -936,6 +938,29 @@ impl<'a> Parser<'a> {
                     "-hc" => hc_flag = 1,
                     "-nohc" => hc_flag = -1,
                     "-noproxy" => np_flag = 1,
+                    // The C code holds the option with `BW_LIM` only.
+                    "-bw" if self.features.bwlim => {
+                        // The port of the `-bw` option: one value asks for both
+                        // directions, and two values split at the first slash.
+                        if j == words.len() - 1 {
+                            return Err(self.error("`-bw' option requires parameter".to_string()));
+                        }
+                        j += 1;
+                        let value = words[j].clone();
+                        let (send, recv) = match value.split_once('/') {
+                            Some((send, recv)) => (send.to_string(), recv.to_string()),
+                            None => (value.clone(), value),
+                        };
+                        let mut err = None;
+                        bw_send = Self::parse_rate(&send, &mut err);
+                        if err.is_some() {
+                            return Err(self.error("syntax error near `-bw'".to_string()));
+                        }
+                        bw_recv = Self::parse_rate(&recv, &mut err);
+                        if err.is_some() {
+                            return Err(self.error("syntax error near `-bw'".to_string()));
+                        }
+                    }
                     "-crypt" => {
                         // The C code logs that the option is obsolete.
                     }
@@ -1005,6 +1030,8 @@ impl<'a> Parser<'a> {
             restrict_ip: Some(restrict_ip),
             hc_flag: Some(hc_flag),
             np_flag: Some(np_flag),
+            bw_send: Some(bw_send),
+            bw_recv: Some(bw_recv),
             pipe,
             ip_afamily: Some(ip_afamily),
         };
@@ -1451,6 +1478,38 @@ mod tests {
             "sysname test\nsysop test\nlocation test\nnodeinfo test\n\
              domain fidonet {dir} 2\naddress 2:5047/13@fidonet\ninbound {dir}\n"
         )
+    }
+
+    /// The `-bw` option of a node, the port of the `read_node_info()` case.
+    #[test]
+    fn the_bw_option_of_a_node() {
+        let dir = std::env::temp_dir();
+        let dir = dir.to_string_lossy();
+        let text = format!(
+            "{}node 2:5047/100@fidonet host.example.com secret -bw 2k/50%%\n\
+             node 2:5047/101@fidonet host.example.com secret -bw -\n",
+            base(&dir)
+        );
+        let path = write_case("bw", &text);
+        let mut parser = Parser::new();
+        let mut features = crate::keywords::Features::unix_default();
+        features.bwlim = true;
+        parser.set_features(features);
+        let config = parser.parse(&path).unwrap();
+        let nodes = config.spool.nodes.nodes();
+        let node = nodes.iter().find(|node| node.fa.node == 100).unwrap();
+        // One value asks for both directions, `2k` is 2048 bytes per second,
+        // and `%%` makes the value a percent. The tokenizer of the C code eats a
+        // single `%`, the port of the `%VAR%` substitution of `getwordx2()`, so a
+        // config needs the doubled `%%`.
+        assert_eq!(node.bw_send, 2048);
+        assert_eq!(node.bw_recv, -50);
+        let node = nodes.iter().find(|node| node.fa.node == 101).unwrap();
+        assert_eq!(node.bw_send, 0);
+        assert_eq!(node.bw_recv, 0);
+        // The C code holds the option with `BW_LIM` only.
+        let mut parser = Parser::new();
+        assert!(parser.parse(&path).is_err());
     }
 
     #[test]

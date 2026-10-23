@@ -227,6 +227,17 @@ BINKD_C_PROXY=/path/to/binkd-proxy \
 Without `BINKD_C_PROXY` the tests report that they are skipped. The corpus tests
 need the plain build of the C binary, so keep the two builds apart.
 
+The Rust test `crates/binkd-proto/tests/interop.rs` runs a transfer of the port
+against the C server with the rate limit. Set `BINKD_C_BWLIM` to the path of a C
+binary that the `configure` script built with `--with-bwlim`:
+
+```sh
+cd rust
+BINKD_C_BWLIM=/path/to/binkd-bwlim cargo test -p binkd-proto --test interop
+```
+
+Without `BINKD_C_BWLIM` the test reports that it is skipped.
+
 The Rust test `crates/binkd-net/tests/srv.rs` runs the SRV lookup of the port
 against a server of the test on the loopback address. The test needs no C binary,
 because the C code asks the resolver library of the system. The test supplies the

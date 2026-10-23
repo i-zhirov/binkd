@@ -319,6 +319,14 @@ fn node_list(config: &Config) -> String {
         if node.np_flag == NP_ON {
             flags.push_str(" -noproxy");
         }
+        // The C code prints the option for a node that differs from the default.
+        if node.bw_send != binkd_ftn::node::BW_DEF || node.bw_recv != binkd_ftn::node::BW_DEF {
+            flags.push_str(&format!(
+                " -bw {}/{}",
+                describe_rate(node.bw_send),
+                describe_rate(node.bw_recv)
+            ));
+        }
         if node.restrict_ip == RIP_ON {
             flags.push_str(" -ip");
         }

@@ -817,15 +817,46 @@ Progress:
       switch, and it never holds one on DOS, Amiga, and OS/2 ICC. The port holds
       no settings on Windows, so it answers a plain resolution there. The port
       matches the default build of the C code on both platforms.
-- The rate limit and `binkd-srif` are open.
+- `binkd-proto::bw` holds the rate limit, the port of the `BW_LIM` code of
+  `protocol.c`: the meter of the two directions, the average of the C code with its
+  window of ten seconds, the wait of a direction over the limit, the limit of a file
+  from the rules of `limit-rate` and the `-bw` of the node, and the limits of the
+  session from the listed addresses of the peer and the `defnode`. (done)
+- The tests of the rate limit: `bw.rs` holds the arithmetic of the average and of
+  the wait, `session.rs` holds the transfer of a file of 4096 bytes at the limit of
+  4096 bytes per second, and `interop.rs` holds the same transfer against the C
+  server of the `--with-bwlim` build, where the C code of the meter is the oracle.
+  (done)
+- The `-bw` option of a node and the rules of `limit-rate` are the port of the
+  config: the option and the rules answer a plain resolution without the `BW_LIM`
+  build of the C code, the port of the `Features` of the port. The C corpus of the
+  tests holds no case of them, because the corpus runner of the C code holds the
+  plain build. The port covers them with the unit tests of the parser and with the
+  interop test of the rate limit. (done)
+- The divergences of the rate limit, for the record:
+    - The C code reads the wall clock and it resets the meter when the clock steps
+      back. The port reads a monotonic clock, so the time cannot step back.
+    - The C code holds the descriptor of a direction out of the `select()` set and it
+      lowers the timeout of the `select()`. The port waits with the timer of the
+      runtime before the read or the write of a block, so the bytes stop in the same
+      way.
+    - A `send()` that fails lowers the counter of the C code by one, because the C
+      code counts the answer before it reads it. The port counts the bytes of a
+      successful write only.
+    - The tokenizer of the C code eats a single `%` of a value, the port of the
+      `%VAR%` substitution of `getwordx2()`, so a rate in a config needs the
+      doubled `%%`. The port does the same, and the dump holds the single `%` like
+      the C code.
+- `binkd-srif` is open.
 
 Exit criteria:
 
 - Two Rust instances exchange a packet. (done)
 - A Rust instance and a C instance exchange a packet in both roles. (done)
 - The proxy, the SRV lookup, and the rate limit match the C code. (the proxy
-  passes the interop matrix of `proxy_interop.rs` and the SRV lookup passes the
-  tests of `crates/binkd-net/tests/srv.rs`; the rate limit is open)
+  passes the interop matrix of `proxy_interop.rs`, the SRV lookup passes the tests
+  of `crates/binkd-net/tests/srv.rs`, and the rate limit passes the tests of
+  `crates/binkd-proto/tests/session.rs` and of `crates/binkd-proto/tests/interop.rs`)
 
 ### Phase 6: binary and library
 

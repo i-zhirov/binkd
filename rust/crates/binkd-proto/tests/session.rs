@@ -64,9 +64,81 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         max_servers: 100,
         servers: 1,
         trace: false,
+        rates: Vec::new(),
+        bw_send: -100,
+        bw_recv: -100,
         skip: Vec::new(),
         listed: false,
     }
+}
+
+/// The rate limit of a file holds the transfer, the port of `setup_rate_limit()`.
+///
+/// The client holds an absolute send limit of 4096 bytes per second, so the file of
+/// 4096 bytes needs about one second. The port of the C code meters the bytes of the
+/// two directions and waits while a direction is over the limit.
+#[tokio::test]
+async fn the_rate_limit_of_a_file() {
+    let client_dir = temp_dir("rate-client");
+    let server_dir = temp_dir("rate-server");
+    let content = vec![b'r'; 4096];
+    let path = client_dir.join("rate.pkt");
+    std::fs::write(&path, &content).unwrap();
+    let file = SendFile {
+        netname: "13b70064.pkt".to_string(),
+        path: Some(path),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    };
+
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let mut client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    // The C code reads the `-bw` of the `defnode` when the peer holds no node of
+    // its own, the port of the `ADR()` of `protocol.c`.
+    client_config.spool.nodes.add(
+        &address("0:0/0.0@defnode"),
+        &binkd_ftn::node::NodeSpec {
+            bw_send: Some(4096),
+            ..binkd_ftn::node::NodeSpec::default()
+        },
+        0,
+    );
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+
+    let started = std::time::Instant::now();
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &[file],
+            &mut |_| Ok(()),
+            Duration::from_secs(20),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(20),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    let elapsed = started.elapsed();
+    let report = client.expect("the client failed");
+    let _ = server.expect("the server failed");
+    assert_eq!(report.files_sent, 1);
+    // The file arrived in full, and the limit held the transfer.
+    assert_eq!(
+        std::fs::read(server_dir.join("13b70064.pkt")).unwrap(),
+        content
+    );
+    assert!(elapsed.as_millis() >= 500, "{elapsed:?}");
 }
 
 /// Runs the two ends of a session.

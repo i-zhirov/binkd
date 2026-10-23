@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use binkd_ftn::addr::FtnAddr;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+use crate::bw;
 use crate::compress::{self, Compressor, Decompressor, Method, Methods, ZRule, BLOCK_SIZE};
 use crate::frame::{self, Command, Frame};
 use binkd_spool::inbound::{FreeSpace, TFile};
@@ -84,6 +85,12 @@ pub struct SessionConfig {
     /// C code at `loglevel 10`. The log of a crypted session holds the frames
     /// before the encryption, as the C code logs them.
     pub trace: bool,
+    /// The rules of the `limit-rate` directive, the port of `config->rates`.
+    pub rates: Vec<bw::RateRule>,
+    /// The `-bw` send limit of the node, the port of `to->bw_send`.
+    pub bw_send: i64,
+    /// The `-bw` recv limit of the node, the port of `to->bw_recv`.
+    pub bw_recv: i64,
 }
 
 /// A file to send.
@@ -149,6 +156,12 @@ pub struct Report {
     /// C code at `loglevel 10`. The log of a crypted session holds the frames
     /// before the encryption, as the C code logs them.
     pub trace: bool,
+    /// The rules of the `limit-rate` directive, the port of `config->rates`.
+    pub rates: Vec<bw::RateRule>,
+    /// The `-bw` send limit of the node, the port of `to->bw_send`.
+    pub bw_send: i64,
+    /// The `-bw` recv limit of the node, the port of `to->bw_recv`.
+    pub bw_recv: i64,
 }
 
 /// The NR mode of a session, the port of `NR_flag` of `protoco2.h`.
@@ -319,6 +332,8 @@ where
         let _ = session.send_text(Command::Bsy, "Too many servers").await;
         return Err(Error::Busy("too many servers".to_string()));
     }
+    // The port of the part of `ADR()` that reads the `-bw` of the nodes.
+    session.setup_session_limits();
     let files = files(&session.report.peer_addresses);
     session.send_files(&files, timeout).await?;
     session.receive_files(receive, timeout).await?;
@@ -373,6 +388,10 @@ struct Session<S> {
     msgs_in_batch: usize,
     /// The peer sent the end of the batch.
     peer_eob: bool,
+    /// The meter of the send direction, the port of `state->bw_send`.
+    bw_send: bw::Bandwidth,
+    /// The meter of the recv direction, the port of `state->bw_recv`.
+    bw_recv: bw::Bandwidth,
 }
 
 impl<S> Session<S>
@@ -420,6 +439,8 @@ where
             in_complete: None,
             msgs_in_batch: 0,
             peer_eob: false,
+            bw_send: bw::Bandwidth::new(0, 0),
+            bw_recv: bw::Bandwidth::new(0, 0),
         }
     }
 
@@ -441,10 +462,14 @@ where
         if let Some(crypt) = &mut self.crypt {
             binkd_ftn::crypt::encrypt_buf(&mut data, &mut crypt.keys_out);
         }
+        // The port of the meter of `send_block()`: the wait of the limit comes
+        // before the write, and the bytes of the frame come after it.
+        self.wait_rate(true).await;
         self.stream
             .write_all(&data)
             .await
             .map_err(|e| Error::Io(e.to_string()))?;
+        self.bw_send.bytes += data.len() as u64;
         self.stream
             .flush()
             .await
@@ -491,11 +516,64 @@ where
         buffer: &mut [u8],
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
+        self.wait_rate(false).await;
         match tokio::time::timeout(timeout, self.stream.read_exact(buffer)).await {
-            Ok(Ok(_)) => Ok(()),
+            Ok(Ok(_)) => {
+                // The port of the meter of `recv_block()`.
+                self.bw_recv.bytes += buffer.len() as u64;
+                Ok(())
+            }
             Ok(Err(e)) => Err(Error::Io(e.to_string())),
             Err(_) => Err(Error::Timeout),
         }
+    }
+
+    /// Waits while a direction is over the rate limit, the port of the part of the
+    /// `select()` loop of `protocol()`.
+    async fn wait_rate(&mut self, send: bool) {
+        let bw = if send {
+            &mut self.bw_send
+        } else {
+            &mut self.bw_recv
+        };
+        if let Some(delay) = bw.check(std::time::Instant::now()) {
+            tokio::time::sleep(delay).await;
+        }
+    }
+
+    /// Sets the session limits, the port of the part of `ADR()` that reads the
+    /// `-bw` of the nodes of the peer.
+    fn setup_session_limits(&mut self) {
+        let (send, recv) =
+            bw::session_limits(self.config.spool.nodes.nodes(), &self.report.peer_addresses);
+        self.bw_send.abs = send.0;
+        self.bw_send.rel = send.1;
+        self.bw_recv.abs = recv.0;
+        self.bw_recv.rel = recv.1;
+    }
+
+    /// Starts the limit of a file, the port of `setup_rate_limit()`.
+    ///
+    /// The C code matches the rules of `limit-rate` in the order of the config,
+    /// and it takes the first rule whose address type and mask match the file.
+    fn setup_rate_limit(&mut self, send: bool, name: &str) {
+        let amask = self.addr_type();
+        let mut rate = -100;
+        for rule in &self.config.rates {
+            if rule.atype & amask != 0
+                && binkd_ftn::pattern::pmatch_ncase(rule.mask.as_bytes(), name.as_bytes())
+            {
+                rate = rule.rate;
+                break;
+            }
+        }
+        let bw = if send {
+            &mut self.bw_send
+        } else {
+            &mut self.bw_recv
+        };
+        bw.limit = bw::file_limit(rate, bw.abs, bw.rel);
+        bw.start();
     }
 
     /// Runs the handshake of the port of `banner()` and the command handlers.
@@ -846,6 +924,9 @@ where
     /// The `M_FILE` frame holds the size of the file, not the size of the
     /// compressed data. The extra argument holds the method.
     async fn send_file(&mut self, file: &SendFile, method: Option<Method>) -> Result<(), Error> {
+        // The port of `start_file_transfer()`: the rate of the file starts
+        // before the announcement of the file.
+        self.setup_rate_limit(true, &file.netname);
         let extra = match method {
             Some(method) => format!(" {}", method.name()),
             None => String::new(),
@@ -1291,6 +1372,9 @@ where
                     } else if offset != 0 || self.nr.they {
                         self.get_file_balance = self.get_file_balance.saturating_sub(1);
                     }
+                    // The port of `start_file_recv()`: the rate of the file
+                    // starts before the data.
+                    self.setup_rate_limit(false, &netname);
                     current = Some(Incoming {
                         tfile,
                         file,

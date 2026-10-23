@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use binkd_config::model::Config;
 use binkd_ftn::node::FtnNode;
+use binkd_proto::bw::{self, RateRule};
 use binkd_proto::{Methods, SessionConfig, SkipRule, ZRule};
 
 /// The settings of one session that a manager passes, the port of the parts of
@@ -96,6 +97,18 @@ pub fn session_config(
         max_servers: config.max_servers,
         servers: 1,
         trace,
+        // The port of the reads of the config in `protocol()`.
+        rates: config
+            .rates
+            .iter()
+            .map(|rule| RateRule {
+                mask: rule.mask.clone(),
+                atype: rule.atype,
+                rate: rule.rate,
+            })
+            .collect(),
+        bw_send: node.map(|node| node.bw_send).unwrap_or(bw::BW_DEF),
+        bw_recv: node.map(|node| node.bw_recv).unwrap_or(bw::BW_DEF),
     }
 }
 

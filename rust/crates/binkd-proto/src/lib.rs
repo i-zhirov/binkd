@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod bw;
 pub mod compress;
 pub mod frame;
 pub mod record;
