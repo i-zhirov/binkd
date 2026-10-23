@@ -25,7 +25,12 @@ pub fn mailer() -> String {
 /// session that the peer called: the port of the `to` argument of `protocol()`.
 ///
 /// The `crypt` argument is the `no_crypt` of the C code, the `-r` switch.
-pub fn session_config(config: &Config, node: Option<&FtnNode>, crypt: bool) -> SessionConfig {
+pub fn session_config(
+    config: &Config,
+    node: Option<&FtnNode>,
+    crypt: bool,
+    trace: bool,
+) -> SessionConfig {
     let (password, nr, nd, listed, skip) = match node {
         Some(node) => (
             node.pwd.clone(),
@@ -63,7 +68,7 @@ pub fn session_config(config: &Config, node: Option<&FtnNode>, crypt: bool) -> S
         // to every session that it starts, the port of `n_servers`.
         max_servers: config.max_servers,
         servers: 1,
-        trace: false,
+        trace,
     }
 }
 
@@ -100,13 +105,13 @@ mod tests {
         let mut config = Config {
             sysname: "test".to_string(),
             oblksize: 4096,
-            ..Config::default()
+            ..Config::new()
         };
         config.spool.aka = vec![address("2:5047/13@fidonet")];
         let mut node = binkd_ftn::node::FtnNode::new(&address("2:5047/100@fidonet"));
         node.pwd = "secret".to_string();
         node.nr_flag = binkd_ftn::node::NR_ON;
-        let settings = session_config(&config, Some(&node), true);
+        let settings = session_config(&config, Some(&node), true, false);
         assert_eq!(settings.sysname, "test");
         assert_eq!(settings.password, "secret");
         assert!(settings.nr);
@@ -122,8 +127,8 @@ mod tests {
 
     #[test]
     fn settings_of_an_answerer() {
-        let config = Config::default();
-        let settings = session_config(&config, None, true);
+        let config = Config::new();
+        let settings = session_config(&config, None, true, false);
         assert!(settings.password.is_empty());
         assert!(!settings.nr);
         assert!(!settings.nd);

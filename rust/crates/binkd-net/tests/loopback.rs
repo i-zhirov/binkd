@@ -41,7 +41,7 @@ fn time() -> DateTime {
 
 /// The settings of one side of the test.
 fn config(dir: &Path, aka: &str) -> Config {
-    let mut config = Config::default();
+    let mut config = Config::new();
     config.spool.domains = DomainTable::new(vec![FtnDomain {
         name: "fidonet".to_string(),
         path: dir.display().to_string(),
@@ -68,10 +68,6 @@ fn packet(config: &mut Config, name: &str, content: &[u8], _node: &FtnAddr, now:
 }
 
 ///
-/// Not enabled yet: the caller and the listener of the port connect and run
-/// their sessions, but the file exchange fails with a broken pipe of the
-/// transport. The cause needs the study.
-#[ignore = "the file exchange of the loopback fails"]
 #[tokio::test]
 async fn two_instances_exchange_a_packet() {
     let server_dir = temp_dir("server");
@@ -100,7 +96,7 @@ async fn two_instances_exchange_a_packet() {
             hosts: Some(format!("127.0.0.1:{port}")),
             ..NodeSpec::default()
         },
-        0,
+        now().epoch,
     );
 
     // The packet of each side.
@@ -111,14 +107,14 @@ async fn two_instances_exchange_a_packet() {
         "13b70064.cut",
         &client_packet,
         &server_aka,
-        0,
+        now().epoch,
     );
     packet(
         &mut server_config,
         "13b7000d.cut",
         &server_packet,
         &client_aka,
-        0,
+        now().epoch,
     );
 
     let server_files = vec![SendFile {
@@ -141,9 +137,9 @@ async fn two_instances_exchange_a_packet() {
         let listeners = bind(&server_config, &server_log, &now).await.unwrap();
         let listener = listeners.into_iter().next().unwrap();
         let (stream, _) = listener.accept().await.unwrap();
-        let settings = binkd_net::session_config(&server_config, None, true);
+        let settings = binkd_net::session_config(&server_config, None, true, true);
         let mut received: Vec<binkd_proto::ReceivedFile> = Vec::new();
-        let _result = binkd_proto::run(
+        let result = binkd_proto::run(
             stream,
             binkd_proto::Role::Server,
             &settings,
@@ -155,6 +151,15 @@ async fn two_instances_exchange_a_packet() {
             Duration::from_secs(5),
         )
         .await;
+        eprintln!("DEBUG server session {result:?}");
+        let frames = result.as_ref().map(|r| r.frames.as_slice()).unwrap_or(&[]);
+        for frame in frames {
+            eprintln!(
+                "DEBUG server {} {:?}",
+                if frame.sent { "send" } else { "recv" },
+                frame.name
+            );
+        }
         received
     };
 
@@ -167,9 +172,19 @@ async fn two_instances_exchange_a_packet() {
                 &now,
                 Duration::from_secs(5),
                 true,
+                true,
                 &|_| client_files.clone(),
             )
             .await;
+        if let Some(Ok(report)) = &result {
+            for frame in &report.frames {
+                eprintln!(
+                    "DEBUG client {} {:?}",
+                    if frame.sent { "send" } else { "recv" },
+                    frame.name
+                );
+            }
+        }
         result
     };
 

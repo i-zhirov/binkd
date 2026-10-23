@@ -483,6 +483,13 @@ impl Queue {
             self.add_file(filename, fa, flvr, action, kind, config, now, listed);
         }
 
+        eprintln!(
+            "DEBUG add_file {} listed {} kind {:?} flvr {}",
+            filename.display(),
+            listed,
+            kind,
+            flvr as char
+        );
         if !listed {
             let mut entry = QueueEntry {
                 fa: fa1.clone(),
@@ -644,6 +651,14 @@ impl Queue {
         let count = config.nodes.nodes().len();
         for i in 0..count {
             let node = &config.nodes.nodes()[i];
+            eprintln!(
+                "DEBUG next_node: node {} busy {} hosts {:?} hold {} now {}",
+                node.fa.format(false),
+                node.busy,
+                node.hosts,
+                node.hold_until,
+                now
+            );
             if node.busy != 0 || node.hosts.as_deref() == Some("-") || node.hold_until >= now {
                 continue;
             }

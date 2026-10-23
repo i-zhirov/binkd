@@ -84,6 +84,7 @@ pub async fn listen(
     now: impl Fn() -> DateTime + Send + Sync + 'static,
     timeout: std::time::Duration,
     crypt: bool,
+    trace: bool,
     files: impl Fn(&[FtnAddr]) -> Vec<SendFile> + Send + Sync + 'static,
     receive: impl Fn(&ReceivedFile) -> std::io::Result<()> + Send + Sync + 'static,
 ) -> Result<(), ListenError> {
@@ -127,7 +128,7 @@ pub async fn listen(
         // sessions before it starts one.
         let count = sessions.fetch_add(1, Ordering::SeqCst) + 1;
         log.message(TRACE, &format!("started server #{count}"), &now());
-        let mut settings = session_config(config, None, crypt);
+        let mut settings = session_config(config, None, crypt, trace);
         settings.max_servers = config.max_servers;
         settings.servers = count;
         let files = Arc::clone(&files);
@@ -161,7 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn bind_no_listen_entry() {
-        let config = Config::default();
+        let config = Config::new();
         let log = Arc::new(Log::new(0, 0, "", Vec::new()));
         let now = || DateTime {
             epoch: 0,

@@ -216,6 +216,10 @@ pub struct Config {
 
 impl Config {
     /// Creates a config with the defaults of `lock_config_structure()`.
+    ///
+    /// The C code starts from `lock_config_structure()`. The derived `Default`
+    /// of the port gives a zero for every value, which is not that state, so a
+    /// test that needs the defaults of the C code calls `Config::new()`.
     pub fn new() -> Config {
         Config {
             iport: "binkp".to_string(),
@@ -236,7 +240,7 @@ impl Config {
             spool: binkd_spool::config::SpoolConfig {
                 minfree: -1,
                 minfree_nonsecure: -1,
-                ..binkd_spool::config::SpoolConfig::default()
+                ..binkd_spool::config::SpoolConfig::new()
             },
             ..Config::default()
         }

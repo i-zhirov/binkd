@@ -731,9 +731,20 @@ Progress:
 - `Queue::scan_listed()` is the port of `q_scan(SCAN_LISTED, config)` of
   `do_client()`, which holds no queue entry and gives the flavours to the nodes;
   `Queue::scan()` is the port of the scan of the corpus, which holds them.
-- The loopback test of two Rust instances is written but not enabled: the caller
-  and the listener connect and run their sessions, and the file exchange fails
-  with a broken pipe of the transport. The cause needs the study.
+- The loopback test of two Rust instances passes: the caller and the listener
+  connect, both sessions run, and each side writes the packet of the other.
+  (done)
+- The frame log of a session is a setting of the port: `session_config()` and the
+  caller and the listener take the flag, the port of the frame log of the C code
+  at `loglevel 10`, and `Report.frames` carries the frames. The trace found the
+  two causes of the loopback below.
+- The caller scans the spool before it selects a node, the port of `do_client()`
+  of the C code: the scan gives the flavours to the nodes, the port of
+  `q_scan(SCAN_LISTED, config)`. Without the scan the port found no node.
+- A test that needs the defaults of the C code calls `Config::new()`: the derived
+  `Default` of the port gives a zero for every value, so `max_servers` was zero
+  and every session of the listener was refused with `M_BSY`. The port of
+  `readcfg.c` starts from `lock_config_structure()`, which is `Config::new()`.
 - The proxy, the SRV lookup, the rate limit, and `binkd-srif` are open.
 
 Exit criteria:

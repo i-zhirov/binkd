@@ -98,7 +98,7 @@ mod tests {
         let mut config = Config {
             oport: "binkp".to_string(),
             root_domain: "binkp.net".to_string(),
-            ..Config::default()
+            ..Config::new()
         };
         config.spool.domains = DomainTable::new(vec![FtnDomain {
             name: "fidonet".to_string(),

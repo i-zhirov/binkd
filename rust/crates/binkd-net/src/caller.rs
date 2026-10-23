@@ -92,8 +92,14 @@ impl Caller {
         now: &impl Fn() -> DateTime,
         timeout: Duration,
         crypt: bool,
+        trace: bool,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Option<Result<Report, CallError>> {
+        // The port of `do_client()`: the scan of the spool gives the flavours
+        // to the nodes, the port of `q_scan(SCAN_LISTED, config)`. The C code
+        // scans once for a pass and the port scans for every call, which is the
+        // same result without the flag of the queue.
+        self.scan(config, now().epoch);
         // The port of `q_next_node()` of `ftnq.c`: the node that is not busy,
         // that the config does not hold, and that the hold time passed. The
         // queue itself resets the flavours of the node and marks it busy.
@@ -127,7 +133,7 @@ impl Caller {
             return None;
         }
         let result = self
-            .call_hosts(&call, config, log, now, timeout, crypt, files)
+            .call_hosts(&call, config, log, now, timeout, crypt, trace, files)
             .await;
         self.busy.remove(&call.fa, F_CSY, &config.spool);
         // The port of the try files of `call0()`: a good session clears them,
@@ -155,9 +161,11 @@ impl Caller {
         now: &impl Fn() -> DateTime,
         timeout: Duration,
         crypt: bool,
+        trace: bool,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Result<Report, CallError> {
         let entries = hosts(&call.hosts, &call.fa, config);
+
         if entries.is_empty() {
             log.message(
                 ERROR,
@@ -194,7 +202,7 @@ impl Caller {
             // config; the port copies it, so the settings may borrow the
             // config while the node lives.
             let node = config.spool.nodes.get(&call.fa, now().epoch).cloned();
-            let settings = session_config(config, node.as_ref(), crypt);
+            let settings = session_config(config, node.as_ref(), crypt, trace);
             // The port of `protocol()`: the caller sends the files of the
             // queue for the peer, the port of the scan of `q_scan_boxes()`.
             let files = files(&call.fa);
@@ -226,6 +234,7 @@ impl Caller {
         now: &impl Fn() -> DateTime,
         timeout: Duration,
         crypt: bool,
+        trace: bool,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Vec<(FtnAddr, Result<Report, CallError>)> {
         self.scan(config, now().epoch);
@@ -239,6 +248,7 @@ impl Caller {
                 fa: node.fa.clone(),
                 hosts: node.hosts.clone().unwrap_or_default(),
             };
+            eprintln!("DEBUG busy test");
             if !self.busy.test(&call.fa, F_BSY, &config.spool)
                 || !self.busy.test(&call.fa, F_CSY, &config.spool)
             {
@@ -249,12 +259,13 @@ impl Caller {
                 );
                 continue;
             }
+            eprintln!("DEBUG busy add");
             if !self.busy.add(&call.fa, F_CSY, &config.spool) {
                 continue;
             }
             clients += 1;
             let result = self
-                .call_hosts(&call, config, log, now, timeout, crypt, files)
+                .call_hosts(&call, config, log, now, timeout, crypt, trace, files)
                 .await;
             self.busy.remove(&call.fa, F_CSY, &config.spool);
             match &result {
@@ -276,7 +287,7 @@ mod tests {
 
     #[tokio::test]
     async fn no_node_to_call() {
-        let mut config = Config::default();
+        let mut config = Config::new();
         let log = Arc::new(Log::new(0, 0, "", Vec::new()));
         let now = || DateTime {
             epoch: 0,
@@ -294,6 +305,7 @@ mod tests {
                 &now,
                 Duration::from_secs(1),
                 true,
+                false,
                 &|_| Vec::new(),
             )
             .await
