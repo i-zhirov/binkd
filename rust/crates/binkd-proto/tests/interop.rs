@@ -885,8 +885,21 @@ async fn frame_sequences_match_catches_a_perturbation() {
     first_divergence(&port_sent, &c_received, "the C server received");
     first_divergence(&port_received, &c_sent, "the C server sent");
 
-    // One frame of the port is perturbed, and the diff must fail.
-    let mut perturbed = port_sent.clone();
+    // One frame of each direction of the port is perturbed, and the diff of
+    // that direction must fail.
+    assert!(
+        perturbed_diff_caught(&port_sent, &c_received),
+        "the diff did not catch a perturbed sent frame"
+    );
+    assert!(
+        perturbed_diff_caught(&port_received, &c_sent),
+        "the diff did not catch a perturbed received frame"
+    );
+}
+
+/// Perturbs one frame of a sequence and reports whether the diff catches it.
+fn perturbed_diff_caught(frames: &[String], other: &[String]) -> bool {
+    let mut perturbed = frames.to_vec();
     let index = perturbed.len() / 2;
     let original = perturbed[index].clone();
     perturbed[index] = if original == "OK" {
@@ -894,12 +907,9 @@ async fn frame_sequences_match_catches_a_perturbation() {
     } else {
         "OK".to_string()
     };
-    assert_ne!(perturbed, port_sent);
-    let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        first_divergence(&perturbed, &c_received, "the C server received");
-    }));
-    assert!(
-        caught.is_err(),
-        "the diff did not catch the perturbed frame {original:?} at {index}"
-    );
+    assert_ne!(perturbed, frames);
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        first_divergence(&perturbed, other, "the perturbed sequence");
+    }))
+    .is_err()
 }
