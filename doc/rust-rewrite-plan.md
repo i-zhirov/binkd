@@ -723,8 +723,18 @@ Progress:
 - The log of the port is shareable: `binkd-log::Log` holds its state in a mutex,
   the port of the process wide variables of the C code, so the listener, the
   caller, and the sessions write to one log.
-- The caller, the proxy, the SRV lookup, the rate limit, and `binkd-srif` are
-  open.
+- `binkd-net::caller` holds the outgoing calls, the port of `do_client()` and
+  `call0()`: the node selection of `q_next_node()`, the busy gates of `.bsy` and
+  `.csy`, the `.try` bookkeeping of `bad_try()` and `good_try()`, the host list,
+  and the timed connect. The C code forks a process for every call; the port
+  calls the nodes in turn. (done)
+- `Queue::scan_listed()` is the port of `q_scan(SCAN_LISTED, config)` of
+  `do_client()`, which holds no queue entry and gives the flavours to the nodes;
+  `Queue::scan()` is the port of the scan of the corpus, which holds them.
+- The loopback test of two Rust instances is written but not enabled: the caller
+  and the listener connect and run their sessions, and the file exchange fails
+  with a broken pipe of the transport. The cause needs the study.
+- The proxy, the SRV lookup, the rate limit, and `binkd-srif` are open.
 
 Exit criteria:
 

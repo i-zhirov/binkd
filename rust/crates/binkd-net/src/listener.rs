@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use binkd_config::model::Config;
 use binkd_ftn::addr::FtnAddr;
-use binkd_log::{DateTime, Level, Log};
+use binkd_log::{DateTime, Log, CONNECTION, ERROR, INFO, TRACE};
 use binkd_proto::{run_with, ReceivedFile, Role, SendFile};
 use tokio::net::{TcpListener, TcpStream};
 
@@ -52,17 +52,17 @@ pub async fn bind(
                     .map(|addr| addr.to_string())
                     .unwrap_or(addr);
                 // The C code logs the port of the entry at the level 3.
-                log.message(Level::INFO, &format!("listen on {local}"), &now());
+                log.message(INFO, &format!("listen on {local}"), &now());
                 listeners.push(listener);
             }
             Err(e) => {
-                log.message(Level::ERROR, &format!("bind {addr}: {e}"), &now());
+                log.message(ERROR, &format!("bind {addr}: {e}"), &now());
                 return Err(ListenError::Io(e));
             }
         }
     }
     if listeners.is_empty() {
-        log.message(Level::ERROR, "no listen socket", &now());
+        log.message(ERROR, "no listen socket", &now());
         return Err(ListenError::NoListen);
     }
     Ok(listeners)
@@ -83,6 +83,7 @@ pub async fn listen(
     log: Arc<Log>,
     now: impl Fn() -> DateTime + Send + Sync + 'static,
     timeout: std::time::Duration,
+    crypt: bool,
     files: impl Fn(&[FtnAddr]) -> Vec<SendFile> + Send + Sync + 'static,
     receive: impl Fn(&ReceivedFile) -> std::io::Result<()> + Send + Sync + 'static,
 ) -> Result<(), ListenError> {
@@ -104,7 +105,7 @@ pub async fn listen(
                         // The C code resolves the name of the peer later, in
                         // the session, and the port of `getnameinfo()` logs
                         // the numeric address here.
-                        log.message(Level::INFO, &format!("incoming from {addr}"), &now());
+                        log.message(INFO, &format!("incoming from {addr}"), &now());
                         if sender.send(stream).await.is_err() {
                             break;
                         }
@@ -112,7 +113,7 @@ pub async fn listen(
                     Err(e) => {
                         // The C code retries the errors of a reset or a
                         // timeout, and gives up on the others.
-                        log.message(Level::ERROR, &format!("accept: {e}"), &now());
+                        log.message(ERROR, &format!("accept: {e}"), &now());
                         break;
                     }
                 }
@@ -120,15 +121,16 @@ pub async fn listen(
         });
     }
     let receive = Arc::new(receive);
+    let files = Arc::new(files);
     while let Some(stream) = accepted.recv().await {
         // The port of `++n_servers` of `do_server()`: the C code counts the
         // sessions before it starts one.
         let count = sessions.fetch_add(1, Ordering::SeqCst) + 1;
-        log.message(Level::TRACE, &format!("started server #{count}"), &now());
-        let mut settings = session_config(config, None, !config.no_crypt);
+        log.message(TRACE, &format!("started server #{count}"), &now());
+        let mut settings = session_config(config, None, crypt);
         settings.max_servers = config.max_servers;
         settings.servers = count;
-        let files = Arc::new(files);
+        let files = Arc::clone(&files);
         let receive = Arc::clone(&receive);
         let sessions = Arc::clone(&sessions);
         let log = Arc::clone(&log);
@@ -144,7 +146,7 @@ pub async fn listen(
             )
             .await;
             if let Err(e) = result {
-                log.message(Level::CONNECTION, &format!("session failed: {e}"), &now());
+                log.message(CONNECTION, &format!("session failed: {e}"), &now());
             }
             sessions.fetch_sub(1, Ordering::SeqCst);
         });
@@ -162,6 +164,7 @@ mod tests {
         let config = Config::default();
         let log = Arc::new(Log::new(0, 0, "", Vec::new()));
         let now = || DateTime {
+            epoch: 0,
             day: 1,
             month: 1,
             hour: 0,

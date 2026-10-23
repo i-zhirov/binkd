@@ -122,9 +122,12 @@ impl Queue {
         queue
     }
 
-    /// Sets the flavour of the nodes from the outbound.
+    /// Scans the spool for the client manager, the port of
+    /// `q_scan(SCAN_LISTED, config)` of `ftnq.c`.
     ///
-    /// The port of `q_scan(SCAN_LISTED, config)`.
+    /// The C code scans the spool with `SCAN_LISTED`, so `q_add_file()` holds
+    /// no queue entry and gives the flavours to the node of every file that the
+    /// scan reads. The caller of the port calls this before `next_node()`.
     pub fn scan_listed(config: &mut SpoolConfig, now: i64) {
         let mut queue = Queue::new();
         queue.scan_into(config, now, true);

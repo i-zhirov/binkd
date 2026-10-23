@@ -90,7 +90,8 @@ mod tests {
             .add(&fa, &binkd_ftn::node::NodeSpec::default(), 0);
 
         set_status(&config.domains, &fa, "13b70064.pkt 300 1000000000").unwrap();
-        // The outbound scanner reads the file as the queue type `s`.
+        // The outbound scanner reads the file as the queue type `s`, and the
+        // scan of the client manager gives its flavour to the node.
         let queue = crate::queue::Queue::scan(&mut config, 0);
         let entry = queue
             .entries
@@ -100,6 +101,9 @@ mod tests {
         assert_eq!(entry.path.to_string_lossy(), "13b70064.pkt");
         assert_eq!(entry.size, 300);
         assert_eq!(entry.time, 1_000_000_000);
+        crate::queue::Queue::scan_listed(&mut config, 0);
+        let node = config.nodes.get(&fa, 0).unwrap();
+        assert_eq!(node.files_flvr, b'h' as i32);
 
         // An empty status removes the file.
         set_status(&config.domains, &fa, "").unwrap();

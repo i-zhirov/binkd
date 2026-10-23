@@ -18,6 +18,8 @@ use crate::level::{level_char, Level, MONTHS};
 /// time, and the platform layer of the binary owns the timezone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DateTime {
+    /// The time in seconds since the epoch, the port of `time_t`.
+    pub epoch: i64,
     /// The day of the month, 1 to 31, the port of `tm_mday`.
     pub day: u32,
     /// The month, 1 to 12, the port of `tm_mon` plus one.
@@ -207,6 +209,7 @@ mod tests {
 
     fn time() -> DateTime {
         DateTime {
+            epoch: 1_600_991_262,
             day: 3,
             month: 10,
             hour: 9,
@@ -244,7 +247,7 @@ mod tests {
     fn a_mask_suppresses_the_file() {
         let dir = std::env::temp_dir().join(format!("binkd-log-{}", std::process::id()));
         let _ = std::fs::remove_file(&dir);
-        let mut log = Log::new(
+        let log = Log::new(
             DEBUG,
             FATAL,
             &dir.display().to_string(),

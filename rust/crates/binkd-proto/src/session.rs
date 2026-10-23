@@ -275,7 +275,7 @@ pub async fn run<S>(
     role: Role,
     config: &SessionConfig,
     files: &[SendFile],
-    receive: &mut dyn FnMut(&ReceivedFile) -> std::io::Result<()>,
+    receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
     timeout: std::time::Duration,
 ) -> Result<Report, Error>
 where
@@ -301,8 +301,8 @@ pub async fn run_with<S>(
     stream: S,
     role: Role,
     config: &SessionConfig,
-    files: &mut dyn FnMut(&[FtnAddr]) -> Vec<SendFile>,
-    receive: &mut dyn FnMut(&ReceivedFile) -> std::io::Result<()>,
+    files: &mut (dyn FnMut(&[FtnAddr]) -> Vec<SendFile> + Send),
+    receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
     timeout: std::time::Duration,
 ) -> Result<Report, Error>
 where
@@ -987,7 +987,7 @@ where
     fn finish_file(
         &mut self,
         complete: CompleteFile,
-        receive: &mut dyn FnMut(&ReceivedFile) -> std::io::Result<()>,
+        receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
     ) -> Result<(), Error> {
         // The port of `inb_done()`: the partial file takes its true name.
         let mut rnd = random();
@@ -1144,7 +1144,7 @@ where
     /// Receives the files of the peer until its end of the batch.
     async fn receive_files(
         &mut self,
-        receive: &mut dyn FnMut(&ReceivedFile) -> std::io::Result<()>,
+        receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
         let mut current: Option<Incoming> = None;
@@ -1279,10 +1279,6 @@ where
                         continue;
                     };
                     let received = file.metadata().map(|m| m.len()).unwrap_or(0);
-                    eprintln!(
-                        "DEBUG recv {} offset={offset} received={received} size={size} time={time}",
-                        tfile.netname
-                    );
                     if offset != received as i64 {
                         // The port of `start_file_recv()`: we ask for the
                         // file from the position of the partial file, and we
