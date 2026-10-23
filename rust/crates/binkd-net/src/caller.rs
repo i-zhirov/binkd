@@ -1,7 +1,6 @@
 //! The outgoing calls, the port of `do_client()` and `call0()` of `client.c`.
 
 use std::sync::Arc;
-use std::time::Duration;
 
 use binkd_config::model::Config;
 use binkd_ftn::addr::FtnAddr;
@@ -13,7 +12,7 @@ use binkd_spool::tryfile::{bad_try, good_try};
 use tokio::net::TcpStream;
 
 use crate::hosts::hosts;
-use crate::session::session_config;
+use crate::session::{session_config, SessionOptions};
 
 /// The caller failed.
 #[derive(Debug)]
@@ -84,15 +83,12 @@ impl Caller {
     /// The port of `do_client()`: the busy flag of the node, the gate of the
     /// `max_clients` directive, and the try files. The call answers `None` when
     /// the queue holds no node that the caller may call.
-    #[allow(clippy::too_many_arguments)]
     pub async fn call_next(
         &mut self,
         config: &mut Config,
         log: &Arc<Log>,
         now: &impl Fn() -> DateTime,
-        timeout: Duration,
-        crypt: bool,
-        trace: bool,
+        options: SessionOptions,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Option<Result<Report, CallError>> {
         // The port of `do_client()`: the scan of the spool gives the flavours
@@ -133,7 +129,7 @@ impl Caller {
             return None;
         }
         let result = self
-            .call_hosts(&call, config, log, now, timeout, crypt, trace, files)
+            .call_hosts(&call, config, log, now, options, files)
             .await;
         self.busy.remove(&call.fa, F_CSY, &config.spool);
         // The port of the try files of `call0()`: a good session clears them,
@@ -152,16 +148,13 @@ impl Caller {
     /// The C code resolves the name of every host with `getaddrinfo()` and tries
     /// every address; the transport of the runtime resolves the name itself, so an
     /// entry that resolves to several addresses is one attempt for the port.
-    #[allow(clippy::too_many_arguments)]
     async fn call_hosts(
         &self,
         call: &Call,
         config: &mut Config,
         log: &Arc<Log>,
         now: &impl Fn() -> DateTime,
-        timeout: Duration,
-        crypt: bool,
-        trace: bool,
+        options: SessionOptions,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Result<Report, CallError> {
         let entries = hosts(&call.hosts, &call.fa, config);
@@ -178,31 +171,32 @@ impl Caller {
             let addr = format!("{}:{}", entry.name, entry.port);
             // The port of the `connect()` of `call0()` with the timeout of
             // the `connect-timeout` directive.
-            let stream = match tokio::time::timeout(timeout, TcpStream::connect(&addr)).await {
-                Ok(Ok(stream)) => stream,
-                Ok(Err(e)) => {
-                    log.message(
-                        ERROR,
-                        &format!("connection to {} failed: {e}", call.fa.format(false)),
-                        &now(),
-                    );
-                    continue;
-                }
-                Err(_) => {
-                    log.message(
-                        ERROR,
-                        &format!("connection to {} timed out", call.fa.format(false)),
-                        &now(),
-                    );
-                    continue;
-                }
-            };
+            let stream =
+                match tokio::time::timeout(options.timeout, TcpStream::connect(&addr)).await {
+                    Ok(Ok(stream)) => stream,
+                    Ok(Err(e)) => {
+                        log.message(
+                            ERROR,
+                            &format!("connection to {} failed: {e}", call.fa.format(false)),
+                            &now(),
+                        );
+                        continue;
+                    }
+                    Err(_) => {
+                        log.message(
+                            ERROR,
+                            &format!("connection to {} timed out", call.fa.format(false)),
+                            &now(),
+                        );
+                        continue;
+                    }
+                };
             log.message(START, &format!("connected to {addr}"), &now());
             // The C code holds the node of the peer in a pointer of the
             // config; the port copies it, so the settings may borrow the
             // config while the node lives.
             let node = config.spool.nodes.get(&call.fa, now().epoch).cloned();
-            let settings = session_config(config, node.as_ref(), crypt, trace);
+            let settings = session_config(config, node.as_ref(), options.crypt, options.trace);
             // The port of `protocol()`: the caller sends the files of the
             // queue for the peer, the port of the scan of `q_scan_boxes()`.
             let files = files(&call.fa);
@@ -212,7 +206,7 @@ impl Caller {
                 &settings,
                 &mut |_| files.clone(),
                 &mut |_| Ok(()),
-                timeout,
+                options.timeout,
             )
             .await;
             return result.map_err(CallError::Session);
@@ -226,15 +220,12 @@ impl Caller {
     /// calls the nodes one after the other, the port of `call()` that waits for
     /// `call0()`. The gate of the `max_clients` directive counts the calls of
     /// one pass.
-    #[allow(clippy::too_many_arguments)]
     pub async fn call_all(
         &mut self,
         config: &mut Config,
         log: &Arc<Log>,
         now: &impl Fn() -> DateTime,
-        timeout: Duration,
-        crypt: bool,
-        trace: bool,
+        options: SessionOptions,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Vec<(FtnAddr, Result<Report, CallError>)> {
         self.scan(config, now().epoch);
@@ -248,7 +239,6 @@ impl Caller {
                 fa: node.fa.clone(),
                 hosts: node.hosts.clone().unwrap_or_default(),
             };
-            eprintln!("DEBUG busy test");
             if !self.busy.test(&call.fa, F_BSY, &config.spool)
                 || !self.busy.test(&call.fa, F_CSY, &config.spool)
             {
@@ -259,13 +249,12 @@ impl Caller {
                 );
                 continue;
             }
-            eprintln!("DEBUG busy add");
             if !self.busy.add(&call.fa, F_CSY, &config.spool) {
                 continue;
             }
             clients += 1;
             let result = self
-                .call_hosts(&call, config, log, now, timeout, crypt, trace, files)
+                .call_hosts(&call, config, log, now, options, files)
                 .await;
             self.busy.remove(&call.fa, F_CSY, &config.spool);
             match &result {
@@ -282,6 +271,8 @@ impl Caller {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use binkd_config::model::Config;
 
@@ -303,9 +294,7 @@ mod tests {
                 &mut config,
                 &log,
                 &now,
-                Duration::from_secs(1),
-                true,
-                false,
+                SessionOptions::new(Duration::from_secs(1), true, false),
                 &|_| Vec::new(),
             )
             .await

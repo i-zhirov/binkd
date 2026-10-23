@@ -734,6 +734,11 @@ Progress:
 - The loopback test of two Rust instances passes: the caller and the listener
   connect, both sessions run, and each side writes the packet of the other.
   (done)
+- The interop matrix of the network layer passes, the port of the matrix of the
+  session layer: `rust_caller_to_c_listener` runs the caller of the port against
+  the C listener, and `c_caller_to_rust_listener` runs the C client against the
+  listener of the port. Both sides send the packet of their outbound and write the
+  packet of the peer, so the tests cover the two roles. (done)
 - The frame log of a session is a setting of the port: `session_config()` and the
   caller and the listener take the flag, the port of the frame log of the C code
   at `loglevel 10`, and `Report.frames` carries the frames. The trace found the
@@ -745,12 +750,16 @@ Progress:
   `Default` of the port gives a zero for every value, so `max_servers` was zero
   and every session of the listener was refused with `M_BSY`. The port of
   `readcfg.c` starts from `lock_config_structure()`, which is `Config::new()`.
+- The settings of a session that a manager passes are one value,
+  `SessionOptions`: the timeout, the crypt flag, and the trace flag. The listener
+  and the caller take the value, the port of the fields of `STATE` that
+  `do_server()` and `do_client()` set.
 - The proxy, the SRV lookup, the rate limit, and `binkd-srif` are open.
 
 Exit criteria:
 
-- Two Rust instances exchange a packet.
-- A Rust instance and a C instance exchange a packet in both roles.
+- Two Rust instances exchange a packet. (done)
+- A Rust instance and a C instance exchange a packet in both roles. (done)
 - The proxy, the SRV lookup, and the rate limit match the C code.
 
 ### Phase 6: binary and library

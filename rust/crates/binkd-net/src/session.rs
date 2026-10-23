@@ -1,9 +1,36 @@
 //! The settings of a session from the config, the port of the part of
 //! `init_protocol()` and of `protocol()` of `protocol.c` that reads the config.
 
+use std::time::Duration;
+
 use binkd_config::model::Config;
 use binkd_ftn::node::FtnNode;
 use binkd_proto::{Methods, SessionConfig, SkipRule, ZRule};
+
+/// The settings of one session that a manager passes, the port of the parts of
+/// `STATE` that `do_server()` and `do_client()` set from the config.
+#[derive(Clone, Copy, Debug)]
+pub struct SessionOptions {
+    /// The time that a session waits for the peer, the port of `nettimeout`.
+    pub timeout: Duration,
+    /// The session crypts its traffic, the port of the `no_crypt` field of the
+    /// state, the `-r` switch.
+    pub crypt: bool,
+    /// The session records its frames, the port of the frame log of the C code at
+    /// the loglevel 10.
+    pub trace: bool,
+}
+
+impl SessionOptions {
+    /// Creates the settings of a session of a manager.
+    pub fn new(timeout: Duration, crypt: bool, trace: bool) -> SessionOptions {
+        SessionOptions {
+            timeout,
+            crypt,
+            trace,
+        }
+    }
+}
 
 /// The name and the version of the mailer of the banner, the port of `MYNAME`
 /// and `MYVER` of `Config.h`.
@@ -98,6 +125,7 @@ fn zrule(rule: &binkd_config::model::ZRule) -> ZRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use binkd_config::model::Config;
 
     #[test]

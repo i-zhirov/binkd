@@ -10,7 +10,7 @@ use binkd_log::{DateTime, Log, CONNECTION, ERROR, INFO, TRACE};
 use binkd_proto::{run_with, ReceivedFile, Role, SendFile};
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::session::session_config;
+use crate::session::{session_config, SessionOptions};
 
 /// The listener failed.
 #[derive(Debug)]
@@ -79,16 +79,14 @@ pub async fn bind(
 /// of the queue of `protocol()`, and `receive` runs for every file that a
 /// session receives.
 pub async fn listen(
-    config: &Config,
+    config: Config,
     log: Arc<Log>,
     now: impl Fn() -> DateTime + Send + Sync + 'static,
-    timeout: std::time::Duration,
-    crypt: bool,
-    trace: bool,
+    options: SessionOptions,
     files: impl Fn(&[FtnAddr]) -> Vec<SendFile> + Send + Sync + 'static,
     receive: impl Fn(&ReceivedFile) -> std::io::Result<()> + Send + Sync + 'static,
 ) -> Result<(), ListenError> {
-    let listeners = bind(config, &log, &now).await?;
+    let listeners = bind(&config, &log, &now).await?;
     let now = Arc::new(now);
     let sessions = Arc::new(AtomicUsize::new(0));
     // The C code waits on every listen socket at once with `select()`. The port
@@ -128,7 +126,7 @@ pub async fn listen(
         // sessions before it starts one.
         let count = sessions.fetch_add(1, Ordering::SeqCst) + 1;
         log.message(TRACE, &format!("started server #{count}"), &now());
-        let mut settings = session_config(config, None, crypt, trace);
+        let mut settings = session_config(&config, None, options.crypt, options.trace);
         settings.max_servers = config.max_servers;
         settings.servers = count;
         let files = Arc::clone(&files);
@@ -143,7 +141,7 @@ pub async fn listen(
                 &settings,
                 &mut |peer| files(peer),
                 &mut |file| receive(file),
-                timeout,
+                options.timeout,
             )
             .await;
             if let Err(e) = result {

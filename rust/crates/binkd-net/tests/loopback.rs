@@ -67,7 +67,6 @@ fn packet(config: &mut Config, name: &str, content: &[u8], _node: &FtnAddr, now:
     let _queue = binkd_spool::queue::Queue::scan(&mut config.spool, now);
 }
 
-///
 #[tokio::test]
 async fn two_instances_exchange_a_packet() {
     let server_dir = temp_dir("server");
@@ -151,15 +150,7 @@ async fn two_instances_exchange_a_packet() {
             Duration::from_secs(5),
         )
         .await;
-        eprintln!("DEBUG server session {result:?}");
-        let frames = result.as_ref().map(|r| r.frames.as_slice()).unwrap_or(&[]);
-        for frame in frames {
-            eprintln!(
-                "DEBUG server {} {:?}",
-                if frame.sent { "send" } else { "recv" },
-                frame.name
-            );
-        }
+        assert!(result.is_ok(), "{result:?}");
         received
     };
 
@@ -170,21 +161,10 @@ async fn two_instances_exchange_a_packet() {
                 &mut client_config,
                 &log,
                 &now,
-                Duration::from_secs(5),
-                true,
-                true,
+                binkd_net::SessionOptions::new(Duration::from_secs(5), true, true),
                 &|_| client_files.clone(),
             )
             .await;
-        if let Some(Ok(report)) = &result {
-            for frame in &report.frames {
-                eprintln!(
-                    "DEBUG client {} {:?}",
-                    if frame.sent { "send" } else { "recv" },
-                    frame.name
-                );
-            }
-        }
         result
     };
 

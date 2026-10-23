@@ -18,4 +18,4 @@ pub use caller::{Call, CallError, Caller};
 pub use hosts::{ftnaddress_to_domain, hosts, Host};
 pub use listener::{bind, listen, ListenError};
 pub use port::{find_port, BINKP, DEFAULT_PORT};
-pub use session::session_config;
+pub use session::{session_config, SessionOptions};

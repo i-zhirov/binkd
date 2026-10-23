@@ -87,6 +87,8 @@ binkd/
         ├── binkd-spool/        # BSO spool handling
         ├── binkd-config/       # config model and parser
         ├── binkd-proto/        # binkp frames and the session state machine
+        ├── binkd-log/          # text and binary session logs
+        ├── binkd-net/          # listen sockets and outgoing calls
         └── binkd-corpus/       # test-only corpus reader
 ```
 
@@ -244,8 +246,8 @@ binkd-corpus (test-only corpus reader)
 
 Each layer calls the layer below it. No layer calls a layer above it.
 `binkd-ftn` is a leaf: it depends on `std` only. Today the workspace has
-`binkd-ftn`, `binkd-spool`, `binkd-config`, `binkd-proto`, and
-`binkd-corpus`; the other crates arrive in the later phases of
+`binkd-ftn`, `binkd-spool`, `binkd-config`, `binkd-proto`, `binkd-log`,
+`binkd-net`, and `binkd-corpus`; the other crates arrive in the later phases of
 `doc/rust-rewrite-plan.md`.
 
 The layers of the C code, for reference:
