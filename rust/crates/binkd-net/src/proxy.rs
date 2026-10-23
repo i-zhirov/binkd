@@ -21,6 +21,7 @@ use tokio::net::TcpStream;
 
 use crate::base64;
 use crate::ntlm;
+use crate::srv::{Family, Hints};
 
 /// The proxy of a call failed, the port of the error of `h_connect()`.
 #[derive(Debug)]
@@ -42,18 +43,24 @@ pub enum ProxyError {
 pub async fn proxy_address(
     proxy: &str,
     socks: &str,
+    family: Family,
     log: &Arc<Log>,
     now: &impl Fn() -> DateTime,
 ) -> Result<SocketAddr, ProxyError> {
     let http = !proxy.is_empty();
     let entry = if http { proxy } else { socks };
     let (host, sport) = split_proxy(entry, http);
-    // The first resolution with the service name of the directive.
-    if let Some(port) = crate::port::find_port(&sport) {
-        if let Ok(mut addrs) = tokio::net::lookup_host((host.as_str(), port)).await {
-            if let Some(addr) = addrs.next() {
-                return Ok(addr);
-            }
+    // The C code resolves the host of the directive with the hints of the node,
+    // the port of `srv_getaddrinfo()`.
+    let hints = Hints {
+        family,
+        ..Hints::default()
+    };
+    // The C code falls back to the numeric default of the two directives when
+    // the name of the service is unknown.
+    if let Ok(addrs) = crate::srv::srv_getaddrinfo(&host, &sport, &hints).await {
+        if let Some(addr) = addrs.first() {
+            return Ok(*addr);
         }
     }
     let default = if http { 3128 } else { 1080 };
@@ -63,8 +70,8 @@ pub async fn proxy_address(
         &now(),
     );
     // The C code reads the first address of the answer.
-    let first = match tokio::net::lookup_host((host.as_str(), default)).await {
-        Ok(mut addrs) => addrs.next().ok_or_else(|| {
+    let first = match crate::srv::srv_getaddrinfo(&host, &default.to_string(), &hints).await {
+        Ok(addrs) => addrs.first().copied().ok_or_else(|| {
             log.message(
                 ERROR,
                 &format!(
@@ -365,16 +372,14 @@ impl Handshake<'_> {
         host: &str,
         port: &str,
     ) -> Result<(), ProxyError> {
-        let Some(portnum) = crate::port::find_port(port) else {
-            self.log.message(
-                CONNECTION,
-                &format!("getaddrinfo failed: service {port} not found"),
-                &(self.now)(),
-            );
-            return Err(ProxyError::Rejected(format!("service {port} not found")));
+        // The C code resolves the destination with the hints of IPv4, the
+        // port of `srv_getaddrinfo()`.
+        let hints = Hints {
+            family: Family::V4,
+            ..Hints::default()
         };
-        let addrs: Vec<SocketAddrV4> = match tokio::net::lookup_host((host, portnum)).await {
-            Ok(addrs) => addrs.filter_map(v4).collect(),
+        let addrs: Vec<SocketAddrV4> = match crate::srv::srv_getaddrinfo(host, port, &hints).await {
+            Ok(addrs) => addrs.iter().filter_map(|addr| v4(*addr)).collect(),
             Err(e) => {
                 self.log.message(
                     CONNECTION,

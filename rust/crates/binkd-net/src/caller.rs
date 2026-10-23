@@ -15,6 +15,15 @@ use tokio::net::TcpStream;
 use crate::hosts::hosts;
 use crate::session::{session_config, SessionOptions};
 
+/// Returns the address family of a node, the port of `IP_afamily`.
+fn family(node: Option<&binkd_ftn::node::FtnNode>) -> crate::srv::Family {
+    match node.map(|node| node.ip_afamily) {
+        Some(binkd_config::parser::AF_INET) => crate::srv::Family::V4,
+        Some(binkd_config::parser::AF_INET6) => crate::srv::Family::V6,
+        _ => crate::srv::Family::Unspecified,
+    }
+}
+
 /// The caller failed.
 #[derive(Debug)]
 pub enum CallError {
@@ -188,9 +197,15 @@ impl Caller {
         // hosts, and it gives up when the name does not resolve.
         let proxy_addr = if use_proxy {
             Some(
-                crate::proxy::proxy_address(&config.proxy, &config.socks, log, now)
-                    .await
-                    .map_err(CallError::Proxy)?,
+                crate::proxy::proxy_address(
+                    &config.proxy,
+                    &config.socks,
+                    family(node.as_ref()),
+                    log,
+                    now,
+                )
+                .await
+                .map_err(CallError::Proxy)?,
             )
         } else {
             None
@@ -213,9 +228,15 @@ impl Caller {
                 }
                 None => {
                     log.message(START, &format!("trying {addr}..."), &now());
-                    match tokio::net::lookup_host(&addr).await {
-                        Ok(mut addrs) => match addrs.next() {
-                            Some(addr) => addr,
+                    // The port of the resolution of `call0()`: the C code asks
+                    // the SRV lookup with the hints of the node.
+                    let hints = crate::srv::Hints {
+                        family: family(node.as_ref()),
+                        ..crate::srv::Hints::default()
+                    };
+                    match crate::srv::srv_getaddrinfo(&entry.name, &entry.port, &hints).await {
+                        Ok(addrs) => match addrs.first() {
+                            Some(addr) => *addr,
                             None => continue,
                         },
                         Err(e) => {
@@ -258,7 +279,7 @@ impl Caller {
                 if let Err(e) = crate::proxy::h_connect(
                     &mut stream,
                     &entry.name,
-                    &entry.port.to_string(),
+                    &entry.port,
                     config,
                     options.timeout,
                     log,

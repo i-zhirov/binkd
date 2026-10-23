@@ -12,6 +12,7 @@ pub mod base64;
 pub mod caller;
 pub mod des;
 mod des_tables;
+pub mod dns;
 pub mod hosts;
 pub mod listener;
 pub mod md4;
@@ -19,6 +20,7 @@ pub mod ntlm;
 pub mod port;
 pub mod proxy;
 pub mod session;
+pub mod srv;
 
 pub use caller::{Call, CallError, Caller};
 pub use hosts::{ftnaddress_to_domain, hosts, Host};

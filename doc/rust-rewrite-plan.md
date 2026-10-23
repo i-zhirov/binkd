@@ -780,9 +780,6 @@ Progress:
   The C binary of the tests needs the `--with-proxy` and the `--with-ntlm`
   switches of `configure`; the corpus tests need the plain build. (done)
 - The divergences of the port, for the record:
-    - The C code sends the port of the entry of `get_host_and_port()` in the
-      request line of `CONNECT`, which is the service name `binkp` for an entry
-      without a port. The port sends the number, the port of `find_port()`.
     - A SOCKS4 server that rejects every address of the answer leaves the C code
       with the value zero of `h_connect()`, which is a success. The port answers
       an error, so the caller never runs a session on a socket without a tunnel.
@@ -791,17 +788,44 @@ Progress:
       waits for every read.
     - The C code holds no fixed buffer, so the port cannot answer the `-1` error of
       `getNTLM1()` and `getNTLM2()` for a result buffer that is too small.
-    - The port holds no resolver of SRV records, so the `srv_getaddrinfo()` of the
-      C code is a plain resolution of the name.
-- The SRV lookup, the rate limit, and `binkd-srif` are open.
+    - The C code reads the port of the entry of `get_host_and_port()` as a text,
+      so a name stays a name and a number a number. The port does the same, so the
+      request line of `CONNECT` holds the name like the C code.
+- `binkd-net::dns` holds the DNS client of the SRV lookup, the port of the
+  `res_search()` and of the `ns_initparse()`/`ns_parserr()` calls of the C
+  library: the query name, the search list of `resolv.conf`, the answer, and the
+  decompression of a name. The C code asks the resolver library of the system, so
+  the port holds its own client and keeps the dependency footprint at zero. The
+  settings are the port of `res_init()`. (done)
+- `binkd-net::srv` holds the SRV lookup, the port of `srv_gai.c`: the guards
+  that answer a plain resolution, the query `_<service>._<tcp|udp>.<node>`, the
+  records in the order of the answer, the port of the record that wins over the
+  service, the second resolution of the target, and the fallback to a plain
+  resolution. The C code never reads the priority and the weight, so the port does
+  not follow RFC 2782 either. (done)
+- The port of the SRV lookup is testable: the settings of the resolver are a
+  value, so `crates/binkd-net/tests/srv.rs` runs the lookup against a server of
+  the test on the loopback address. The C test suite holds no test of the SRV
+  lookup at all. (done)
+- The divergences of the SRV lookup, for the record:
+    - The C code asks the services database of the system for a name, so a name
+      that the port does not hold is an error for the port. The port holds the
+      names of the C code.
+    - The resolver library of the C code retries a truncated answer over TCP, and
+      it holds a cache. The port holds neither.
+    - The C code holds no resolver at all on Windows without the `FTS5004`
+      switch, and it never holds one on DOS, Amiga, and OS/2 ICC. The port holds
+      no settings on Windows, so it answers a plain resolution there. The port
+      matches the default build of the C code on both platforms.
+- The rate limit and `binkd-srif` are open.
 
 Exit criteria:
 
 - Two Rust instances exchange a packet. (done)
 - A Rust instance and a C instance exchange a packet in both roles. (done)
 - The proxy, the SRV lookup, and the rate limit match the C code. (the proxy
-  passes the interop matrix of `proxy_interop.rs`; the SRV lookup and the rate
-  limit are open)
+  passes the interop matrix of `proxy_interop.rs` and the SRV lookup passes the
+  tests of `crates/binkd-net/tests/srv.rs`; the rate limit is open)
 
 ### Phase 6: binary and library
 

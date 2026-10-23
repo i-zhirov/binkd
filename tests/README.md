@@ -227,6 +227,12 @@ BINKD_C_PROXY=/path/to/binkd-proxy \
 Without `BINKD_C_PROXY` the tests report that they are skipped. The corpus tests
 need the plain build of the C binary, so keep the two builds apart.
 
+The Rust test `crates/binkd-net/tests/srv.rs` runs the SRV lookup of the port
+against a server of the test on the loopback address. The test needs no C binary,
+because the C code asks the resolver library of the system. The test supplies the
+settings of the resolver, so it exercises the query, the records of the answer, and
+the fallback.
+
 The matrix of `doc/rust-rewrite-plan.md`:
 
 | Client | Server | State |

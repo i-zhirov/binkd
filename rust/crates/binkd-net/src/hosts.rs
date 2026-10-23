@@ -10,8 +10,10 @@ use binkd_ftn::addr::FtnAddr;
 pub struct Host {
     /// The host name, or empty when the entry asks for the name of the address.
     pub name: String,
-    /// The port, the port of the `oport` directive.
-    pub port: u16,
+    /// The service, the port of the entry or of the `oport` directive. The C
+    /// code holds the text, so a name stays a name and a number a number. The
+    /// SRV lookup of `srv_gai.c` asks for a name only.
+    pub port: String,
     /// The entry asks for the host name of the address, the port of the `*`
     /// entry of the list.
     pub domain: bool,
@@ -42,12 +44,14 @@ pub fn hosts(list: &str, fa: &FtnAddr, config: &Config) -> Vec<Host> {
                 None => (entry.to_string(), None),
             },
         };
-        let port = match port.and_then(crate::port::find_port) {
-            Some(port) => port,
-            None => match crate::port::find_port(&config.oport) {
-                Some(port) => port,
+        // The C code holds the text of the port, and it answers an error for a
+        // name that the system does not know.
+        let port = match port {
+            Some(port) => match crate::port::find_port(port) {
+                Some(_) => port.to_string(),
                 None => continue,
             },
+            None => config.oport.clone(),
         };
         if name == "*" {
             out.push(Host {
@@ -122,10 +126,10 @@ mod tests {
         let hosts = hosts("host.example.com:24555,other.example.com", &fa, &config);
         assert_eq!(hosts.len(), 2);
         assert_eq!(hosts[0].name, "host.example.com");
-        assert_eq!(hosts[0].port, 24555);
+        assert_eq!(hosts[0].port, "24555");
         assert_eq!(hosts[1].name, "other.example.com");
-        // The entry without a port uses the `oport` directive.
-        assert_eq!(hosts[1].port, 24554);
+        // The entry without a port uses the text of the `oport` directive.
+        assert_eq!(hosts[1].port, "binkp");
         assert!(!hosts[1].domain);
     }
 
