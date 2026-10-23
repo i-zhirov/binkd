@@ -633,7 +633,22 @@ Exit criteria:
 
 - The frames match the recorded sessions byte for byte.
 - The interop matrix passes for plain, CRAM, CRYPT, GZ, and BZ2.
-- The NR mode, the ND mode, and the multi-batch mode pass. The multi-batch
+- The NR mode, the ND mode, and the multi-batch mode pass.
+
+Known gaps, for the start of phase 5:
+
+- The receiver never declines a file: the `skip` masks of the config are not
+  part of the settings of the session yet, so the port answers `M_GET` for every
+  announcement of the NR mode. The C code sends `M_SKIP` for a mask, and for a
+  destructive mask it sends `M_GOT` and deletes the file.
+- The receiver always asks for a file from offset 0: the port keeps a received file
+  in memory and holds no partial file, so a resumed transfer starts again. The C code
+  keeps the partial in the inbound directory and asks from its offset.
+- The counters `bytes_sent` and `files_sent` of the report grow at the send path,
+  where the C code grows them at the acknowledgement of the peer.
+- The test `c_client_to_rust_server_gz` fails now and then under the parallel load
+  of the suite: the C client of that test runs through `-P` and `-p`, and the waits
+  of the harness need a review. The multi-batch
   mode starts the next batch when the batch held more than the two `M_EOB` frames,
   the port of the end of the batch of `protocol()`: the session counts the command
   frames of the batch (`msgs_in_batch`), the login forgets them, and the end of a
