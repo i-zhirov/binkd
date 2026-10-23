@@ -6,6 +6,7 @@ members = [
     "crates/binkd-config",
     "crates/binkd-proto",
     "crates/binkd-log",
+    "crates/binkd-net",
     "crates/binkd-corpus",
 ]
 

@@ -35,6 +35,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "binkd-net"
+version = "0.1.0"
+dependencies = [
+ "binkd-config",
+ "binkd-ftn",
+ "binkd-log",
+ "binkd-proto",
+ "binkd-spool",
+ "tokio",
+]
+
+[[package]]
 name = "binkd-proto"
 version = "0.1.0"
 dependencies = [

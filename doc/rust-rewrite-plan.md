@@ -700,6 +700,19 @@ Progress:
 - The tests of the crate cover the two line formats, the masks of `nolog`,
   the fatal level, the fields of the two records, the time offset, and the two
   files.
+- `binkd-net::port` holds the port names, the port of `find_port()`: the names
+  that the C code uses and the numbers. The C code asks the services database
+  of the system, so an unknown name is an error for the port and may resolve
+  for the C code. (done)
+- `binkd-net::hosts` holds the host list of a node, the port of
+  `get_host_and_port()`, and the host name of an address, the port of
+  `ftnaddress_to_domain()`. (done)
+- `binkd-net::session` holds the settings of a session from the config, the
+  port of the reads of `init_protocol()` and `protocol()`: the banner, our
+  addresses, the password of the node, the modes, the compression, the spool,
+  the `skip` rules, and the ND link status. (done)
+- The listener, the caller, the proxy, the SRV lookup, the rate limit, and
+  `binkd-srif` are open.
 
 Exit criteria:
 

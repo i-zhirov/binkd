@@ -125,7 +125,7 @@ impl FtnNode {
     }
 
     /// Creates a node with the defaults of `add_node_nolock()`.
-    fn new(fa: &FtnAddr) -> FtnNode {
+    pub fn new(fa: &FtnAddr) -> FtnNode {
         FtnNode {
             listed: NL_UNLISTED,
             hosts: None,

@@ -1,0 +1,22 @@
+[package]
+name = "binkd-net"
+description = "The network layer of binkd: the listener, the caller, and the connect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+binkd-ftn = { path = "../binkd-ftn" }
+binkd-spool = { path = "../binkd-spool" }
+binkd-config = { path = "../binkd-config" }
+binkd-log = { path = "../binkd-log" }
+binkd-proto = { path = "../binkd-proto" }
+tokio = { version = "=1.54.0", features = ["rt", "net", "io-util", "macros", "time"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { version = "=1.54.0", features = ["rt-multi-thread", "macros"] }
