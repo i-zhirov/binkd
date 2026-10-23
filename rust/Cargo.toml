@@ -5,6 +5,7 @@ members = [
     "crates/binkd-spool",
     "crates/binkd-config",
     "crates/binkd-proto",
+    "crates/binkd-log",
     "crates/binkd-corpus",
 ]
 

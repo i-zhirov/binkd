@@ -1,0 +1,14 @@
+[package]
+name = "binkd-log"
+description = "The log of binkd: the text log and the binary session logs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+binkd-ftn = { path = "../binkd-ftn" }
+
+[lints]
+workspace = true

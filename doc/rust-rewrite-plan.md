@@ -491,7 +491,7 @@ Exit criteria:
   match the C code. (done)
 - The reload on file change works. (done)
 
-### Phase 4: protocol
+### Phase 4: protocol (done)
 
 Deliverables:
 
@@ -678,6 +678,28 @@ Deliverables:
   lookup, and the rate limit.
 - `binkd-srif` and `binkd-log`.
 - A loopback test that exchanges a packet in each direction.
+
+Progress:
+
+- `binkd-log::level` holds the levels of a message and their characters,
+  the port of the `marks` table of `vLog()`: the levels 0 to 3 have a
+  character of their own, and every other level a space. (done)
+- `binkd-log::log` holds the text log, the port of `InitLog()` and
+  `vLog()`: the console line of 30 spaces, a carriage return, the
+  character of the level, the hour and the minute, and the process id; and the
+  file line of the character, the day, the name of the month, the time, the
+  process id, and the message. The C code opens and closes the file for every
+  message, and the port does the same. The caller supplies the local time,
+  because `std` has no local time: the platform layer of the binary owns the
+  timezone. A message of the level 0 is fatal and returns `Outcome::Fatal` for
+  the caller, the port of the `exit(1)` of `vLog()`. (done)
+- `binkd-log::binlog` holds the binary session logs, the port of
+  `BinLogStat()`: the T-Mail record of 28 bytes and the FrontDoor record of
+  116 bytes, both little-endian, with the status of the T-Mail record and the
+  direction that selects the FrontDoor file. (done)
+- The tests of the crate cover the two line formats, the masks of `nolog`,
+  the fatal level, the fields of the two records, the time offset, and the two
+  files.
 
 Exit criteria:
 
