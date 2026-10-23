@@ -7,6 +7,7 @@
 //! [`console_line()`], so a test reads them without a file.
 
 use std::io::Write;
+use std::sync::Mutex;
 
 use crate::level::{level_char, Level, MONTHS};
 
@@ -41,21 +42,28 @@ pub enum Outcome {
 
 /// The text log of binkd, the port of the state of `vLog()` of `tools.c`.
 ///
-/// The C code opens and closes the file for every message, so the port does the
-/// same: the caller may rename or remove the file between two messages.
+/// The C code keeps the state in process wide variables and opens and closes the
+/// file for every message. The port keeps the state in one value that several
+/// tasks may share, so a session writes to the log of its process.
 pub struct Log {
+    /// The state of the log, the port of the variables of `vLog()`.
+    inner: Mutex<Inner>,
+}
+
+/// The state of a log.
+struct Inner {
     /// The level of the file, the port of `current_loglevel`.
-    pub level: Level,
+    level: Level,
     /// The level of the console, the port of `current_conlog`.
-    pub console_level: Level,
+    console_level: Level,
     /// The path of the file, or empty, the port of `current_logpath`.
-    pub path: String,
+    path: String,
     /// The masks of the `nolog` directive, the port of `current_nolog`.
-    pub nolog: Vec<String>,
+    nolog: Vec<String>,
     /// The console is off, the port of `inetd_flag` of `vLog()`.
-    pub no_console: bool,
+    no_console: bool,
     /// The process id of the lines, the port of `PID()`.
-    pub pid: u32,
+    pid: u32,
     /// No message of the file was written yet, the port of the `first_time`
     /// flag of `vLog()`: the first line starts with a blank line.
     first: bool,
@@ -68,22 +76,34 @@ impl Log {
     /// without a path still writes the errors to the console.
     pub fn new(level: Level, console_level: Level, path: &str, nolog: Vec<String>) -> Log {
         Log {
-            level,
-            console_level,
-            path: path.to_string(),
-            nolog,
-            no_console: false,
-            pid: std::process::id(),
-            first: true,
+            inner: Mutex::new(Inner {
+                level,
+                console_level,
+                path: path.to_string(),
+                nolog,
+                no_console: false,
+                pid: std::process::id(),
+                first: true,
+            }),
         }
     }
 
     /// Sets the state of the log, the port of `InitLog()`.
-    pub fn init(&mut self, level: Level, console_level: Level, path: &str, nolog: Vec<String>) {
-        self.level = level;
-        self.console_level = console_level;
-        self.path = path.to_string();
-        self.nolog = nolog;
+    pub fn init(&self, level: Level, console_level: Level, path: &str, nolog: Vec<String>) {
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        inner.level = level;
+        inner.console_level = console_level;
+        inner.path = path.to_string();
+        inner.nolog = nolog;
+    }
+
+    /// Sets the console of the log, the port of the `conlog` directive.
+    pub fn set_console(&self, no_console: bool) {
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.no_console = no_console;
+        }
     }
 
     /// Writes a message, the port of `vLog()` of `tools.c`.
@@ -92,16 +112,19 @@ impl Log {
     /// level and the console is not off. The file line goes to the path when the
     /// level is at most the level of the file. A message of the level 0 is fatal,
     /// even when the `nolog` masks or a missing path suppress the output.
-    pub fn message(&mut self, level: Level, text: &str, now: &DateTime) -> Outcome {
+    pub fn message(&self, level: Level, text: &str, now: &DateTime) -> Outcome {
+        let Ok(mut inner) = self.inner.lock() else {
+            return Outcome::Written;
+        };
         // The port of the `mask_test()` filter of `vLog()`: the first mask that
         // matches the message suppresses the whole output.
-        let suppressed = self
+        let suppressed = inner
             .nolog
             .iter()
             .any(|mask| binkd_ftn::pattern::pmatch_ncase(mask.as_bytes(), text.as_bytes()));
         if !suppressed {
-            if level <= self.console_level && !self.no_console {
-                let line = console_line(level, now, self.pid, text);
+            if level <= inner.console_level && !inner.no_console {
+                let line = console_line(level, now, inner.pid, text);
                 let mut stderr = std::io::stderr();
                 let _ = write!(stderr, "{line}");
                 let _ = stderr.flush();
@@ -110,17 +133,17 @@ impl Log {
                     return Outcome::Written;
                 }
             }
-            if level <= self.level && !self.path.is_empty() {
-                let line = file_line(level, now, self.pid, text, self.first);
+            if level <= inner.level && !inner.path.is_empty() {
+                let line = file_line(level, now, inner.pid, text, inner.first);
                 // The C code tries the open ten times.
                 for _ in 0..10 {
                     let file = std::fs::OpenOptions::new()
                         .append(true)
                         .create(true)
-                        .open(&self.path);
+                        .open(&inner.path);
                     if let Ok(mut file) = file {
                         if file.write_all(line.as_bytes()).is_ok() {
-                            self.first = false;
+                            inner.first = false;
                         }
                         break;
                     }
@@ -213,7 +236,7 @@ mod tests {
 
     #[test]
     fn fatal_stays_fatal_under_a_mask() {
-        let mut log = Log::new(FATAL, FATAL, "", vec!["*".to_string()]);
+        let log = Log::new(FATAL, FATAL, "", vec!["*".to_string()]);
         assert_eq!(log.message(FATAL, "error", &time()), Outcome::Fatal);
     }
 

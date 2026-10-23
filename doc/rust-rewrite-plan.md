@@ -711,8 +711,20 @@ Progress:
   port of the reads of `init_protocol()` and `protocol()`: the banner, our
   addresses, the password of the node, the modes, the compression, the spool,
   the `skip` rules, and the ND link status. (done)
-- The listener, the caller, the proxy, the SRV lookup, the rate limit, and
-  `binkd-srif` are open.
+- `binkd-net::listener` holds the listen sockets and the accept loop, the port
+  of `do_server()`: one `TcpListener` for every `listen` entry, one task for
+  every listener, and one task for every accepted connection. The C code forks a
+  process and closes the listen sockets in the child; the port holds them in the
+  task of the listener, so the sessions share one process. (done)
+- The `maxservers` limit is the port of the check of `protocol()`: the session
+  settings hold the limit and the count, and the session answers `M_BSY` after the
+  banner, and only for a session that the peer called. The listener counts the
+  sessions that run and gives the count to every session that it starts. (done)
+- The log of the port is shareable: `binkd-log::Log` holds its state in a mutex,
+  the port of the process wide variables of the C code, so the listener, the
+  caller, and the sessions write to one log.
+- The caller, the proxy, the SRV lookup, the rate limit, and `binkd-srif` are
+  open.
 
 Exit criteria:
 

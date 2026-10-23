@@ -74,6 +74,12 @@ pub struct SessionConfig {
     /// The node of the peer is listed in the config, the port of
     /// `state->listed_flag` of `skip_test()`.
     pub listed: bool,
+    /// The largest number of sessions that may run at once, the port of
+    /// `max_servers` of `server.c`. A negative value holds no limit.
+    pub max_servers: i32,
+    /// The number of the sessions that run, the port of `n_servers` of
+    /// `server.c`. The listener counts the sessions.
+    pub servers: usize,
     /// The session holds the frames of its log, the port of the frame log of the
     /// C code at `loglevel 10`. The log of a crypted session holds the frames
     /// before the encryption, as the C code logs them.
@@ -133,6 +139,12 @@ pub struct Report {
     /// The node of the peer is listed in the config, the port of
     /// `state->listed_flag` of `skip_test()`.
     pub listed: bool,
+    /// The largest number of sessions that may run at once, the port of
+    /// `max_servers` of `server.c`. A negative value holds no limit.
+    pub max_servers: i32,
+    /// The number of the sessions that run, the port of `n_servers` of
+    /// `server.c`. The listener counts the sessions.
+    pub servers: usize,
     /// The session holds the frames of its log, the port of the frame log of the
     /// C code at `loglevel 10`. The log of a crypted session holds the frames
     /// before the encryption, as the C code logs them.
@@ -269,9 +281,46 @@ pub async fn run<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    run_with(
+        stream,
+        role,
+        config,
+        &mut |_| files.to_vec(),
+        receive,
+        timeout,
+    )
+    .await
+}
+
+/// Runs a binkp session with the files of the peer from a closure.
+///
+/// The port of `protocol()`: the answerer scans the queue for the peer after
+/// the login, when the addresses of the peer are known, so the caller may give
+/// the files at that moment.
+pub async fn run_with<S>(
+    stream: S,
+    role: Role,
+    config: &SessionConfig,
+    files: &mut dyn FnMut(&[FtnAddr]) -> Vec<SendFile>,
+    receive: &mut dyn FnMut(&ReceivedFile) -> std::io::Result<()>,
+    timeout: std::time::Duration,
+) -> Result<Report, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
     let mut session = Session::new(stream, role, config);
     session.handshake(timeout).await?;
-    session.send_files(files, timeout).await?;
+    // The port of the `maxservers` check of `protocol()`: the C code answers
+    // `M_BSY` after the banner, and only for a session that the peer called.
+    if role == Role::Server
+        && config.max_servers >= 0
+        && config.servers > config.max_servers as usize
+    {
+        let _ = session.send_text(Command::Bsy, "Too many servers").await;
+        return Err(Error::Busy("too many servers".to_string()));
+    }
+    let files = files(&session.report.peer_addresses);
+    session.send_files(&files, timeout).await?;
     session.receive_files(receive, timeout).await?;
     session.report.crypt = session.crypt.is_some();
     Ok(session.report)

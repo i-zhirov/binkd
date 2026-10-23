@@ -61,6 +61,8 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         nr: false,
         nd: false,
         domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
+        max_servers: 100,
+        servers: 1,
         trace: false,
         skip: Vec::new(),
         listed: false,

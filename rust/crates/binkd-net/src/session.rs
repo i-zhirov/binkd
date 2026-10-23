@@ -59,6 +59,10 @@ pub fn session_config(config: &Config, node: Option<&FtnNode>, crypt: bool) -> S
         spool: config.spool.clone(),
         skip,
         listed,
+        // The listener counts the sessions of a listener and gives the count
+        // to every session that it starts, the port of `n_servers`.
+        max_servers: config.max_servers,
+        servers: 1,
         trace: false,
     }
 }
