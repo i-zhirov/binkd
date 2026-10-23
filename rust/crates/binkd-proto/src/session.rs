@@ -1120,7 +1120,21 @@ where
                 self.sent_eob = true;
                 continue;
             }
-            let frame = self.read(timeout).await?;
+            let frame = match self.read(timeout).await {
+                Ok(frame) => frame,
+                // The peer may close the transport at the moment when the
+                // exchange is complete, the port of the tolerance of the C code
+                // for an error of the transport at the end of a session.
+                Err(Error::Io(_))
+                    if self.peer_eob
+                        && self.sent_fls.is_empty()
+                        && self.get_file_balance == 0
+                        && current.is_none() =>
+                {
+                    break;
+                }
+                Err(e) => return Err(e),
+            };
             match frame {
                 Frame::Command(Command::File, argument) => {
                     // The port of the deferred rename of `start_file_recv()`:

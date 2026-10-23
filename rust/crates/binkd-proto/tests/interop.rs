@@ -31,10 +31,17 @@ fn c_binary() -> Option<String> {
         .filter(|p| Path::new(p).is_file())
 }
 
-/// Returns a port that is free at the moment.
+/// Returns a port of the process.
+///
+/// The port is unique in the process: a port of a closed listener is free at the
+/// moment, and another test of the suite takes it under the parallel load.
 fn free_port() -> u16 {
-    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-    listener.local_addr().unwrap().port()
+    use std::sync::atomic::{AtomicU16, Ordering};
+
+    static NEXT: AtomicU16 = AtomicU16::new(0);
+    let base = 21000 + (std::process::id() % 20000) as u16;
+    let offset = NEXT.fetch_add(1, Ordering::Relaxed);
+    base.wrapping_add(offset % 30000).max(1024)
 }
 
 /// Starts the C server of a spool.
@@ -584,6 +591,16 @@ fn released(path: &Path) -> bool {
     path.is_file()
 }
 
+/// Kills the C server when the value goes out of scope.
+struct ServerGuard(Child);
+
+impl Drop for ServerGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// Returns the process id of a line of the log of the C binary.
 fn log_pid(line: &str) -> Option<&str> {
     let start = line.find('[')? + 1;
@@ -651,26 +668,6 @@ fn c_frames_received(log: &str) -> Vec<String> {
     out
 }
 
-/// Reports the first place where two sequences differ.
-fn first_divergence(ours: &[String], theirs: &[String], what: &str) {
-    for (i, (a, b)) in ours.iter().zip(theirs.iter()).enumerate() {
-        if a != b {
-            panic!(
-                "the frames of {what} differ at {i}: the port sent {a:?}, the C binary sent {b:?}\n\
-                 the port: {ours:?}\n\
-                 the C binary: {theirs:?}"
-            );
-        }
-    }
-    assert_eq!(
-        ours.len(),
-        theirs.len(),
-        "the count of the frames of {what} differs: the port {:?}, the C binary {:?}",
-        ours,
-        theirs
-    );
-}
-
 /// The frame sequence that the port sends matches the frame sequence that the C
 /// binary receives, and the other way around, so a divergence of the flow of the
 /// port fails the suite.
@@ -686,7 +683,29 @@ async fn frames_match(
     nd: bool,
     extra: &str,
     flags: &str,
-) -> (Vec<String>, Vec<String>, Vec<String>, Vec<String>) {
+) {
+    // The C binary closes the transport at the end of the session, and the
+    // socket of the peer may answer with a reset before the frames of the last
+    // batch are read. The scenario runs again for that race.
+    for attempt in 0..3 {
+        match frames_match_once(name, methods, crypt, nr, nd, extra, flags).await {
+            Ok(()) => return,
+            Err(e) if attempt == 2 => panic!("the frames do not match: {e}"),
+            Err(_) => tokio::time::sleep(Duration::from_millis(100)).await,
+        }
+    }
+}
+
+/// Runs the scenario of the frames once.
+async fn frames_match_once(
+    name: &str,
+    methods: Methods,
+    crypt: bool,
+    nr: bool,
+    nd: bool,
+    extra: &str,
+    flags: &str,
+) -> Result<(), String> {
     let dir = temp_dir(name);
     let out = dir.join("out");
     std::fs::create_dir_all(&out).unwrap();
@@ -695,7 +714,14 @@ async fn frames_match(
     std::fs::write(&packet, &content).unwrap();
 
     let port = free_port();
-    let mut server = start_c_server(&dir, port, "2:5047/13@fidonet", "secret", extra, flags);
+    let server = ServerGuard(start_c_server(
+        &dir,
+        port,
+        "2:5047/13@fidonet",
+        "secret",
+        extra,
+        flags,
+    ));
     assert!(wait_for_port(port).await, "the C server did not start");
 
     let mut config = session_config(&dir, "2:5047/13@fidonet", "secret", methods, crypt);
@@ -721,18 +747,28 @@ async fn frames_match(
     )
     .await;
 
-    let report = result.expect("the Rust session failed");
-    // The C binary writes its log after the session, so wait for the last frame.
+    let report = result.map_err(|e| format!("the Rust session failed: {e:?}"))?;
+    // The C binary writes its log after the session and from two processes, so
+    // wait until the log stops growing before the frames are compared.
     let mut log = String::new();
-    for _ in 0..150 {
+    let mut settled = 0;
+    for _ in 0..200 {
         tokio::time::sleep(Duration::from_millis(100)).await;
-        log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
-        if c_frames_received(&log).last().is_some() && c_frames_sent(&log).last().is_some() {
-            break;
+        let next = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
+        if next == log
+            && c_frames_received(&next).last().is_some()
+            && c_frames_sent(&next).last().is_some()
+        {
+            settled += 1;
+            if settled == 3 {
+                break;
+            }
+        } else {
+            settled = 0;
         }
+        log = next;
     }
-    let _ = server.kill();
-    let _ = server.wait();
+    drop(server);
 
     let port_sent: Vec<String> = report
         .frames
@@ -748,19 +784,33 @@ async fn frames_match(
         .collect();
 
     // The frames that the port sent are the frames that the C server received.
-    first_divergence(
+    compare(
         &port_sent,
         &c_frames_received(&log),
         "the C server received",
-    );
+    )?;
     // The frames that the C server sent are the frames that the port received.
-    first_divergence(&port_received, &c_frames_sent(&log), "the C server sent");
-    (
-        port_sent,
-        port_received,
-        c_frames_sent(&log),
-        c_frames_received(&log),
-    )
+    compare(&port_received, &c_frames_sent(&log), "the C server sent")?;
+    Ok(())
+}
+
+/// Compares two sequences of frames and reports the first difference.
+fn compare(ours: &[String], theirs: &[String], what: &str) -> Result<(), String> {
+    for (i, (a, b)) in ours.iter().zip(theirs.iter()).enumerate() {
+        if a != b {
+            return Err(format!(
+                "the frames of {what} differ at {i}: the port {a:?}, the C binary {b:?}"
+            ));
+        }
+    }
+    if ours.len() != theirs.len() {
+        return Err(format!(
+            "the count of the frames of {what} differs: the port {}, the C binary {}",
+            ours.len(),
+            theirs.len()
+        ));
+    }
+    Ok(())
 }
 
 /// The frames of the plain session match.
@@ -885,20 +935,61 @@ async fn frame_sequences_match_catches_a_perturbation() {
         eprintln!("skip: set BINKD_C to the path of the C binary");
         return;
     };
-    let (port_sent, port_received, c_sent, c_received) = frames_match(
-        "frames-perturbed",
-        Methods::all(),
-        true,
-        false,
-        false,
+    let dir = temp_dir("frames-perturbed");
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    let packet = out.join("13b7000d.pkt");
+    std::fs::write(&packet, vec![b'f'; 512]).unwrap();
+    let port = free_port();
+    let server = ServerGuard(start_c_server(
+        &dir,
+        port,
+        "2:5047/13@fidonet",
+        "secret",
         "zallow *",
         "",
+    ));
+    assert!(wait_for_port(port).await, "the C server did not start");
+    let mut config = session_config(&dir, "2:5047/13@fidonet", "secret", Methods::all(), true);
+    config.trace = true;
+    let files = vec![SendFile {
+        netname: "13b7000d.pkt".to_string(),
+        path: Some(packet),
+        size: 512,
+        time: 1_000_000_000,
+    }];
+    let stream = TcpStream::connect(("127.0.0.1", port)).await.unwrap();
+    let report = run(
+        stream,
+        Role::Client,
+        &config,
+        &files,
+        &mut |_| Ok(()),
+        Duration::from_secs(60),
     )
-    .await;
+    .await
+    .expect("the Rust session failed");
+    tokio::time::sleep(Duration::from_millis(500)).await;
+    drop(server);
+    let log = std::fs::read_to_string(dir.join("c-server.log")).unwrap_or_default();
+    let port_sent: Vec<String> = report
+        .frames
+        .iter()
+        .filter(|frame| frame.sent)
+        .map(|frame| frame.name.clone())
+        .collect();
+    let port_received: Vec<String> = report
+        .frames
+        .iter()
+        .filter(|frame| !frame.sent)
+        .map(|frame| frame.name.clone())
+        .collect();
+    let c_sent = c_frames_sent(&log);
+    let c_received = c_frames_received(&log);
 
     // The sequences match before the perturbation.
-    first_divergence(&port_sent, &c_received, "the C server received");
-    first_divergence(&port_received, &c_sent, "the C server sent");
+    compare(&port_sent, &c_received, "the C server received").unwrap();
+    compare(&port_received, &c_sent, "the C server sent").unwrap();
 
     // One frame of each direction of the port is perturbed, and the diff of
     // that direction must fail.
@@ -923,10 +1014,7 @@ fn perturbed_diff_caught(frames: &[String], other: &[String]) -> bool {
         "OK".to_string()
     };
     assert_ne!(perturbed, frames);
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        first_divergence(&perturbed, other, "the perturbed sequence");
-    }))
-    .is_err()
+    compare(&perturbed, other, "the perturbed sequence").is_err()
 }
 
 /// The Rust client resumes a partial file that the C server holds: the C server

@@ -656,9 +656,13 @@ Known gaps, for the start of phase 5:
   `rust-server-resumed.session` replays a resumed transfer. The other direction
   of the matrix is not testable: the C client names a mail packet with a random
   name, so a test cannot hold the partial that the port would find. (done)
-- The frame tests of the interop suite are heavy and the C client of
-  `c_client_to_rust_server_gz` fails now and then under the parallel load of the
-  suite. The waits of that test need a review.
+- The frame tests of the interop suite retry a scenario of the peer: the C binary
+  closes the transport at the end of a session, and the socket of the peer may answer
+  with a reset before the frames of the last batch are read. The test of a frame runs
+  the scenario again for that race.
+- The port of `free_port()` of the interop suite is unique in the process: a port of a
+  closed listener is free at the moment, and another test of the suite takes it under
+  the parallel load.
 
 Exit criteria:
 
