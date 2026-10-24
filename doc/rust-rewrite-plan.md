@@ -895,8 +895,24 @@ Progress:
 - The tests of the wiring: a session of the port with a recording `Srif` sends a
   file, the answerer answers the file of the exchange, and the caller receives it.
   The C test suite holds no such test. (done)
-- `binkd-srif` is open: the engine of `binkd-srif` in the binary and the interop
-  test with the C binary.
+- `binkd-net::srif::Events` holds the real wiring, the port of the calls of
+  `protocol.c` to `srif.c`: the engine of `binkd-srif` with the queue of the spool,
+  the `Runner` that runs the external program, the port of `run()` of `run.c`, and
+  the `binkd_srif::Session` of the fields of the session, the addresses and the
+  flags of the peer and the name and the address that the transport knows. The
+  listener and the caller create one value for every session. (done)
+- The `Runner` runs the command with the shell of the system, the port of
+  `system()` of the C code, and it logs the command and its answer. The C code
+  blocks the session for the length of the program, and the port does the same: the
+  plan puts the long work into the tasks of the sessions, and a task of a session
+  never holds another one. (done)
+- The test of the wiring runs the caller and the listener of the port against each
+  other: the caller sends a request file, the listener holds an `exec` entry with
+  the `*S` macro, the external program of the test answers the file of the
+  exchange, and the caller receives it. The test needs the right of execution of
+  the script, the port of the `system()` of the C code. (done)
+- `binkd-srif` is open: the interop test with the C binary, where the `M_NUL
+  FREQ` claim of the C peer drives the immediate path of the engine.
 
 Exit criteria:
 

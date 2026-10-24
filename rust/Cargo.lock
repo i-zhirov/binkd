@@ -43,6 +43,7 @@ dependencies = [
  "binkd-log",
  "binkd-proto",
  "binkd-spool",
+ "binkd-srif",
  "tokio",
 ]
 

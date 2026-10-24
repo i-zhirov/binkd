@@ -94,6 +94,25 @@ pub struct SessionConfig {
     pub bw_recv: i64,
 }
 
+/// The fields of the session that the SRIF events read, the port of the parts of
+/// `STATE` of `protoco2.h` that `srif.c` uses.
+///
+/// The C code passes the whole state of the session into `srif.c`, and the two
+/// headers hold a cycle, one of the known exclusions of the plan. The port passes
+/// this narrow value, and the adapter of `binkd-net` adds the name and the address
+/// of the peer, which the transport knows.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Peer {
+    /// The addresses of the peer, the port of `state->fa` and `state->nfa`.
+    pub addresses: Vec<FtnAddr>,
+    /// The session is protected, the port of `state->state == P_SECURE`.
+    pub secure: bool,
+    /// The peer is a listed node, the port of `state->listed_flag`.
+    pub listed: bool,
+    /// The name of the sysop of the peer, the port of `state->sysop`.
+    pub sysop: String,
+}
+
 /// The SRIF events of a session, the port of the calls of `protocol.c` to
 /// `srif.c`.
 ///
@@ -108,10 +127,10 @@ pub trait Srif {
     fn end_of_batch(&mut self);
     /// Takes a received file and answers the paths of the files to send, the port
     /// of the call of `inb_done()` of `inbound.c`.
-    fn on_file(&mut self, filename: &str) -> Vec<String>;
+    fn on_file(&mut self, filename: &str, peer: &Peer) -> Vec<String>;
     /// Takes the end of a batch and answers the paths of the files to send, the
     /// port of `process_rcvdlist()` of `protocol.c`.
-    fn flush(&mut self) -> Vec<String>;
+    fn flush(&mut self, peer: &Peer) -> Vec<String>;
     /// Takes the end of the session, the port of `evt_set()` of `srif.c`.
     fn finish(&mut self);
 }
@@ -124,10 +143,10 @@ pub struct NoSrif;
 impl Srif for NoSrif {
     fn claim(&mut self) {}
     fn end_of_batch(&mut self) {}
-    fn on_file(&mut self, _filename: &str) -> Vec<String> {
+    fn on_file(&mut self, _filename: &str, _peer: &Peer) -> Vec<String> {
         Vec::new()
     }
-    fn flush(&mut self) -> Vec<String> {
+    fn flush(&mut self, _peer: &Peer) -> Vec<String> {
         Vec::new()
     }
     fn finish(&mut self) {}
@@ -857,6 +876,16 @@ where
         self.config.password == "!"
     }
 
+    /// Returns the fields of the session that the SRIF events read.
+    fn peer(&self) -> Peer {
+        Peer {
+            addresses: self.report.peer_addresses.clone(),
+            secure: self.secure(),
+            listed: self.config.listed,
+            sysop: self.config.sysop.clone(),
+        }
+    }
+
     /// Reads the options of a `M_NUL` frame.
     fn handle_nul(&mut self, argument: &[u8], srif: &mut (dyn Srif + Send)) {
         let text = text(argument);
@@ -1162,7 +1191,8 @@ where
         // The port of `inb_done()`: the events of the file run here, and the
         // files that an SRIF exchange answered wait for the end of the batch.
         // The C code takes the name of the file in the inbound directory.
-        let _ = srif.on_file(&name);
+        let peer = self.peer();
+        let _ = srif.on_file(&name, &peer);
         Ok(())
     }
 
@@ -1331,7 +1361,8 @@ where
                 self.sent_eob = false;
                 // The port of `process_rcvdlist()`: the files that an SRIF
                 // exchange answered in the batch go before our own end.
-                for path in srif.flush() {
+                let peer = self.peer();
+                for path in srif.flush(&peer) {
                     let file = queued_file(&path);
                     self.send_queued(&file, srif, timeout).await?;
                 }

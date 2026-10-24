@@ -299,16 +299,16 @@ impl Caller {
             // The port of `protocol()`: the caller sends the files of the
             // queue for the peer, the port of the scan of `q_scan_boxes()`.
             let files = files(&call.fa);
+            // The SRIF events of the session, the port of the calls of
+            // `protocol.c` to `srif.c`.
+            let mut srif = crate::srif::Events::new(config, target, Arc::clone(log), now());
             let result = run_with(
                 stream,
                 Role::Client,
                 &settings,
                 &mut |_| files.clone(),
                 &mut |_| Ok(()),
-                // The SRIF events of the session, the port of the calls of
-                // `protocol.c` to `srif.c`. The engine of `binkd-srif` arrives
-                // with the binary, the port of the plan.
-                &mut binkd_proto::NoSrif,
+                &mut srif,
                 options.timeout,
             )
             .await;

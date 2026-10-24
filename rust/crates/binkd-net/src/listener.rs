@@ -92,7 +92,8 @@ pub async fn listen(
     // The C code waits on every listen socket at once with `select()`. The port
     // starts a task for every listener, and the tasks hand the accepted
     // connections to one loop.
-    let (sender, mut accepted) = tokio::sync::mpsc::channel::<TcpStream>(16);
+    let (sender, mut accepted) =
+        tokio::sync::mpsc::channel::<(TcpStream, std::net::SocketAddr)>(16);
     for listener in listeners {
         let sender = sender.clone();
         let log = Arc::clone(&log);
@@ -105,7 +106,7 @@ pub async fn listen(
                         // the session, and the port of `getnameinfo()` logs
                         // the numeric address here.
                         log.message(INFO, &format!("incoming from {addr}"), &now());
-                        if sender.send(stream).await.is_err() {
+                        if sender.send((stream, addr)).await.is_err() {
                             break;
                         }
                     }
@@ -121,7 +122,7 @@ pub async fn listen(
     }
     let receive = Arc::new(receive);
     let files = Arc::new(files);
-    while let Some(stream) = accepted.recv().await {
+    while let Some((stream, addr)) = accepted.recv().await {
         // The port of `++n_servers` of `do_server()`: the C code counts the
         // sessions before it starts one.
         let count = sessions.fetch_add(1, Ordering::SeqCst) + 1;
@@ -134,14 +135,19 @@ pub async fn listen(
         let sessions = Arc::clone(&sessions);
         let log = Arc::clone(&log);
         let now = Arc::clone(&now);
+        let config = config.clone();
+        let server_log = Arc::clone(&log);
         tokio::spawn(async move {
+            // The SRIF events of the session, the port of the calls of
+            // `protocol.c` to `srif.c`.
+            let mut srif = crate::srif::Events::new(&config, addr, server_log, now());
             let result = run_with(
                 stream,
                 Role::Server,
                 &settings,
                 &mut |peer| files(peer),
                 &mut |file| receive(file),
-                &mut binkd_proto::NoSrif,
+                &mut srif,
                 options.timeout,
             )
             .await;

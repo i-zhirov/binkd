@@ -13,6 +13,7 @@ binkd-spool = { path = "../binkd-spool" }
 binkd-config = { path = "../binkd-config" }
 binkd-log = { path = "../binkd-log" }
 binkd-proto = { path = "../binkd-proto" }
+binkd-srif = { path = "../binkd-srif" }
 tokio = { version = "=1.54.0", features = ["rt", "net", "io-util", "macros", "sync", "time"] }
 
 [lints]

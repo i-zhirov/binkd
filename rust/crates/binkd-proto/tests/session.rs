@@ -942,14 +942,14 @@ impl Srif for Recorder {
         }
     }
 
-    fn on_file(&mut self, filename: &str) -> Vec<String> {
+    fn on_file(&mut self, filename: &str, _peer: &binkd_proto::Peer) -> Vec<String> {
         if let Ok(mut files) = self.files.lock() {
             files.push(filename.to_string());
         }
         Vec::new()
     }
 
-    fn flush(&mut self) -> Vec<String> {
+    fn flush(&mut self, _peer: &binkd_proto::Peer) -> Vec<String> {
         // The port of `process_rcvdlist()`: the exchange answers the files of
         // the response file, and the session sends them.
         self.answer

@@ -20,6 +20,7 @@ pub mod ntlm;
 pub mod port;
 pub mod proxy;
 pub mod session;
+pub mod srif;
 pub mod srv;
 
 pub use caller::{Call, CallError, Caller};
