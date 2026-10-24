@@ -305,6 +305,10 @@ impl Caller {
                 &settings,
                 &mut |_| files.clone(),
                 &mut |_| Ok(()),
+                // The SRIF events of the session, the port of the calls of
+                // `protocol.c` to `srif.c`. The engine of `binkd-srif` arrives
+                // with the binary, the port of the plan.
+                &mut binkd_proto::NoSrif,
                 options.timeout,
             )
             .await;

@@ -141,6 +141,7 @@ pub async fn listen(
                 &settings,
                 &mut |peer| files(peer),
                 &mut |file| receive(file),
+                &mut binkd_proto::NoSrif,
                 options.timeout,
             )
             .await;

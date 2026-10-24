@@ -884,8 +884,19 @@ Progress:
   once and delayed, the SRIF exchange with a program of the test that answers the
   response file, the deferred exchange of the end of the batch, and the claims of the
   peer. The C test suite holds no test of the SRIF events at all. (done)
-- `binkd-srif` is open: the wiring of the session, the port of `inb_done()` and
-  of the `M_NUL FREQ` and `M_EOB` frames of `protocol()`, and the interop test.
+- The session wires the events, the port of option A of the plan: it takes a
+  `Srif` value like the `files` and the `receive` closures, so `binkd-proto` never
+  depends on `binkd-srif`. The port of `protocol.c` calls it at the four points of
+  the C code: the `M_NUL FREQ` frame of the peer claims a FREQ, the `M_EOB` frame
+  of the peer answers every claim of the batch, the completion of a received file
+  runs the events and answers the files of an exchange, the end of a batch sends the
+  files of the exchange before our own `M_EOB`, and the end of the session runs the
+  events that wait. (done)
+- The tests of the wiring: a session of the port with a recording `Srif` sends a
+  file, the answerer answers the file of the exchange, and the caller receives it.
+  The C test suite holds no such test. (done)
+- `binkd-srif` is open: the engine of `binkd-srif` in the binary and the interop
+  test with the C binary.
 
 Exit criteria:
 

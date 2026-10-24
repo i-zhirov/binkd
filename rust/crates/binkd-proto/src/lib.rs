@@ -15,6 +15,6 @@ pub use compress::{Compressor, Decompressor, Method, Methods, ZRule};
 pub use frame::{decode, read_frame, write_frame, Command, Frame};
 pub use record::{Direction, Recorder, Recording, Replay};
 pub use session::{
-    addrtype, run, run_with, skip_test, Error, FrameRecord, ReceivedFile, Report, Role, SendFile,
-    SessionConfig, SkipRule,
+    addrtype, run, run_with, skip_test, Error, FrameRecord, NoSrif, ReceivedFile, Report, Role,
+    SendFile, SessionConfig, SkipRule, Srif,
 };

@@ -5,8 +5,9 @@
 //! drives the frames over a transport that the caller supplies.
 
 use std::fmt;
+use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use binkd_ftn::addr::FtnAddr;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -91,6 +92,45 @@ pub struct SessionConfig {
     pub bw_send: i64,
     /// The `-bw` recv limit of the node, the port of `to->bw_recv`.
     pub bw_recv: i64,
+}
+
+/// The SRIF events of a session, the port of the calls of `protocol.c` to
+/// `srif.c`.
+///
+/// The C code calls `srif.c` from four points: the `M_NUL FREQ` frame of the peer,
+/// the end of a batch of the peer, the end of a received file, and the end of the
+/// session. The port takes the events as a trait, so `binkd-proto` never depends on
+/// `binkd-srif` and the caller wires the engine, the port of option A of the plan.
+pub trait Srif {
+    /// Takes a FREQ claim of the peer, the port of the `M_NUL FREQ` frame.
+    fn claim(&mut self);
+    /// Takes the end of a batch of the peer, the port of the `M_EOB` frame.
+    fn end_of_batch(&mut self);
+    /// Takes a received file and answers the paths of the files to send, the port
+    /// of the call of `inb_done()` of `inbound.c`.
+    fn on_file(&mut self, filename: &str) -> Vec<String>;
+    /// Takes the end of a batch and answers the paths of the files to send, the
+    /// port of `process_rcvdlist()` of `protocol.c`.
+    fn flush(&mut self) -> Vec<String>;
+    /// Takes the end of the session, the port of `evt_set()` of `srif.c`.
+    fn finish(&mut self);
+}
+
+/// The SRIF events of a session without an engine, the port of a build of the C
+/// code without a `flag` or an `exec` entry.
+#[derive(Clone, Debug, Default)]
+pub struct NoSrif;
+
+impl Srif for NoSrif {
+    fn claim(&mut self) {}
+    fn end_of_batch(&mut self) {}
+    fn on_file(&mut self, _filename: &str) -> Vec<String> {
+        Vec::new()
+    }
+    fn flush(&mut self) -> Vec<String> {
+        Vec::new()
+    }
+    fn finish(&mut self) {}
 }
 
 /// A file to send.
@@ -300,6 +340,7 @@ where
         config,
         &mut |_| files.to_vec(),
         receive,
+        &mut NoSrif,
         timeout,
     )
     .await
@@ -316,13 +357,14 @@ pub async fn run_with<S>(
     config: &SessionConfig,
     files: &mut (dyn FnMut(&[FtnAddr]) -> Vec<SendFile> + Send),
     receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
+    srif: &mut (dyn Srif + Send),
     timeout: std::time::Duration,
 ) -> Result<Report, Error>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let mut session = Session::new(stream, role, config);
-    session.handshake(timeout).await?;
+    session.handshake(srif, timeout).await?;
     // The port of the `maxservers` check of `protocol()`: the C code answers
     // `M_BSY` after the banner, and only for a session that the peer called.
     if role == Role::Server
@@ -335,8 +377,11 @@ where
     // The port of the part of `ADR()` that reads the `-bw` of the nodes.
     session.setup_session_limits();
     let files = files(&session.report.peer_addresses);
-    session.send_files(&files, timeout).await?;
-    session.receive_files(receive, timeout).await?;
+    session.send_files(&files, srif, timeout).await?;
+    session.receive_files(receive, srif, timeout).await?;
+    // The port of `evt_set()`: the events that wait for the end of the session
+    // run here, and the files that an exchange answered go last.
+    srif.finish();
     session.report.crypt = session.crypt.is_some();
     Ok(session.report)
 }
@@ -581,7 +626,11 @@ where
     /// Both sides send the banner and the addresses. The server sends its password
     /// and waits for the password of the caller; a side without a password completes
     /// the login at once. The login is complete when the `M_OK` arrives.
-    async fn handshake(&mut self, timeout: std::time::Duration) -> Result<(), Error> {
+    async fn handshake(
+        &mut self,
+        srif: &mut (dyn Srif + Send),
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
         // The answerer sends the challenge of CRAM-MD5 as its first message,
         // the port of `banner()`.
         if self.role == Role::Server && self.secure() {
@@ -626,7 +675,7 @@ where
         // The frames of the peer up to the login acknowledgement.
         loop {
             match self.read(timeout).await? {
-                Frame::Command(Command::Nul, argument) => self.handle_nul(&argument),
+                Frame::Command(Command::Nul, argument) => self.handle_nul(&argument, srif),
                 Frame::Command(Command::Adr, argument) => {
                     self.report.peer_addresses = parse_addresses(&argument);
                     match self.role {
@@ -809,7 +858,7 @@ where
     }
 
     /// Reads the options of a `M_NUL` frame.
-    fn handle_nul(&mut self, argument: &[u8]) {
+    fn handle_nul(&mut self, argument: &[u8], srif: &mut (dyn Srif + Send)) {
         let text = text(argument);
         let mut words = text.split_whitespace();
         match words.next() {
@@ -843,6 +892,10 @@ where
                         // The port of the `NUL()` handler: the peer wants
                         // the crypt mode.
                         self.they_crypt = true;
+                    } else if option == "FREQ" {
+                        // The port of the `NUL()` handler: the peer claims a
+                        // FREQ for us, the port of `state->delay_EOB++`.
+                        srif.claim();
                     }
                 }
             }
@@ -874,34 +927,49 @@ where
     async fn send_files(
         &mut self,
         files: &[SendFile],
+        srif: &mut (dyn Srif + Send),
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
         for file in files {
-            let method = self.send_method(file);
-            self.send_file(file, method).await?;
-            self.report.files_sent += 1;
-            self.report.bytes_sent += file.size;
-            // The port of `current_file_was_sent()`: the peer may ask for
-            // the file with `M_GET` or decline it with `M_SKIP`, and it
-            // acknowledges it with `M_GOT`.
-            self.sent_fls.push(SentFile {
-                netname: file.netname.clone(),
-                size: file.size,
-                time: file.time,
-                path: file.path.clone(),
-                method,
-                fa: self.report.peer_addresses.first().cloned(),
-            });
-            if self.nd.we {
-                // The port of the `waiting_for_GOT` wait of
-                // `current_file_was_sent()`: an ND sender starts the next
-                // file only after the peer acknowledged this one.
-                self.wait_for_got(timeout).await?;
-            }
+            self.send_queued(file, srif, timeout).await?;
         }
         // The peer may close the transport after its own end of the batch.
         let _ = self.send_text(Command::Eob, "").await;
         self.sent_eob = true;
+        Ok(())
+    }
+
+    /// Sends one file with the bookkeeping of `current_file_was_sent()`.
+    ///
+    /// The C code sends the files of the queue of the session, which holds the
+    /// files of a batch and the files of an SRIF exchange alike.
+    async fn send_queued(
+        &mut self,
+        file: &SendFile,
+        srif: &mut (dyn Srif + Send),
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
+        let method = self.send_method(file);
+        self.send_file(file, method).await?;
+        self.report.files_sent += 1;
+        self.report.bytes_sent += file.size;
+        // The port of `current_file_was_sent()`: the peer may ask for
+        // the file with `M_GET` or decline it with `M_SKIP`, and it
+        // acknowledges it with `M_GOT`.
+        self.sent_fls.push(SentFile {
+            netname: file.netname.clone(),
+            size: file.size,
+            time: file.time,
+            path: file.path.clone(),
+            method,
+            fa: self.report.peer_addresses.first().cloned(),
+        });
+        if self.nd.we {
+            // The port of the `waiting_for_GOT` wait of
+            // `current_file_was_sent()`: an ND sender starts the next
+            // file only after the peer acknowledged this one.
+            self.wait_for_got(srif, timeout).await?;
+        }
         Ok(())
     }
 
@@ -1069,6 +1137,7 @@ where
         &mut self,
         complete: CompleteFile,
         receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
+        srif: &mut (dyn Srif + Send),
     ) -> Result<(), Error> {
         // The port of `inb_done()`: the partial file takes its true name.
         let mut rnd = random();
@@ -1090,6 +1159,10 @@ where
         };
         receive(&file).map_err(|e| Error::Io(e.to_string()))?;
         self.report.received.push(file);
+        // The port of `inb_done()`: the events of the file run here, and the
+        // files that an SRIF exchange answered wait for the end of the batch.
+        // The C code takes the name of the file in the inbound directory.
+        let _ = srif.on_file(&name);
         Ok(())
     }
 
@@ -1121,15 +1194,24 @@ where
 
     /// Reads the frames of the peer until it acknowledges the files that we
     /// sent, the port of the `waiting_for_GOT` wait of `current_file_was_sent()`.
-    async fn wait_for_got(&mut self, timeout: std::time::Duration) -> Result<(), Error> {
+    async fn wait_for_got(
+        &mut self,
+        srif: &mut (dyn Srif + Send),
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
         while !self.sent_fls.is_empty() {
             let frame = self.read(timeout).await?;
             match frame {
                 Frame::Command(Command::Got, argument) => self.got_file(&argument)?,
                 Frame::Command(Command::Get, argument) => self.get_file(&argument).await?,
                 Frame::Command(Command::Skip, argument) => self.skip_file(&argument)?,
-                Frame::Command(Command::Nul, argument) => self.handle_nul(&argument),
-                Frame::Command(Command::Eob, _) => self.peer_eob = true,
+                Frame::Command(Command::Nul, argument) => self.handle_nul(&argument, srif),
+                Frame::Command(Command::Eob, _) => {
+                    self.peer_eob = true;
+                    // The port of the `EOB()` handler: the peer answered
+                    // every claim of the batch.
+                    srif.end_of_batch();
+                }
                 Frame::Command(Command::Err, argument) => return Err(peer_error(&argument)),
                 Frame::Command(Command::Bsy, argument) => {
                     return Err(Error::Busy(text(&argument)));
@@ -1226,6 +1308,7 @@ where
     async fn receive_files(
         &mut self,
         receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
+        srif: &mut (dyn Srif + Send),
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
         let mut current: Option<Incoming> = None;
@@ -1246,6 +1329,12 @@ where
                 self.msgs_in_batch = 0;
                 self.peer_eob = false;
                 self.sent_eob = false;
+                // The port of `process_rcvdlist()`: the files that an SRIF
+                // exchange answered in the batch go before our own end.
+                for path in srif.flush() {
+                    let file = queued_file(&path);
+                    self.send_queued(&file, srif, timeout).await?;
+                }
                 let _ = self.send_text(Command::Eob, "").await;
                 self.sent_eob = true;
                 continue;
@@ -1271,7 +1360,7 @@ where
                     // the completed file takes its true name before the next
                     // file starts.
                     if let Some(complete) = self.in_complete.take() {
-                        self.finish_file(complete, receive)?;
+                        self.finish_file(complete, receive, srif)?;
                     }
                     let (netname, size, time, offset, extras) = parse_file_args(&argument)?;
                     if offset == NR_REQUEST {
@@ -1463,7 +1552,7 @@ where
                             // next file or for the end of the batch.
                             self.in_complete = Some(complete);
                         } else {
-                            self.finish_file(complete, receive)?;
+                            self.finish_file(complete, receive, srif)?;
                         }
                     } else {
                         current = Some(file);
@@ -1471,7 +1560,7 @@ where
                 }
                 Frame::Command(Command::Nul, argument) => {
                     // The C code reads an option of the peer at any time.
-                    self.handle_nul(&argument);
+                    self.handle_nul(&argument, srif);
                 }
                 Frame::Command(Command::Got, argument) => {
                     // The port of `GOT()`: the peer acknowledged a file.
@@ -1536,7 +1625,7 @@ where
                     // The port of `EOB()`: the completed file takes its
                     // true name at the end of the batch.
                     if let Some(complete) = self.in_complete.take() {
-                        self.finish_file(complete, receive)?;
+                        self.finish_file(complete, receive, srif)?;
                     }
                 }
                 Frame::Command(Command::Err, argument) => {
@@ -1680,6 +1769,31 @@ fn parse_addresses(argument: &[u8]) -> Vec<FtnAddr> {
 
 /// Parses the arguments of an `M_FILE` frame: the name, the size, the time,
 /// the offset, and the extra arguments.
+/// Builds a file to send from a path, the port of the part of `netname_()` of
+/// `prothlp.c` that reads the name of a file.
+///
+/// The C code answers the name of the file for a file that is not a mail packet
+/// or a request, with the arcshield change and the quoting of the spaces. The port
+/// answers the name of the file, and the rest of `netname_()` is the work of the
+/// binary, the port of the plan.
+fn queued_file(path: &str) -> SendFile {
+    let name = Path::new(path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let metadata = fs::metadata(path).ok();
+    SendFile {
+        netname: name,
+        path: Some(PathBuf::from(path)),
+        size: metadata.as_ref().map(|m| m.len()).unwrap_or(0),
+        time: metadata
+            .and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0),
+    }
+}
+
 fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64, i64, Vec<String>), Error> {
     let text = text(argument);
     let mut words = text.split_whitespace();

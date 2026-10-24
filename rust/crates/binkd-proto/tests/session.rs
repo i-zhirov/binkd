@@ -4,10 +4,13 @@
 //! exchange the banner, the password, and one file in each direction.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
-use binkd_proto::{run, Method, Methods, Report, Role, SendFile, SessionConfig, ZRule};
+use binkd_proto::{
+    run, run_with, Method, Methods, Report, Role, SendFile, SessionConfig, Srif, ZRule,
+};
 
 /// The settings of the spool of a test.
 fn spool(dir: &Path) -> binkd_spool::config::SpoolConfig {
@@ -911,4 +914,130 @@ async fn session_with_a_partial_file() {
     let names: Vec<&str> = server.frames.iter().map(|f| f.name.as_str()).collect();
     assert!(names.contains(&"GET"), "{names:?}");
     assert!(names.contains(&"GOT"), "{names:?}");
+}
+
+/// The SRIF events of the tests: it records the files and the end of the session.
+#[derive(Default)]
+struct Recorder {
+    /// The names of the received files.
+    files: Arc<Mutex<Vec<String>>>,
+    /// The response file that an exchange answers, once.
+    answer: Arc<Mutex<Option<std::path::PathBuf>>>,
+    /// The claims of the peer.
+    claims: Arc<Mutex<usize>>,
+    /// The number of the ends of the session.
+    finished: Arc<Mutex<usize>>,
+}
+
+impl Srif for Recorder {
+    fn claim(&mut self) {
+        if let Ok(mut claims) = self.claims.lock() {
+            *claims += 1;
+        }
+    }
+
+    fn end_of_batch(&mut self) {
+        if let Ok(mut claims) = self.claims.lock() {
+            *claims = 0;
+        }
+    }
+
+    fn on_file(&mut self, filename: &str) -> Vec<String> {
+        if let Ok(mut files) = self.files.lock() {
+            files.push(filename.to_string());
+        }
+        Vec::new()
+    }
+
+    fn flush(&mut self) -> Vec<String> {
+        // The port of `process_rcvdlist()`: the exchange answers the files of
+        // the response file, and the session sends them.
+        self.answer
+            .lock()
+            .ok()
+            .and_then(|mut answer| answer.take())
+            .map(|path| vec![path.display().to_string()])
+            .unwrap_or_default()
+    }
+
+    fn finish(&mut self) {
+        if let Ok(mut finished) = self.finished.lock() {
+            *finished += 1;
+        }
+    }
+}
+
+/// The session calls the SRIF events of the C code: the received file, the end
+/// of the batch, and the end of the session.
+#[tokio::test]
+async fn the_srif_events_of_a_session() {
+    let client_dir = temp_dir("srif-client");
+    let server_dir = temp_dir("srif-server");
+    let content = vec![b's'; 100];
+    let path = client_dir.join("out").join("13b7000d.pkt");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, &content).unwrap();
+    let file = SendFile {
+        netname: "13b7000d.pkt".to_string(),
+        path: Some(path),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    };
+    // The answerer holds the file of the exchange, the port of an external FREQ
+    // processor.
+    let answer = server_dir.join("13b70064.pkt");
+    std::fs::write(&answer, b"the answer").unwrap();
+
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let mut server_srif = Recorder {
+        answer: Arc::new(Mutex::new(Some(answer.clone()))),
+        ..Recorder::default()
+    };
+    let files = Arc::clone(&server_srif.files);
+    let finished = Arc::clone(&server_srif.finished);
+
+    let client = async move {
+        let mut received = Vec::new();
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &[file],
+            &mut |file| {
+                received.push(file.clone());
+                Ok(())
+            },
+            Duration::from_secs(5),
+        )
+        .await
+        .map(|report| (report, received))
+    };
+    let server = async move {
+        run_with(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut server_srif,
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    let (report, received) = client.expect("the client failed");
+    let _ = server.expect("the server failed");
+
+    // The answerer saw the file of the caller, the port of `inb_done()`.
+    let names = files.lock().unwrap().clone();
+    assert_eq!(names.len(), 1, "{names:?}");
+    assert!(names[0].ends_with("13b7000d.pkt"), "{names:?}");
+    // The caller received the file of the exchange, the port of the queue of
+    // the session, and the answerer ran the end of the session.
+    assert_eq!(report.files_received, 1, "{report:?}");
+    assert_eq!(received.len(), 1, "{received:?}");
+    assert_eq!(received[0].netname, "13b70064.pkt");
+    assert_eq!(*finished.lock().unwrap(), 1);
 }
