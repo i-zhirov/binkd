@@ -9,7 +9,7 @@ use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
 use binkd_proto::{
-    run, run_with, Method, Methods, Report, Role, SendFile, SessionConfig, Srif, ZRule,
+    run, run_with, Method, Methods, Protocol, Report, Role, SendFile, SessionConfig, Srif, ZRule,
 };
 
 /// The settings of the spool of a test.
@@ -68,6 +68,7 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         servers: 1,
         trace: false,
         rates: Vec::new(),
+        protocol: Protocol::default(),
         bw_send: -100,
         bw_recv: -100,
         skip: Vec::new(),

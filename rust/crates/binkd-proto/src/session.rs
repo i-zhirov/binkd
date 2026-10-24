@@ -86,12 +86,43 @@ pub struct SessionConfig {
     /// C code at `loglevel 10`. The log of a crypted session holds the frames
     /// before the encryption, as the C code logs them.
     pub trace: bool,
+    /// The version of the protocol that the session advertises, the port of
+    /// `PRTCLVER` of `Config.h`.
+    pub protocol: Protocol,
     /// The rules of the `limit-rate` directive, the port of `config->rates`.
     pub rates: Vec<bw::RateRule>,
     /// The `-bw` send limit of the node, the port of `to->bw_send`.
     pub bw_send: i64,
     /// The `-bw` recv limit of the node, the port of `to->bw_recv`.
     pub bw_recv: i64,
+}
+
+/// The version of the protocol that the session advertises, the port of
+/// `PRTCLVER` of `Config.h`.
+///
+/// The C code holds the version at `1.1`, and it answers the version of the peer
+/// in `state->major` and `state->minor`, so a peer of the version `1.0` makes the
+/// session behave as `1.0`. The port answers `peer_11` for that, and this value
+/// states what the port itself advertises. The C code holds no such setting: the
+/// port needs it for the test of the `1.0` path, where a peer of the C announces
+/// `M_NUL FREQ` only for a session of the version `1.0`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Protocol {
+    /// The version `1.0`, `PRTCLVER` of the C code before the answer of the peer.
+    V10,
+    /// The version `1.1`, the value of `PRTCLVER` of the C code.
+    #[default]
+    V11,
+}
+
+impl Protocol {
+    /// Returns the text of the version.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Protocol::V10 => "1.0",
+            Protocol::V11 => "1.1",
+        }
+    }
 }
 
 /// The fields of the session that the SRIF events read, the port of the parts of
@@ -215,6 +246,9 @@ pub struct Report {
     /// C code at `loglevel 10`. The log of a crypted session holds the frames
     /// before the encryption, as the C code logs them.
     pub trace: bool,
+    /// The version of the protocol that the session advertises, the port of
+    /// `PRTCLVER` of `Config.h`.
+    pub protocol: Protocol,
     /// The rules of the `limit-rate` directive, the port of `config->rates`.
     pub rates: Vec<bw::RateRule>,
     /// The `-bw` send limit of the node, the port of `to->bw_send`.
@@ -675,7 +709,8 @@ where
         self.send_text(Command::Nul, &format!("NDL {nodeinfo}"))
             .await?;
         let version = self.config.version.clone();
-        self.send_text(Command::Nul, &format!("VER {version} binkp/1.1"))
+        let protocol = self.config.protocol.name();
+        self.send_text(Command::Nul, &format!("VER {version} binkp/{protocol}"))
             .await?;
         // The options of the caller, the port of the `OPT` message of
         // `banner()`. The answerer sends them with the state of the login,
@@ -963,6 +998,24 @@ where
             self.send_queued(file, srif, timeout).await?;
         }
         // The peer may close the transport after its own end of the batch.
+        // The C code holds the end of the batch back for a peer of the
+        // version 1.0 while the peer claims a FREQ, the port of `delay_EOB`
+        // of `protocol.c`, because the peer sends the request file after our
+        // end. The port answers the end of the batch after the exchange then,
+        // the port of the send path of the C code.
+        if self.peer_11 {
+            let _ = self.send_text(Command::Eob, "").await;
+            self.sent_eob = true;
+        }
+        Ok(())
+    }
+
+    /// Sends the end of the batch of the answerer of a peer of the version 1.0,
+    /// the port of the send path of `protocol.c`.
+    async fn send_eob_for_v10(&mut self) -> Result<(), Error> {
+        if self.sent_eob {
+            return Ok(());
+        }
         let _ = self.send_text(Command::Eob, "").await;
         self.sent_eob = true;
         Ok(())
@@ -1162,11 +1215,12 @@ where
     ///
     /// The ND mode defers the call to the next file or to the end of the
     /// batch, the port of `in_complete` of `protocol.c`.
-    fn finish_file(
+    async fn finish_file(
         &mut self,
         complete: CompleteFile,
         receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
         srif: &mut (dyn Srif + Send),
+        timeout: std::time::Duration,
     ) -> Result<(), Error> {
         // The port of `inb_done()`: the partial file takes its true name.
         let mut rnd = random();
@@ -1192,7 +1246,20 @@ where
         // files that an SRIF exchange answered wait for the end of the batch.
         // The C code takes the name of the file in the inbound directory.
         let peer = self.peer();
-        let _ = srif.on_file(&name, &peer);
+        // The port of `inb_done()`: the events of the file run here, and the
+        // files of an SRIF exchange go to the queue of the session at once,
+        // the port of `state->q`, which the C code sends in the send path.
+        let answered = srif.on_file(&name, &peer);
+        for path in answered {
+            let file = queued_file(&path);
+            self.send_queued(&file, srif, timeout).await?;
+        }
+        // The port of the send path of the C code: the answerer of a peer of
+        // the version 1.0 sends the end of the batch after the request file,
+        // because the peer sends the end of the batch only after our own.
+        if !self.peer_11 {
+            self.send_eob_for_v10().await?;
+        }
         Ok(())
     }
 
@@ -1353,7 +1420,10 @@ where
             {
                 // The port of the end of the batch of `protocol()`: a batch of
                 // more than the two `M_EOB` frames starts the next one.
-                if self.msgs_in_batch <= 2 {
+                // The C code answers the end of the session for a peer of the
+                // version 1.0, or for a batch that holds no more than the two
+                // `M_EOB` frames.
+                if self.msgs_in_batch <= 2 || !self.peer_11 {
                     break;
                 }
                 self.msgs_in_batch = 0;
@@ -1391,7 +1461,7 @@ where
                     // the completed file takes its true name before the next
                     // file starts.
                     if let Some(complete) = self.in_complete.take() {
-                        self.finish_file(complete, receive, srif)?;
+                        self.finish_file(complete, receive, srif, timeout).await?;
                     }
                     let (netname, size, time, offset, extras) = parse_file_args(&argument)?;
                     if offset == NR_REQUEST {
@@ -1583,7 +1653,7 @@ where
                             // next file or for the end of the batch.
                             self.in_complete = Some(complete);
                         } else {
-                            self.finish_file(complete, receive, srif)?;
+                            self.finish_file(complete, receive, srif, timeout).await?;
                         }
                     } else {
                         current = Some(file);
@@ -1656,7 +1726,7 @@ where
                     // The port of `EOB()`: the completed file takes its
                     // true name at the end of the batch.
                     if let Some(complete) = self.in_complete.take() {
-                        self.finish_file(complete, receive, srif)?;
+                        self.finish_file(complete, receive, srif, timeout).await?;
                     }
                 }
                 Frame::Command(Command::Err, argument) => {

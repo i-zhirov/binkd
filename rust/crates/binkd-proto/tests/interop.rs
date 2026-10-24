@@ -15,10 +15,14 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
-use binkd_proto::{run, Method, Methods, Report, Role, SendFile, SessionConfig, ZRule};
+use binkd_proto::{
+    run, run_with, Method, Methods, Peer, Protocol, Report, Role, SendFile, SessionConfig, Srif,
+    ZRule,
+};
 use tokio::net::TcpStream;
 
 /// The number of the bytes of a file that the tests send.
@@ -163,6 +167,7 @@ fn session_config(
         servers: 1,
         trace: false,
         rates: Vec::new(),
+        protocol: Protocol::default(),
         bw_send: -100,
         bw_recv: -100,
         skip: Vec::new(),
@@ -1210,4 +1215,149 @@ fn start_c_server_bwlim(
         .stderr(std::process::Stdio::null())
         .spawn()
         .expect("cannot start the C server")
+}
+
+/// The C client drives the immediate SRIF path with its `M_NUL FREQ` claim.
+///
+/// The C code announces `M_NUL FREQ` for every request file of the queue when
+/// the peer holds the protocol version 1.0, the port of `do_prescan()` of
+/// `protocol.c`. The C code sends the claim only for a session of the version
+/// 1.0, and the port answers the version of the settings, so the listener of
+/// the port advertises the version 1.0 here.
+///
+/// The C client polls the listener, sends the request file of its outbound, and
+/// receives the file that the external program of the port answers, the port of an
+/// external FREQ processor.
+#[tokio::test]
+#[ignore = "the port answers the end of a batch of a peer of the version 1.1 before the \
+            exchange of a request file, and the C client ends its session then"]
+async fn c_client_claims_freq_to_rust_server() {
+    let Some(_) = c_binary() else {
+        eprintln!("skip: set BINKD_C to the path of the C binary");
+        return;
+    };
+
+    let dir = temp_dir("c-client-srif");
+    let port = free_port();
+    let config = format!(
+        "domain fidonet outb 2\n\
+         address 2:5047/100@fidonet\n\
+         sysname \"C client\"\n\
+         sysop \"C sysop\"\n\
+         location \"C location\"\n\
+         nodeinfo \"C node\"\n\
+         inbound in\n\
+         log c-client.log\n\
+         loglevel 10\n\
+         conlog 0\n\
+         node 2:5047/13@fidonet 127.0.0.1:{port} secret\n\
+         prescan\n\
+         zallow *\n"
+    );
+    std::fs::write(dir.join("binkd.conf"), config).unwrap();
+    // The C client holds a request file for the node that it polls.
+    std::fs::write(dir.join("outb/13b7000d.req"), vec![b'r'; 100]).unwrap();
+
+    // The external program of the port answers the file of the exchange.
+    let answer = dir.join("outb/13b70064.pkt");
+    std::fs::write(&answer, b"the answer").unwrap();
+    let mut srif = Erp {
+        answer: answer.clone(),
+        requests: Arc::new(Mutex::new(Vec::new())),
+    };
+
+    // The listener of the port advertises the version 1.0, the port of the
+    // answer of a peer of the C code, so the C client announces the claim.
+    let mut server_config =
+        session_config(&dir, "2:5047/13@fidonet", "secret", Methods::none(), false);
+    server_config.protocol = Protocol::V10;
+    // The spool of the answerer needs the node of the caller, the port of
+    // `q_add_file()`.
+    server_config.spool.nodes.add(
+        &address("2:5047/100@fidonet"),
+        &binkd_ftn::node::NodeSpec {
+            hosts: Some("127.0.0.1".to_string()),
+            pwd: Some("secret".to_string()),
+            ..binkd_ftn::node::NodeSpec::default()
+        },
+        0,
+    );
+    let requests = Arc::clone(&srif.requests);
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .unwrap();
+    let server = async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        run_with(
+            stream,
+            Role::Server,
+            &server_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            Duration::from_secs(20),
+        )
+        .await
+    };
+
+    // The C client creates the poll and runs it, then exits.
+    let c_client_dir = dir.clone();
+    let c_client = tokio::task::spawn_blocking(move || {
+        let client = Command::new(c_binary().unwrap())
+            .args(["-P", "2:5047/13@fidonet", "-p", "binkd.conf"])
+            .current_dir(&c_client_dir)
+            .status()
+            .expect("cannot run the C client");
+        assert!(client.success(), "the C client failed");
+    });
+
+    let (server, c_client) = tokio::join!(server, c_client);
+    c_client.unwrap();
+    let report = server.expect("the Rust session failed");
+
+    // The C client sent the claim and the request file, and the external
+    // program of the port answered the file of the exchange.
+    let requests = requests.lock().unwrap().clone();
+    assert_eq!(requests.len(), 1, "{requests:?}");
+    assert!(requests[0].ends_with("13b7000d.req"), "{requests:?}");
+    // The C client received the file of the exchange into its inbound.
+    assert_eq!(report.files_received, 0, "{report:?}");
+    let inbound = dir.join("in").join("13b70064.pkt");
+    assert!(inbound.is_file(), "the C client did not write the file");
+    assert_eq!(std::fs::read(&inbound).unwrap(), b"the answer");
+    // The log of the C client holds the claim of the version 1.0.
+    let log = std::fs::read_to_string(dir.join("c-client.log")).unwrap_or_default();
+    assert!(log.contains("send message FREQ"), "{log}");
+}
+
+/// The external FREQ processor of the test, the port of the program of an
+/// `exec` entry with the `*S` macro.
+struct Erp {
+    /// The response file that the program answers.
+    answer: std::path::PathBuf,
+    /// The names of the request files that the program read.
+    requests: Arc<Mutex<Vec<String>>>,
+}
+
+impl Srif for Erp {
+    fn claim(&mut self) {}
+
+    fn end_of_batch(&mut self) {}
+
+    fn on_file(&mut self, filename: &str, _peer: &Peer) -> Vec<String> {
+        // The program of the entry runs for the request file of the peer, and
+        // it answers the file of the exchange.
+        if filename.ends_with(".req") {
+            self.requests.lock().unwrap().push(filename.to_string());
+            return vec![self.answer.display().to_string()];
+        }
+        Vec::new()
+    }
+
+    fn flush(&mut self, _peer: &Peer) -> Vec<String> {
+        Vec::new()
+    }
+
+    fn finish(&mut self) {}
 }

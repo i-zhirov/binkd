@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
 use binkd_proto::record::{Recorder, Recording, Replay};
-use binkd_proto::{run, Report, Role, SendFile, SessionConfig};
+use binkd_proto::{run, Protocol, Report, Role, SendFile, SessionConfig};
 
 /// The number of the bytes of the file of a test.
 const FILE_SIZE: usize = 300;
@@ -92,6 +92,7 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         servers: 1,
         trace: false,
         rates: Vec::new(),
+        protocol: Protocol::default(),
         bw_send: -100,
         bw_recv: -100,
         skip: Vec::new(),

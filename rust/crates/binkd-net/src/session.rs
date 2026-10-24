@@ -6,7 +6,7 @@ use std::time::Duration;
 use binkd_config::model::Config;
 use binkd_ftn::node::FtnNode;
 use binkd_proto::bw::{self, RateRule};
-use binkd_proto::{Methods, SessionConfig, SkipRule, ZRule};
+use binkd_proto::{Methods, Protocol, SessionConfig, SkipRule, ZRule};
 
 /// The settings of one session that a manager passes, the port of the parts of
 /// `STATE` that `do_server()` and `do_client()` set from the config.
@@ -98,6 +98,8 @@ pub fn session_config(
         servers: 1,
         trace,
         // The port of the reads of the config in `protocol()`.
+        // The C code answers `PRTCLVER` of `Config.h` at 1.1.
+        protocol: Protocol::V11,
         rates: config
             .rates
             .iter()

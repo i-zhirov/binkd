@@ -911,8 +911,28 @@ Progress:
   the `*S` macro, the external program of the test answers the file of the
   exchange, and the caller receives it. The test needs the right of execution of
   the script, the port of the `system()` of the C code. (done)
-- `binkd-srif` is open: the interop test with the C binary, where the `M_NUL
-  FREQ` claim of the C peer drives the immediate path of the engine.
+- The `M_NUL FREQ` claim of the C peer: the C code announces the claim for a
+  session of the protocol version 1.0 only, the port of `do_prescan()` of
+  `protocol.c` and of the answer of `PRTCLVER` of `Config.h`. The C code sends
+  `binkp/1.1` and it takes `state->major` and `state->minor` from the version
+  of the peer, so a session of the port and of the C code holds the version 1.1,
+  and the C code never announces the claim. The port holds the version of the
+  protocol in the settings, the port of `PRTCLVER`, so a peer may answer the
+  version 1.0, and the session answers the end of the batch after the exchange
+  then, the port of the `delay_EOB` test of the C code. (done)
+- A gap that the test of the claim found: the port answers the end of a batch of
+  a peer of the version 1.1 before the exchange of a request file, because the
+  port sends the end of the batch at the end of `send_files()`, and the C code
+  holds the end of the batch in the send path of its loop, which runs after the
+  request file of the peer arrives. The C client of the test ends its session at
+  the end of the batch, so it never receives the file of the exchange. The C code
+  of a peer of the version 1.0 holds the same answer, and the claim of the peer
+  holds the end of the batch of the answerer back, the port of `delay_EOB`.
+  `c_client_claims_freq_to_rust_server` in `crates/binkd-proto/tests/interop.rs`
+  holds the scenario and stays ignored until the port answers the end of the batch
+  after the exchange of a request file.
+- `binkd-srif` is open: the port of the send path of `protocol.c` for a peer of
+  the version 1.0, and the interop test of the claim.
 
 Exit criteria:
 

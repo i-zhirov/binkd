@@ -370,7 +370,7 @@ mod tests {
     /// Records the two ends of a session and replays the recording.
     #[tokio::test]
     async fn record_and_replay() {
-        use crate::session::{run, Role, SessionConfig};
+        use crate::session::{run, Protocol, Role, SessionConfig};
 
         let config = SessionConfig {
             sysname: "record test".to_string(),
@@ -395,6 +395,7 @@ mod tests {
             servers: 1,
             trace: false,
             rates: Vec::new(),
+            protocol: Protocol::default(),
             bw_send: -100,
             bw_recv: -100,
             skip: Vec::new(),
