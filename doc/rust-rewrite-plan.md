@@ -847,7 +847,33 @@ Progress:
       `%VAR%` substitution of `getwordx2()`, so a rate in a config needs the
       doubled `%%`. The port does the same, and the dump holds the single `%` like
       the C code.
-- `binkd-srif` is open.
+- `binkd-srif` holds the SRIF events, the port of `srif.c`. The C code holds
+  three features in the file, and the port keeps one module for each:
+    - `binkd-srif::event` holds the `flag` and `exec` events, the port of
+      `evt_test()`, of the queue of `evt_queue()`, and of the loop of
+      `evt_set()`: the matching of a received file against the patterns of the
+      config, the copy of an event of the same type and path, and the newest
+      event at the head of the queue. (done)
+    - `binkd-srif::args` holds the macros of an `exec` command, the port of
+      `run_args()`: `*N`, `*F`, `*A*`, `*A@`, `*A0` to `*A9`, `*A` with any
+      other character, `*P`, `*L`, and `*H`, the check of the name of the
+      received file, and the refusal of a command that holds `*F` or `*N` with a
+      name that the C code does not accept. The port answers the name of the file
+      for `*N` on every platform, because the short name of Windows needs the
+      `GetShortPathName()` call. (done)
+    - `binkd-srif::srif` holds the two files of the exchange, the port of
+      `mksrifpaths()`, of `srif_fill()`, and of `parse_response()`: the paths of
+      the request and the response file, the content of the request file, and the
+      lines of the response file with the three predictors. (done)
+- The port passes a narrow value into the crate instead of the whole session, the
+  port of the fields of `STATE` that `srif.c` reads. The C code holds the cycle of
+  `protocol.c` and `srif.c`, one of the known exclusions of the plan, and the port
+  breaks it.
+- The port leaves the external program to the caller, the port of the plan that puts
+  `run.c` into the binary. The C code runs the program itself with `system()`, so a
+  program that hangs hangs the session.
+- `binkd-srif` is open: the exchange of the two files with the spool and the
+  session, the `exec` run of the caller, and the interop test.
 
 Exit criteria:
 
