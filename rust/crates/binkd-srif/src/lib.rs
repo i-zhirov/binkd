@@ -22,6 +22,7 @@
 #![forbid(unsafe_code)]
 
 pub mod args;
+pub mod engine;
 pub mod event;
 pub mod srif;
 

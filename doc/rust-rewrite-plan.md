@@ -872,8 +872,20 @@ Progress:
 - The port leaves the external program to the caller, the port of the plan that puts
   `run.c` into the binary. The C code runs the program itself with `system()`, so a
   program that hangs hangs the session.
-- `binkd-srif` is open: the exchange of the two files with the spool and the
-  session, the `exec` run of the caller, and the interop test.
+- `binkd-srif::engine` holds the SRIF events of a session, the port of
+  `evt_run()` and of the parts of `inb_done()` of `inbound.c` and of `protocol()`
+  that call it: the `flag` and `exec` events of a received file, the SRIF exchange
+  of a `*S` command, the files that wait for the end of the batch, the run of the
+  external program, and the FREQ claims of the peer, the port of `state->delay_EOB`.
+  The C code runs the program itself with `run()` of `run.c`, and the port takes a
+  `Runner`, the port of the plan that puts `run.c` into the binary. (done)
+- The tests of the engine run on a temporary directory with the real spool: the flag
+  file at once and delayed, the touch of a flag file that is there, the command at
+  once and delayed, the SRIF exchange with a program of the test that answers the
+  response file, the deferred exchange of the end of the batch, and the claims of the
+  peer. The C test suite holds no test of the SRIF events at all. (done)
+- `binkd-srif` is open: the wiring of the session, the port of `inb_done()` and
+  of the `M_NUL FREQ` and `M_EOB` frames of `protocol()`, and the interop test.
 
 Exit criteria:
 

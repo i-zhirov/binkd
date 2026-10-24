@@ -10,6 +10,8 @@ repository.workspace = true
 [dependencies]
 binkd-ftn = { path = "../binkd-ftn" }
 binkd-config = { path = "../binkd-config" }
+binkd-spool = { path = "../binkd-spool" }
+binkd-log = { path = "../binkd-log" }
 
 [lints]
 workspace = true

@@ -71,6 +71,8 @@ version = "0.1.0"
 dependencies = [
  "binkd-config",
  "binkd-ftn",
+ "binkd-log",
+ "binkd-spool",
 ]
 
 [[package]]
