@@ -4,6 +4,12 @@
 //! loopback address. They need the C binary: set `BINKD_C` to its path. Without the
 //! variable the tests report that they are skipped.
 //!
+//! Two tests need a build of the C binary of another shape: the test of the rate
+//! limit needs `BINKD_C_BWLIM`, the build of the `--with-bwlim` switch of
+//! `configure`, and the test of the FREQ claim needs `BINKD_C_V10`, the build of
+//! the version 1.0 of the protocol, the port of the `PRTCLVER` define of
+//! `Config.h`. The tests report that they are skipped without the variables.
+//!
 //! The matrix of the plan:
 //!
 //! | Client | Server | State |
@@ -41,6 +47,22 @@ fn c_binary() -> Option<String> {
 /// plain build holds no `-bw` option and no `limit-rate` keyword.
 fn c_binary_bwlim() -> Option<String> {
     std::env::var("BINKD_C_BWLIM")
+        .ok()
+        .filter(|p| Path::new(p).is_file())
+}
+
+/// Returns the path of the C binary of the protocol version 1.0, or `None`.
+///
+/// The C code takes the version that it advertises from `PRTCLVER` of `Config.h`,
+/// and it answers the version of the peer from its `VER` frame: the C code holds
+/// its own end of a batch back, and it announces `M_NUL FREQ`, only for a peer of
+/// the version 1.0, the port of the send path and of `do_prescan()` of
+/// `protocol.c`. The build of the binary of the version 1.0 needs the define of
+/// the makefile:
+///
+/// `make CFLAGS='-O2 -DPRTCLVER=\"1.0\"'`
+fn c_binary_v10() -> Option<String> {
+    std::env::var("BINKD_C_V10")
         .ok()
         .filter(|p| Path::new(p).is_file())
 }
@@ -1217,24 +1239,25 @@ fn start_c_server_bwlim(
         .expect("cannot start the C server")
 }
 
-/// The C client drives the immediate SRIF path with its `M_NUL FREQ` claim.
+/// The C client of the version 1.0 drives the delayed SRIF path with its claim.
 ///
 /// The C code announces `M_NUL FREQ` for every request file of the queue when
 /// the peer holds the protocol version 1.0, the port of `do_prescan()` of
 /// `protocol.c`. The C code sends the claim only for a session of the version
-/// 1.0, and the port answers the version of the settings, so the listener of
-/// the port advertises the version 1.0 here.
+/// 1.0, and it holds its own end of a batch back for such a session only, the
+/// port of the send path of `protocol.c`, so the test runs the C client of the
+/// version 1.0, the port of `PRTCLVER` of `Config.h`.
 ///
 /// The C client polls the listener, sends the request file of its outbound, and
 /// receives the file that the external program of the port answers, the port of an
-/// external FREQ processor.
+/// external FREQ processor. The port holds its own end of the batch back until
+/// the C client answers the claim with its own end, so the exchange of the
+/// request file runs before the end of the batch of the port, the port of
+/// `delay_EOB` of `protocol.c`.
 #[tokio::test]
-#[ignore = "the C code holds its end of a batch back only for a peer of the version 1.0, \
-            so it answers the end of the batch of a peer of the version 1.1 at once, and the C \
-            client of this test ends its session before the exchange of the request file"]
 async fn c_client_claims_freq_to_rust_server() {
-    let Some(_) = c_binary() else {
-        eprintln!("skip: set BINKD_C to the path of the C binary");
+    let Some(_) = c_binary_v10() else {
+        eprintln!("skip: set BINKD_C_V10 to the path of the C binary of the version 1.0");
         return;
     };
 
@@ -1269,10 +1292,13 @@ async fn c_client_claims_freq_to_rust_server() {
     };
 
     // The listener of the port advertises the version 1.0, the port of the
-    // answer of a peer of the C code, so the C client announces the claim.
+    // answer of a peer of the C code, so the C client announces the claim
+    // and holds its own end of the batch back, the port of `delay_EOB`.
     let mut server_config =
         session_config(&dir, "2:5047/13@fidonet", "secret", Methods::none(), false);
     server_config.protocol = Protocol::V10;
+    // The port logs the frames of the session, before the encryption.
+    server_config.trace = true;
     // The spool of the answerer needs the node of the caller, the port of
     // `q_add_file()`.
     server_config.spool.nodes.add(
@@ -1306,7 +1332,7 @@ async fn c_client_claims_freq_to_rust_server() {
     // The C client creates the poll and runs it, then exits.
     let c_client_dir = dir.clone();
     let c_client = tokio::task::spawn_blocking(move || {
-        let client = Command::new(c_binary().unwrap())
+        let client = Command::new(c_binary_v10().unwrap())
             .args(["-P", "2:5047/13@fidonet", "-p", "binkd.conf"])
             .current_dir(&c_client_dir)
             .status()
@@ -1320,17 +1346,41 @@ async fn c_client_claims_freq_to_rust_server() {
 
     // The C client sent the claim and the request file, and the external
     // program of the port answered the file of the exchange.
+    // The C client names a request file at random when it sends it, the port
+    // of `netname_()` of `protocol.c`.
     let requests = requests.lock().unwrap().clone();
     assert_eq!(requests.len(), 1, "{requests:?}");
-    assert!(requests[0].ends_with("13b7000d.req"), "{requests:?}");
-    // The C client received the file of the exchange into its inbound.
-    assert_eq!(report.files_received, 0, "{report:?}");
+    assert!(requests[0].ends_with(".req"), "{requests:?}");
+    // The C client received the file of the exchange into its inbound, and it
+    // answered the claim with its own end of the batch.
     let inbound = dir.join("in").join("13b70064.pkt");
     assert!(inbound.is_file(), "the C client did not write the file");
     assert_eq!(std::fs::read(&inbound).unwrap(), b"the answer");
     // The log of the C client holds the claim of the version 1.0.
     let log = std::fs::read_to_string(dir.join("c-client.log")).unwrap_or_default();
-    assert!(log.contains("send message FREQ"), "{log}");
+    assert!(log.contains("send message NUL FREQ"), "{log}");
+    assert!(
+        log.contains("done (to 2:5047/13@fidonet, OK, S/R: 1/1"),
+        "{log}"
+    );
+    // The port held its own end of the batch back until the C client answered
+    // the claim with its own end, the port of `delay_EOB` of `protocol.c`, so
+    // the end of the batch of the port left after the end of the C client.
+    let ours = report
+        .frames
+        .iter()
+        .position(|frame| frame.sent && frame.name == "EOB");
+    let theirs = report
+        .frames
+        .iter()
+        .position(|frame| !frame.sent && frame.name == "EOB");
+    let (Some(ours), Some(theirs)) = (ours, theirs) else {
+        panic!("the frames of the session hold no end of a batch: {report:?}");
+    };
+    assert!(
+        ours > theirs,
+        "the port answered the end of the batch at once: {report:?}"
+    );
 }
 
 /// The external FREQ processor of the test, the port of the program of an

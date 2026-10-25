@@ -920,19 +920,19 @@ Progress:
   protocol in the settings, the port of `PRTCLVER`, so a peer may answer the
   version 1.0, and the session answers the end of the batch after the exchange
   then, the port of the `delay_EOB` test of the C code. (done)
-- A gap that the test of the claim found: the port answers the end of a batch of
-  a peer of the version 1.1 before the exchange of a request file, because the
-  port sends the end of the batch at the end of `send_files()`, and the C code
-  holds the end of the batch in the send path of its loop, which runs after the
-  request file of the peer arrives. The C client of the test ends its session at
-  the end of the batch, so it never receives the file of the exchange. The C code
-  of a peer of the version 1.0 holds the same answer, and the claim of the peer
-  holds the end of the batch of the answerer back, the port of `delay_EOB`.
-  `c_client_claims_freq_to_rust_server` in `crates/binkd-proto/tests/interop.rs`
-  holds the scenario and stays ignored until the port answers the end of the batch
-  after the exchange of a request file.
-- `binkd-srif` is open: the port of the send path of `protocol.c` for a peer of
-  the version 1.0, and the interop test of the claim.
+- The test of the claim drove the send path of the port, the port of the main
+  loop of `protocol.c`: the port sends the files of an exchange and its own end
+  of the batch in the send path now, and it reads the frames of the peer after
+  the send path, as the C code does. The C code holds its own end of the batch
+  back for a peer of the version 1.0 only, the port of the `delay_EOB` test, so
+  the test runs the C client of the version 1.0, and the C client claims the
+  FREQ and holds its own end of the batch back as well. The port reads the
+  header of a frame, decrypts it, and learns the length of the data then, the port
+  of `recv_block()`, so the read path holds the decrypted header for the data,
+  the port of `pending_header`. (done)
+- `binkd-srif` is open: the port of `do_prescan()` of `protocol.c`, the
+  `M_NUL TRF` and `M_NUL FREQ` messages of the answerer of a peer of the
+  version 1.0.
 
 Exit criteria:
 

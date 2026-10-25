@@ -52,7 +52,9 @@
 
 /* Please, no spaces here! */
 #define PRTCLNAME "binkp"
+#ifndef PRTCLVER			    /* Can be defined in Makefile */
 #define PRTCLVER "1.1"
+#endif
 #define MYNAME "binkd"
 #define MAJOR 1
 #define MINOR 1

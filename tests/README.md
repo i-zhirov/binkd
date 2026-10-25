@@ -238,6 +238,30 @@ BINKD_C_BWLIM=/path/to/binkd-bwlim cargo test -p binkd-proto --test interop
 
 Without `BINKD_C_BWLIM` the test reports that it is skipped.
 
+The interop test `c_client_claims_freq_to_rust_server` of
+`crates/binkd-proto/tests/interop.rs` runs the C client of the protocol
+version 1.0 against the listener of the port: the C client claims a FREQ, the
+external program of the port answers the file of the exchange, and the port holds
+its own end of the batch back until the C client answers the claim. Set
+`BINKD_C_V10` to the path of a C binary that the `make` command built with the
+`PRTCLVER` define of `Config.h`:
+
+```sh
+cd rust
+BINKD_C_V10=/path/to/binkd-v10 cargo test -p binkd-proto --test interop
+```
+
+The build of that binary:
+
+```sh
+make CFLAGS='-O2 -DPRTCLVER=\"1.0\"'
+```
+
+Without `BINKD_C_V10` the test reports that it is skipped. The plain build
+advertises the version 1.1, and the C code holds its own end of the batch back
+for a peer of the version 1.0 only, so the test needs the build of the version
+1.0.
+
 The Rust test `crates/binkd-net/tests/srv.rs` runs the SRV lookup of the port
 against a server of the test on the loopback address. The test needs no C binary,
 because the C code asks the resolver library of the system. The test supplies the

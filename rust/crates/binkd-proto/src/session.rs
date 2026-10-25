@@ -106,9 +106,8 @@ pub struct SessionConfig {
 /// The C code holds the version at `1.1`, and it answers the version of the peer
 /// in `state->major` and `state->minor`, so a peer of the version `1.0` makes the
 /// session behave as `1.0`. The port answers `peer_11` for that, and this value
-/// states what the port itself advertises. The C code holds no such setting: the
-/// port needs it for the test of the `1.0` path, where a peer of the C announces
-/// `M_NUL FREQ` only for a session of the version `1.0`.
+/// states what the port itself advertises. The C code takes `PRTCLVER` from the
+/// makefile, and the tests of the `1.0` path build the C binary with the define.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Protocol {
     /// The version `1.0`, `PRTCLVER` of the C code before the answer of the peer.
