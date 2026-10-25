@@ -16,6 +16,22 @@ use binkd_log::{DateTime, Log};
 use binkd_net::{bind, Caller};
 use binkd_proto::SendFile;
 
+/// Returns the one file of an extension in an inbound directory.
+fn inbound_file(dir: &Path, ext: &str) -> PathBuf {
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir.join("in"))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .map(|e| e.eq_ignore_ascii_case(ext))
+                .unwrap_or(false)
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "the inbound holds {found:?}");
+    found.pop().unwrap()
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("binkd-loopback-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -175,13 +191,15 @@ async fn two_instances_exchange_a_packet() {
     assert_eq!(report.files_sent, 1, "{report:?}");
     assert_eq!(report.files_received, 1, "{report:?}");
 
-    // Each side wrote the packet of the other.
+    // Each side wrote the packet of the other. The C code announces a file
+    // of the mail with a random name, the port of `netname_()` of `prothlp.c`,
+    // so a test takes the file of an inbound by its extension.
     assert_eq!(
-        std::fs::read(server_dir.join("in/13b70064.cut")).unwrap(),
+        std::fs::read(inbound_file(&server_dir, "pkt")).unwrap(),
         client_packet
     );
     assert_eq!(
-        std::fs::read(client_dir.join("in/13b7000d.cut")).unwrap(),
+        std::fs::read(inbound_file(&client_dir, "pkt")).unwrap(),
         server_packet
     );
     assert_eq!(server_received.len(), 1);

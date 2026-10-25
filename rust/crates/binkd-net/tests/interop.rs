@@ -37,6 +37,25 @@ const SERVER_AKA: &str = "2:5047/100@fidonet";
 
 /// The name of the file that the caller sends, the address of the server.
 const CLIENT_FILE: &str = "13b70064.cut";
+
+/// Returns the one file of an extension in an inbound directory.
+///
+/// The C code announces a file of the mail with a random name, the port of
+/// `netname_()` of `prothlp.c`, so a test takes the file by its extension.
+fn inbound_file(dir: &Path, ext: &str) -> PathBuf {
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir)
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .map(|e| e.eq_ignore_ascii_case(ext))
+                .unwrap_or(false)
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "the inbound holds {found:?}");
+    found.pop().unwrap()
+}
 /// The name of the file that the server sends, the address of the caller.
 const SERVER_FILE: &str = "13b7000d.cut";
 
@@ -266,7 +285,7 @@ async fn rust_caller_to_c_listener() {
     );
     // The C server wrote the packet of the port.
     assert_eq!(
-        std::fs::read(server_dir.join("in").join(CLIENT_FILE)).unwrap(),
+        std::fs::read(inbound_file(&server_dir.join("in"), "pkt")).unwrap(),
         client_packet
     );
 }
@@ -362,12 +381,13 @@ async fn c_caller_to_rust_listener() {
     assert_eq!(std::fs::read(&received[0].path).unwrap(), client_packet);
     // The C client wrote the packet of the port.
     assert_eq!(
-        std::fs::read(client_dir.join("in").join(SERVER_FILE)).unwrap(),
+        std::fs::read(inbound_file(&client_dir.join("in"), "pkt")).unwrap(),
         server_packet
     );
     // The log of the C client at the loglevel 10 holds the file frame of each
     // direction, the oracle of the frame log of the session of the port.
     let log = std::fs::read_to_string(client_dir.join("c-client.log")).unwrap_or_default();
     assert!(log.contains("sending ./outb/13b70064.cut as "), "{log}");
-    assert!(log.contains("rcvd msg FILE 13b7000d.cut 5000"), "{log}");
+    assert!(log.contains("rcvd msg FILE "), "{log}");
+    assert!(log.contains(".pkt 5000"), "{log}");
 }

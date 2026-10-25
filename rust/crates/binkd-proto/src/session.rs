@@ -265,6 +265,10 @@ pub struct Report {
     pub bw_send: i64,
     /// The `-bw` recv limit of the node, the port of `to->bw_recv`.
     pub bw_recv: i64,
+    /// The peer skipped a file of the session, the port of
+    /// `state->r_skipped_flag`. The C code sends the queue of the session
+    /// only while the flag is clear, the port of `OK_SEND_FILES()`.
+    pub skipped: bool,
 }
 
 /// The NR mode of a session, the port of `NR_flag` of `protoco2.h`.
@@ -926,7 +930,8 @@ where
     /// The C code holds the flag of a file that the peer skipped,
     /// `state->r_skipped_flag`, which the port does not model yet.
     fn can_send_files(&self) -> bool {
-        !self.config.spool.send_if_pwd || self.secure() || self.role == Role::Client
+        (!self.config.spool.send_if_pwd || self.secure() || self.role == Role::Client)
+            && !self.report.skipped
     }
 
     /// Completes the login, the port of `complete_login()`.
@@ -1463,6 +1468,15 @@ where
         srif: &mut (dyn Srif + Send),
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
+        // The port of `start_file_transfer()`: the name of the file on the
+        // wire, the port of `netname_()` of `prothlp.c`.
+        let mut rnd = rnd();
+        let wire = binkd_ftn::text::netname(file.netname.as_bytes(), &mut rnd);
+        let file = SendFile {
+            netname: String::from_utf8_lossy(&wire).into_owned(),
+            ..file.clone()
+        };
+        let file = &file;
         let method = self.send_method(file);
         self.send_file(file, method).await?;
         self.report.files_sent += 1;
@@ -1747,6 +1761,9 @@ where
         if self.sent_fls.len() == before {
             return Err(Error::Protocol(format!("unexpected M_SKIP for {netname}")));
         }
+        // The port of `SKIP()`: the peer skipped a file of the session,
+        // so the C code holds the queue of the session back.
+        self.report.skipped = true;
         self.off_req_sent = false;
         Ok(())
     }
@@ -1926,6 +1943,20 @@ fn now() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0)
+}
+
+/// Returns the next random number of the name of a file on the wire, the port
+/// of `rnd()` of `tools.c`.
+///
+/// The C code answers the time and the sequence of `rand()` of the C library,
+/// and the sequence of `rand()` differs between the systems, so the port holds
+/// the sequence of the port.
+fn rnd() -> impl FnMut() -> u32 {
+    let mut state = now() as u32 ^ std::process::id();
+    move || {
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        (now() as u32).wrapping_add(state & 0x7fff_ffff)
+    }
 }
 
 /// Returns the next random number, the port of `getrand()`.

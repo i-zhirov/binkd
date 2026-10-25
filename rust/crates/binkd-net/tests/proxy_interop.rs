@@ -71,6 +71,25 @@ fn free_port() -> u16 {
 }
 
 /// Makes a directory for the spool of a test.
+/// Returns the one file of an extension in an inbound directory.
+///
+/// The C code announces a file of the mail with a random name, the port of
+/// `netname_()` of `prothlp.c`, so a test takes the file by its extension.
+fn inbound_file(dir: &Path, ext: &str) -> PathBuf {
+    let mut found: Vec<PathBuf> = std::fs::read_dir(dir.join("in"))
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.extension()
+                .map(|e| e.eq_ignore_ascii_case(ext))
+                .unwrap_or(false)
+        })
+        .collect();
+    assert_eq!(found.len(), 1, "the inbound holds {found:?}");
+    found.pop().unwrap()
+}
+
 fn temp_dir(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("binkd-proxy-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
@@ -422,7 +441,7 @@ async fn rust_caller_through_proxy(
     assert_eq!(report.files_sent, 1, "{report:?}");
     assert_eq!(report.files_received, 1, "{report:?}");
     assert_eq!(
-        std::fs::read(server_dir.join("in").join(CLIENT_FILE)).unwrap(),
+        std::fs::read(inbound_file(&server_dir, "pkt")).unwrap(),
         client_packet
     );
     assert_eq!(
@@ -675,7 +694,7 @@ async fn c_caller_via_rust_proxy() {
     assert_eq!(files.len(), 1, "{files:?}");
     assert_eq!(std::fs::read(&files[0].path).unwrap(), client_packet);
     assert_eq!(
-        std::fs::read(client_dir.join("in").join(SERVER_FILE)).unwrap(),
+        std::fs::read(inbound_file(&client_dir, "pkt")).unwrap(),
         server_packet
     );
 

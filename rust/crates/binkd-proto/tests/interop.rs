@@ -1400,6 +1400,23 @@ async fn c_client_claims_freq_to_rust_server() {
         log.contains("done (to 2:5047/13@fidonet, OK, S/R: 1/2"),
         "{log}"
     );
+    // The port announces the request file of its queue with a random name,
+    // the port of `netname_()` of `prothlp.c`, so the C client receives it
+    // under that name and writes it into its inbound.
+    let received = log
+        .lines()
+        .find_map(|line| line.split("rcvd msg FILE ").nth(1))
+        .and_then(|rest| rest.split_whitespace().next())
+        .map(|name| name.to_string());
+    let Some(received) = received else {
+        panic!("the C client received no file of the port: {log}");
+    };
+    assert!(received.ends_with(".req"), "{received}");
+    assert_ne!(received, "13b70064.req", "{received}");
+    assert!(
+        dir.join("in").join(&received).is_file(),
+        "the C client did not write {received}"
+    );
     // The port held its own end of the batch back until the C client answered
     // the claim with its own end, the port of `delay_EOB` of `protocol.c`, so
     // the end of the batch of the port left after the end of the C client.

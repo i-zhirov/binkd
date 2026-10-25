@@ -930,9 +930,19 @@ Progress:
   header of a frame, decrypts it, and learns the length of the data then, the port
   of `recv_block()`, so the read path holds the decrypted header for the data,
   the port of `pending_header`. (done)
-- `binkd-srif` is open: the port of `do_prescan()` of `protocol.c`, the
-  `M_NUL TRF` and `M_NUL FREQ` messages of the answerer of a peer of the
-  version 1.0.
+- The port of `netname_()` of `prothlp.c`: the session announces a file of
+  the mail and a file of a request with a random name, and it keeps the name of
+  every other file, with the week of an arcmail name. The C code takes the kind
+  of a file from the queue, and the port takes it from the name, as the scan of
+  `q_add_dir()` of `ftnq.c` does. The tests of the network take a file of an
+  inbound by its extension then. (done)
+- The port of `state->r_skipped_flag` of `protocol.c`: the session holds the
+  queue of the session back when the peer skipped a file of it, the port of
+  `SKIP()`, and `OK_SEND_FILES()` reads the flag. The test of the flag is
+  open: the C client that skips the file of the port waits for the end of the
+  batch of the port and the C client of the version 1.0 holds its own end of the
+  batch back, the port of `delay_EOB`, so the test needs a scenario without a
+  claim of the version 1.0.
 - The port of `do_prescan()` of `protocol.c`: the session scans the spool for
   the peer after the login, the port of `q_scan_addrs()`, and it announces the
   number of the nodes and the size of the files, the port of `q_get_sizes()`,

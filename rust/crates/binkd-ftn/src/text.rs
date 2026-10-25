@@ -260,6 +260,54 @@ pub fn extract_filename(s: &[u8]) -> &[u8] {
     &s[slash.max(colon)..]
 }
 
+/// Returns the name of a file on the wire, the port of `netname_()` of
+/// `prothlp.c`.
+///
+/// The C code announces a file of the mail and a file of a request with a
+/// random name, and it keeps the name of every other file. The C code holds the
+/// kind of a file in the queue, the port of `TFILE.type`, and the port takes
+/// the kind from the name, as the scan of `q_add_dir()` of `ftnq.c` does. The
+/// C code writes the week of an arcmail name in place of the first two
+/// characters of the extension, the port of the `weekext` table.
+pub fn netname(name: &[u8], rnd: &mut impl FnMut() -> u32) -> Vec<u8> {
+    let ext = match name.iter().rposition(|c| *c == b'.') {
+        Some(i) => &name[i + 1..],
+        None => &name[..0],
+    };
+    // The C code announces a file of the mail with a random name, `type == 'm'`.
+    if ext.len() == 3 && ext[1].eq_ignore_ascii_case(&b'u') && ext[2].eq_ignore_ascii_case(&b't') {
+        return format!("{:08x}.pkt", rnd()).into_bytes();
+    }
+    // The C code announces a file of a request with a random name,
+    // `type == 'r'`.
+    if ext.eq_ignore_ascii_case(b"req") {
+        return format!("{:08x}.req", rnd()).into_bytes();
+    }
+    // The C code keeps the name of every other file.
+    let mut name = name.to_vec();
+    if ext.len() == 3 && (b'0'..=b'6').contains(&ext[0]) && ext[1] == b'#' {
+        let week = week_name(ext[0] - b'0');
+        let start = name.len() - ext.len();
+        name[start] = week[0];
+        name[start + 1] = week[1];
+    }
+    strquote(&name, SQ_CNTRL | SQ_SPACE)
+}
+
+/// Returns the two letters of the week, the port of the `weekext` table of
+/// `netname_()` of `prothlp.c`.
+fn week_name(day: u8) -> [u8; 2] {
+    match day {
+        0 => *b"su",
+        1 => *b"mo",
+        2 => *b"tu",
+        3 => *b"we",
+        4 => *b"th",
+        5 => *b"fr",
+        _ => *b"sa",
+    }
+}
+
 /// Returns true for a mail packet name.
 pub fn ispkt(s: &[u8]) -> bool {
     pmatch_ncase(b"*.pkt", s)
