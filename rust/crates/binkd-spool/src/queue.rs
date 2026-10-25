@@ -387,11 +387,6 @@ impl Queue {
                 fa2.net = parse_hex(&s[..4]);
                 fa2.node = parse_hex(&s[4..8]);
             }
-            // Add the file when the wildcard (fa1) matches the address (fa2).
-            if fa1.node != -1 && fa1.p != -1 && fa1.compare(&fa2) != 0 {
-                continue;
-            }
-
             let path = dir.join(&name);
             let ext = &s[9..];
 

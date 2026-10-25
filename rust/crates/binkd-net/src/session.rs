@@ -111,6 +111,7 @@ pub fn session_config(
             .collect(),
         bw_send: node.map(|node| node.bw_send).unwrap_or(bw::BW_DEF),
         bw_recv: node.map(|node| node.bw_recv).unwrap_or(bw::BW_DEF),
+        prescan: config.prescan,
     }
 }
 

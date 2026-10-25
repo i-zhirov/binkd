@@ -400,6 +400,7 @@ mod tests {
             bw_recv: -100,
             skip: Vec::new(),
             listed: false,
+            prescan: false,
         };
         let (left, right) = tokio::io::duplex(1 << 16);
         let mut recorder = Recorder::new(left, Role::Client);

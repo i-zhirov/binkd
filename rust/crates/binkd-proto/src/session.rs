@@ -98,6 +98,9 @@ pub struct SessionConfig {
     pub bw_send: i64,
     /// The `-bw` recv limit of the node, the port of `to->bw_recv`.
     pub bw_recv: i64,
+    /// The `prescan` directive: scan the outbound after the login and announce
+    /// the queue, the port of `config->prescan`.
+    pub prescan: bool,
 }
 
 /// The version of the protocol that the session advertises, the port of
@@ -507,6 +510,10 @@ struct Session<S> {
     /// The files that an exchange answered, the port of the queue of the session
     /// of the C code, `state->q`, which the send path sends.
     answered: Vec<String>,
+    /// The files that the prescan of the session found, the port of the queue of
+    /// the session of the C code, `state->q`, which `do_prescan()` builds and
+    /// the send path sends.
+    prescan_files: Vec<SendFile>,
 }
 
 impl<S> Session<S>
@@ -559,6 +566,7 @@ where
             pending: Vec::new(),
             pending_header: None,
             answered: Vec::new(),
+            prescan_files: Vec::new(),
         }
     }
 
@@ -803,7 +811,13 @@ where
                     match self.role {
                         // The caller answers the password request of the
                         // answerer, the port of `ADR()`.
-                        Role::Client => self.send_password().await?,
+                        Role::Client => {
+                            // The port of the login of the caller: the C
+                            // code scans the queue and announces it before
+                            // the password, the port of `do_prescan()`.
+                            self.prescan().await?;
+                            self.send_password().await?
+                        }
                         // The answerer waits for the password of the caller,
                         // the port of `PWD()`.
                         Role::Server => {}
@@ -868,6 +882,53 @@ where
         self.send_text(Command::Pwd, &answer).await
     }
 
+    /// Scans the spool for the peer and announces the queue, the port of
+    /// `do_prescan()` of `protocol.c`.
+    ///
+    /// The C code runs the scan after the login of both roles, before the answer
+    /// of the password, and the send path sends the queue that the scan builds,
+    /// the port of `state->q`. The C code announces the claim of a request file
+    /// only for a peer of the version 1.0, the port of the test of
+    /// `state->major * 100 + state->minor <= 100` of `do_prescan()`.
+    async fn prescan(&mut self) -> Result<(), Error> {
+        if !self.config.prescan || !self.can_send_files() {
+            return Ok(());
+        }
+        let mut queue = binkd_spool::queue::Queue::new();
+        queue.scan_addrs(
+            &self.config.addresses,
+            self.role == Role::Client,
+            &mut self.config.spool,
+            now(),
+            false,
+        );
+        let (netsize, filessize) = queue.get_sizes();
+        self.send_text(Command::Nul, &format!("TRF {netsize} {filessize}"))
+            .await?;
+        // The C code announces one claim per request file of the queue, the
+        // port of `q_freq_num()` of `ftnq.c`.
+        if !self.peer_11 {
+            for _ in 0..queue.freq_num() {
+                self.send_text(Command::Nul, "FREQ").await?;
+            }
+        }
+        self.prescan_files = queue
+            .entries
+            .iter()
+            .map(|entry| queued_file(&entry.path.to_string_lossy()))
+            .collect();
+        Ok(())
+    }
+
+    /// Reports whether the session may send the files of its queue, the port of
+    /// `OK_SEND_FILES()` of `protoco2.h`.
+    ///
+    /// The C code holds the flag of a file that the peer skipped,
+    /// `state->r_skipped_flag`, which the port does not model yet.
+    fn can_send_files(&self) -> bool {
+        !self.config.spool.send_if_pwd || self.secure() || self.role == Role::Client
+    }
+
     /// Completes the login, the port of `complete_login()`.
     ///
     /// The answerer sends its options and the state of the session. Both sides
@@ -883,6 +944,9 @@ where
             if !self.nd.we && !self.nd.can_nda {
                 self.nd.they = false;
             }
+            // The port of `PWD()`: the answerer scans the queue and
+            // announces it before the options and the answer.
+            self.prescan().await?;
             self.send_options().await?;
             let state = if self.secure() {
                 "secure"
@@ -1062,7 +1126,14 @@ where
         srif: &mut (dyn Srif + Send),
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
-        for file in files {
+        // The port of `complete_login()`: the C code scans the queue of the
+        // session when the prescan did not, and the send path sends the queue.
+        let files: Vec<SendFile> = if self.prescan_files.is_empty() {
+            files.to_vec()
+        } else {
+            std::mem::take(&mut self.prescan_files)
+        };
+        for file in &files {
             self.send_queued(file, srif, timeout).await?;
         }
         self.send_pending(srif, timeout).await?;

@@ -97,6 +97,7 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         bw_recv: -100,
         skip: Vec::new(),
         listed: false,
+        prescan: false,
     }
 }
 

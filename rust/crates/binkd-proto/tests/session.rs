@@ -73,6 +73,7 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         bw_recv: -100,
         skip: Vec::new(),
         listed: false,
+        prescan: false,
     }
 }
 

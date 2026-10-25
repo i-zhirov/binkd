@@ -194,6 +194,7 @@ fn session_config(
         bw_recv: -100,
         skip: Vec::new(),
         listed: false,
+        prescan: false,
     }
 }
 
@@ -1262,6 +1263,11 @@ async fn c_client_claims_freq_to_rust_server() {
     };
 
     let dir = temp_dir("c-client-srif");
+    // The port holds a spool of its own: the C client and the port are two
+    // nodes, and the scan of the port reads the outbound of the port only.
+    let rust_dir = dir.join("rust");
+    std::fs::create_dir_all(rust_dir.join("outb")).unwrap();
+    std::fs::create_dir_all(rust_dir.join("in")).unwrap();
     let port = free_port();
     let config = format!(
         "domain fidonet outb 2\n\
@@ -1283,8 +1289,7 @@ async fn c_client_claims_freq_to_rust_server() {
     std::fs::write(dir.join("outb/13b7000d.req"), vec![b'r'; 100]).unwrap();
 
     // The external program of the port answers the file of the exchange.
-    let answer = dir.join("outb/13b70064.pkt");
-    std::fs::write(&answer, b"the answer").unwrap();
+    let answer = rust_dir.join("outb/13b70064.pkt");
     let mut srif = Erp {
         answer: answer.clone(),
         requests: Arc::new(Mutex::new(Vec::new())),
@@ -1294,11 +1299,31 @@ async fn c_client_claims_freq_to_rust_server() {
     // The listener of the port advertises the version 1.0, the port of the
     // answer of a peer of the C code, so the C client announces the claim
     // and holds its own end of the batch back, the port of `delay_EOB`.
-    let mut server_config =
-        session_config(&dir, "2:5047/13@fidonet", "secret", Methods::none(), false);
+    let mut server_config = session_config(
+        &rust_dir,
+        "2:5047/13@fidonet",
+        "secret",
+        Methods::none(),
+        false,
+    );
     server_config.protocol = Protocol::V10;
     // The port logs the frames of the session, before the encryption.
     server_config.trace = true;
+    // The port scans its own outbound for the files of the C client and
+    // announces the queue, the port of `do_prescan()` of `protocol.c`, so the
+    // spool holds a request file for the address of the C client.
+    let mut spool = spool(&rust_dir);
+    spool.domains.push(binkd_ftn::domain::FtnDomain {
+        name: "fidonet".to_string(),
+        path: rust_dir.display().to_string(),
+        dir: "outb".to_string(),
+        z: [2, 0],
+        idomain: None,
+        alias4: None,
+    });
+    std::fs::write(rust_dir.join("outb/13b70064.req"), vec![b'q'; 100]).unwrap();
+    server_config.spool = spool;
+    server_config.prescan = true;
     // The spool of the answerer needs the node of the caller, the port of
     // `q_add_file()`.
     server_config.spool.nodes.add(
@@ -1356,11 +1381,23 @@ async fn c_client_claims_freq_to_rust_server() {
     let inbound = dir.join("in").join("13b70064.pkt");
     assert!(inbound.is_file(), "the C client did not write the file");
     assert_eq!(std::fs::read(&inbound).unwrap(), b"the answer");
-    // The log of the C client holds the claim of the version 1.0.
+    // The log of the C client holds the whole exchange of the claims of the
+    // version 1.0, the port of the messages of `do_prescan()` of `protocol.c`.
     let log = std::fs::read_to_string(dir.join("c-client.log")).unwrap_or_default();
+    // The C client claims the FREQ of its own request file.
     assert!(log.contains("send message NUL FREQ"), "{log}");
+    // The port announces the queue of its spool: the number of the nodes and
+    // the size of the files, the port of `q_get_sizes()`.
+    assert!(log.contains("rcvd msg NUL TRF 0 100"), "{log}");
+    // The port claims the FREQ of the request file of its queue.
+    assert!(log.contains("rcvd msg NUL FREQ"), "{log}");
+    // The claim of the port makes the count of the C client nonzero, the port
+    // of `state->delay_EOB++` of the `M_NUL FREQ` handler.
+    assert!(log.contains("Remote claims to have a FREQ for us"), "{log}");
+    // The C client received the request file of the port and the file of the
+    // exchange, and it sent the request file of its own outbound.
     assert!(
-        log.contains("done (to 2:5047/13@fidonet, OK, S/R: 1/1"),
+        log.contains("done (to 2:5047/13@fidonet, OK, S/R: 1/2"),
         "{log}"
     );
     // The port held its own end of the batch back until the C client answered
@@ -1406,9 +1443,11 @@ impl Srif for Erp {
 
     fn on_file(&mut self, filename: &str, _peer: &Peer) -> Vec<String> {
         // The program of the entry runs for the request file of the peer, and
-        // it answers the file of the exchange.
+        // it answers the file of the exchange. The program writes the file of
+        // the answer, so the prescan of the port does not find it.
         if filename.ends_with(".req") {
             self.requests.lock().unwrap().push(filename.to_string());
+            std::fs::write(&self.answer, b"the answer").unwrap();
             return vec![self.answer.display().to_string()];
         }
         Vec::new()

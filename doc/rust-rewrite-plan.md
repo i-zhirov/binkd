@@ -933,6 +933,20 @@ Progress:
 - `binkd-srif` is open: the port of `do_prescan()` of `protocol.c`, the
   `M_NUL TRF` and `M_NUL FREQ` messages of the answerer of a peer of the
   version 1.0.
+- The port of `do_prescan()` of `protocol.c`: the session scans the spool for
+  the peer after the login, the port of `q_scan_addrs()`, and it announces the
+  number of the nodes and the size of the files, the port of `q_get_sizes()`,
+  and one claim per request file of the queue for a peer of the version 1.0, the
+  port of `q_freq_num()`. The send path sends the queue that the scan builds,
+  the port of `state->q` of `complete_login()`. (done)
+- A bug that the test of the claim found in the spool: the port of `q_add_dir()`
+  of `ftnq.c` skipped every file of an outbound directory whose name did not
+  answer the address of our own side, which the C code does not do: the C code
+  answers the file of the peer, and it skips the file of a node that the config
+  does not hold and that the address of our own side does not cover, the port of
+  the test of `get_node_info()` and of `is5D()`. The prescan of the port found
+  no file of the peer before the fix, so the port announced an empty queue and
+  never sent its own claim. (done)
 
 Exit criteria:
 
