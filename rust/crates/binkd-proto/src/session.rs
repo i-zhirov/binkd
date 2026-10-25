@@ -1865,7 +1865,11 @@ where
                 let answered = srif.flush(&peer);
                 self.answered.extend(answered);
                 self.send_pending(srif, timeout).await?;
-                if self.msgs_in_batch <= 2 || self.config.protocol == Protocol::V10 {
+                // The C code closes the session for a peer of the version
+                // 1.0, the port of the test of `state.major * 100 +
+                // `state.minor <= 100` of `protocol()`, and it starts the
+                // next batch otherwise.
+                if self.msgs_in_batch <= 2 || !self.peer_11 {
                     return Ok(());
                 }
                 self.msgs_in_batch = 0;

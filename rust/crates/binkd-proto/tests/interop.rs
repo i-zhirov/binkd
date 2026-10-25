@@ -1437,6 +1437,142 @@ async fn c_client_claims_freq_to_rust_server() {
     );
 }
 
+/// The C client skips the request file of the port, and the session holds the
+/// queue back, the port of `SKIP()` and of `OK_SEND_FILES()` of `protocol.c`.
+///
+/// The `skip` directive of the C client declines the file of the port, so the C
+/// client answers `M_SKIP` and the port sets `state->r_skipped_flag`, the port of
+/// `SKIP()`. The C code sends the queue of the session only while the flag is
+/// clear, the port of `OK_SEND_FILES()`.
+///
+/// The listener advertises the version 1.1: the C client claims the FREQ of the
+/// version 1.0 only for a peer of that version, the port of `do_prescan()`, and a
+/// claim of the peer holds the end of the batch of the port back, the port of
+/// `delay_EOB`. A claim of both sides would hold the end of the batch of both
+/// sides, because the C code answers the claim of a peer for a file that it
+/// declined only, the port of the `delay_EOB--` of `inbound.c`, and the file of
+/// the port is the one that the C client declined.
+#[tokio::test]
+async fn c_client_skips_the_request_of_rust_server() {
+    let Some(_) = c_binary_v10() else {
+        eprintln!("skip: set BINKD_C_V10 to the path of the C binary of the version 1.0");
+        return;
+    };
+
+    let dir = temp_dir("c-client-skip");
+    let rust_dir = dir.join("rust");
+    std::fs::create_dir_all(rust_dir.join("outb")).unwrap();
+    std::fs::create_dir_all(rust_dir.join("in")).unwrap();
+    let port = free_port();
+    // The C client declines every request file of the peer, the port of the
+    // `skip` directive, and it answers a timeout of the transport with the
+    // `timeout` of the config, so a hold of the session ends the test. The C
+    // code takes the size of a `skip` entry before the mask, and the size of
+    // the entry of the test is `0`: the C code reads the size `-` as a mask
+    // then, the port of `read_skip()` of `readcfg.c`.
+    let config = format!(
+        "domain fidonet outb 2\n\
+         address 2:5047/100@fidonet\n\
+         sysname \"C client\"\n\
+         sysop \"C sysop\"\n\
+         location \"C location\"\n\
+         nodeinfo \"C node\"\n\
+         inbound in\n\
+         log c-client.log\n\
+         loglevel 10\n\
+         conlog 0\n\
+         timeout 20\n\
+         node 2:5047/13@fidonet 127.0.0.1:{port} secret\n\
+         prescan\n\
+         skip 0 *.req\n\
+         zallow *\n"
+    );
+    std::fs::write(dir.join("binkd.conf"), config).unwrap();
+    std::fs::write(dir.join("outb/13b7000d.req"), vec![b'r'; 100]).unwrap();
+
+    // The external program of the port answers the file of the exchange.
+    let answer = rust_dir.join("outb/13b70064.pkt");
+    let mut srif = Erp {
+        answer: answer.clone(),
+        requests: Arc::new(Mutex::new(Vec::new())),
+        claims: 0,
+    };
+
+    let mut server_config = session_config(
+        &rust_dir,
+        "2:5047/13@fidonet",
+        "secret",
+        Methods::none(),
+        false,
+    );
+    // The listener advertises the version 1.1, so the C client holds no claim
+    // and it answers the end of the batch of the port at once.
+    server_config.trace = true;
+    let mut spool = spool(&rust_dir);
+    spool.domains.push(binkd_ftn::domain::FtnDomain {
+        name: "fidonet".to_string(),
+        path: rust_dir.display().to_string(),
+        dir: "outb".to_string(),
+        z: [2, 0],
+        idomain: None,
+        alias4: None,
+    });
+    std::fs::write(rust_dir.join("outb/13b70064.req"), vec![b'q'; 100]).unwrap();
+    server_config.spool = spool;
+    server_config.prescan = true;
+    server_config.spool.nodes.add(
+        &address("2:5047/100@fidonet"),
+        &binkd_ftn::node::NodeSpec {
+            hosts: Some("127.0.0.1".to_string()),
+            pwd: Some("secret".to_string()),
+            ..binkd_ftn::node::NodeSpec::default()
+        },
+        0,
+    );
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
+        .await
+        .unwrap();
+    let server = async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        run_with(
+            stream,
+            Role::Server,
+            &server_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            Duration::from_secs(20),
+        )
+        .await
+    };
+
+    let c_client_dir = dir.clone();
+    let c_client = tokio::task::spawn_blocking(move || {
+        let client = Command::new(c_binary_v10().unwrap())
+            .args(["-P", "2:5047/13@fidonet", "-p", "binkd.conf"])
+            .current_dir(&c_client_dir)
+            .status()
+            .expect("cannot run the C client");
+        assert!(client.success(), "the C client failed");
+    });
+
+    let (server, c_client) = tokio::join!(server, c_client);
+    c_client.unwrap();
+    let report = server.expect("the Rust session failed");
+
+    // The peer declined the file of the port, so the session holds the queue
+    // back, the port of `state->r_skipped_flag` of `protocol.c`.
+    assert!(report.skipped, "{report:?}");
+    // The port announced the request file of its queue and the file of the
+    // exchange, and the peer declined the request file.
+    assert_eq!(report.received.len(), 1, "{report:?}");
+    assert!(report.received[0].netname.ends_with(".req"), "{report:?}");
+    let log = std::fs::read_to_string(dir.join("c-client.log")).unwrap_or_default();
+    assert!(log.contains("rcvd msg FILE"), "{log}");
+    assert!(log.contains("skipping"), "{log}");
+}
+
 /// The external FREQ processor of the test, the port of the program of an
 /// `exec` entry with the `*S` macro.
 struct Erp {

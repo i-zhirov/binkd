@@ -938,11 +938,24 @@ Progress:
   inbound by its extension then. (done)
 - The port of `state->r_skipped_flag` of `protocol.c`: the session holds the
   queue of the session back when the peer skipped a file of it, the port of
-  `SKIP()`, and `OK_SEND_FILES()` reads the flag. The test of the flag is
-  open: the C client that skips the file of the port waits for the end of the
-  batch of the port and the C client of the version 1.0 holds its own end of the
-  batch back, the port of `delay_EOB`, so the test needs a scenario without a
-  claim of the version 1.0.
+  `SKIP()`, and `OK_SEND_FILES()` reads the flag. The test of the flag runs
+  the C client of the version 1.0 against a listener of the version 1.1, so no
+  side claims a FREQ and no side holds its own end of the batch back, the port
+  of `delay_EOB`, and the C client skips the request file of the port. (done)
+- A gap that the test of the flag found: the port counts a file of the session
+  at the announcement of it, the port of `current_file_was_sent()`, and the C
+  code counts it at the acknowledgement, the port of `GOT()`, so the count of
+  the port holds a file that the peer declined. The test of the flag reads the
+  files of the report that the port received, the port of the count of the C code
+  that the port holds open.
+- A gap that the test of the flag found in the batch of a peer of the version
+  1.1: the C code starts the next batch of a session that holds more than the
+  two `M_EOB` frames, the port of the test of `protocol()`, and the port
+  starts the next batch of the session too, but the C client ends the session of
+  the test with the status of a failure, because its next batch holds no file and
+  the port holds its own end of the batch back. The C code holds the same shape,
+  so the test of the flag reads the skip of the peer and the flag of the port
+  only.
 - The port of `do_prescan()` of `protocol.c`: the session scans the spool for
   the peer after the login, the port of `q_scan_addrs()`, and it announces the
   number of the nodes and the size of the files, the port of `q_get_sizes()`,
