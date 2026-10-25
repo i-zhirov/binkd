@@ -177,6 +177,10 @@ impl binkd_proto::Srif for Events {
         self.queued(mark)
     }
 
+    fn claimed(&self) -> bool {
+        self.engine.claimed()
+    }
+
     fn finish(&mut self) {
         let mut context = Context {
             flags: &self.config.evt_flags,

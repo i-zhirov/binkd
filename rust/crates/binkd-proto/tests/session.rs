@@ -950,6 +950,10 @@ impl Srif for Recorder {
         Vec::new()
     }
 
+    fn claimed(&self) -> bool {
+        false
+    }
+
     fn flush(&mut self, _peer: &binkd_proto::Peer) -> Vec<String> {
         // The port of `process_rcvdlist()`: the exchange answers the files of
         // the response file, and the session sends them.

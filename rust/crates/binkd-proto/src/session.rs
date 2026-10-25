@@ -6,8 +6,11 @@
 
 use std::fmt;
 use std::fs;
+use std::future::poll_fn;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::task::Poll;
 
 use binkd_ftn::addr::FtnAddr;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -162,6 +165,8 @@ pub trait Srif {
     /// Takes the end of a batch and answers the paths of the files to send, the
     /// port of `process_rcvdlist()` of `protocol.c`.
     fn flush(&mut self, peer: &Peer) -> Vec<String>;
+    /// Reports whether the peer claims a FREQ, the port of `delay_EOB > 0`.
+    fn claimed(&self) -> bool;
     /// Takes the end of the session, the port of `evt_set()` of `srif.c`.
     fn finish(&mut self);
 }
@@ -179,6 +184,9 @@ impl Srif for NoSrif {
     }
     fn flush(&mut self, _peer: &Peer) -> Vec<String> {
         Vec::new()
+    }
+    fn claimed(&self) -> bool {
+        false
     }
     fn finish(&mut self) {}
 }
@@ -490,6 +498,16 @@ struct Session<S> {
     bw_send: bw::Bandwidth,
     /// The meter of the recv direction, the port of `state->bw_recv`.
     bw_recv: bw::Bandwidth,
+    /// The bytes that the session read ahead, the port of the read buffer of the
+    /// C code, `state->ibuf`.
+    pending: Vec<u8>,
+    /// The header of a frame that waits for its data, the port of the read of the
+    /// header of `recv_block()` of the C code, which reads the header, decrypts
+    /// it, and knows the length of the data then.
+    pending_header: Option<(u16, usize)>,
+    /// The files that an exchange answered, the port of the queue of the session
+    /// of the C code, `state->q`, which the send path sends.
+    answered: Vec<String>,
 }
 
 impl<S> Session<S>
@@ -539,6 +557,9 @@ where
             peer_eob: false,
             bw_send: bw::Bandwidth::new(0, 0),
             bw_recv: bw::Bandwidth::new(0, 0),
+            pending: Vec::new(),
+            pending_header: None,
+            answered: Vec::new(),
         }
     }
 
@@ -584,20 +605,71 @@ where
     /// The port of `recv_block()`: the header and the payload are decrypted
     /// before the frame is decoded.
     async fn read(&mut self, timeout: std::time::Duration) -> Result<Frame, Error> {
-        let mut header = [0u8; frame::HEADER_SIZE];
-        self.read_exact(&mut header, timeout).await?;
-        if let Some(crypt) = &mut self.crypt {
-            binkd_ftn::crypt::decrypt_buf(&mut header, &mut crypt.keys_in);
+        loop {
+            if let Some(frame) = self.take_frame()? {
+                return Ok(frame);
+            }
+            self.read_more(timeout).await?;
         }
-        let raw = u16::from_be_bytes(header);
-        let mut payload = vec![0u8; Frame::payload_size(raw)];
-        self.read_exact(&mut payload, timeout).await?;
+    }
+
+    async fn try_read_frame(&mut self) -> Result<Option<Frame>, Error> {
+        loop {
+            if let Some(frame) = self.take_frame()? {
+                return Ok(Some(frame));
+            }
+            let mut buf = [0u8; 4096];
+            let mut filled = tokio::io::ReadBuf::new(&mut buf);
+            let mut polled = None;
+            poll_fn(
+                |cx| match Pin::new(&mut self.stream).poll_read(cx, &mut filled) {
+                    Poll::Ready(result) => {
+                        polled = Some(result);
+                        Poll::Ready(())
+                    }
+                    Poll::Pending => Poll::Ready(()),
+                },
+            )
+            .await;
+            let Some(result) = polled else {
+                return Ok(None);
+            };
+            result.map_err(|e| Error::Io(e.to_string()))?;
+            let n = filled.filled().len();
+            if n == 0 {
+                return Err(Error::Io("the peer closed the transport".to_string()));
+            }
+            self.pending.extend_from_slice(filled.filled());
+        }
+    }
+
+    fn take_frame(&mut self) -> Result<Option<Frame>, Error> {
+        let (raw, size) = match self.pending_header {
+            Some(header) => header,
+            None => {
+                if self.pending.len() < frame::HEADER_SIZE {
+                    return Ok(None);
+                }
+                let mut header: Vec<u8> = self.pending.drain(..frame::HEADER_SIZE).collect();
+                if let Some(crypt) = &mut self.crypt {
+                    binkd_ftn::crypt::decrypt_buf(&mut header, &mut crypt.keys_in);
+                }
+                let raw = u16::from_be_bytes([header[0], header[1]]);
+                let size = Frame::payload_size(raw);
+                self.pending_header = Some((raw, size));
+                (raw, size)
+            }
+        };
+        if self.pending.len() < size {
+            return Ok(None);
+        }
+        let mut payload: Vec<u8> = self.pending.drain(..size).collect();
         if let Some(crypt) = &mut self.crypt {
             binkd_ftn::crypt::decrypt_buf(&mut payload, &mut crypt.keys_in);
         }
+        self.pending_header = None;
         let frame = frame::decode(raw, payload).map_err(|e| Error::Io(e.to_string()))?;
         if matches!(frame, Frame::Command(..)) {
-            // The port of `recv_block()`: the batch counts the messages.
             self.msgs_in_batch += 1;
         }
         if self.config.trace {
@@ -605,20 +677,17 @@ where
                 self.report.frames.push(FrameRecord { sent: false, name });
             }
         }
-        Ok(frame)
+        Ok(Some(frame))
     }
 
-    /// Reads the bytes of a frame.
-    async fn read_exact(
-        &mut self,
-        buffer: &mut [u8],
-        timeout: std::time::Duration,
-    ) -> Result<(), Error> {
+    async fn read_more(&mut self, timeout: std::time::Duration) -> Result<(), Error> {
+        let mut buf = [0u8; 4096];
         self.wait_rate(false).await;
-        match tokio::time::timeout(timeout, self.stream.read_exact(buffer)).await {
-            Ok(Ok(_)) => {
-                // The port of the meter of `recv_block()`.
-                self.bw_recv.bytes += buffer.len() as u64;
+        match tokio::time::timeout(timeout, self.stream.read(&mut buf)).await {
+            Ok(Ok(0)) => Err(Error::Io("the peer closed the transport".to_string())),
+            Ok(Ok(n)) => {
+                self.bw_recv.bytes += n as u64;
+                self.pending.extend_from_slice(&buf[..n]);
                 Ok(())
             }
             Ok(Err(e)) => Err(Error::Io(e.to_string())),
@@ -956,13 +1025,13 @@ where
                         // The port of the `NUL()` handler: the peer wants
                         // the crypt mode.
                         self.they_crypt = true;
-                    } else if option == "FREQ" {
-                        // The port of the `NUL()` handler: the peer claims a
-                        // FREQ for us, the port of `state->delay_EOB++`.
-                        srif.claim();
                     }
                 }
             }
+            // The port of `NUL()`: the peer claims a FREQ for us, the port
+            // of `state->delay_EOB++`. The C code holds the claim in a
+            // message of its own, not among the options.
+            Some("FREQ") => srif.claim(),
             Some("VER") => {
                 self.peer_11 = text.contains("binkp/1.1");
             }
@@ -997,27 +1066,320 @@ where
         for file in files {
             self.send_queued(file, srif, timeout).await?;
         }
-        // The peer may close the transport after its own end of the batch.
-        // The C code holds the end of the batch back for a peer of the
-        // version 1.0 while the peer claims a FREQ, the port of `delay_EOB`
-        // of `protocol.c`, because the peer sends the request file after our
-        // end. The port answers the end of the batch after the exchange then,
-        // the port of the send path of the C code.
-        if self.peer_11 {
-            let _ = self.send_text(Command::Eob, "").await;
-            self.sent_eob = true;
-        }
+        self.send_pending(srif, timeout).await?;
         Ok(())
     }
 
-    /// Sends the end of the batch of the answerer of a peer of the version 1.0,
-    /// the port of the send path of `protocol.c`.
-    async fn send_eob_for_v10(&mut self) -> Result<(), Error> {
-        if self.sent_eob {
+    async fn send_pending(
+        &mut self,
+        srif: &mut (dyn Srif + Send),
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
+        for path in std::mem::take(&mut self.answered) {
+            let file = queued_file(&path);
+            self.send_queued(&file, srif, timeout).await?;
+        }
+        if self.sent_eob || !self.sent_fls.is_empty() || self.get_file_balance > 0 {
+            return Ok(());
+        }
+        // The C code holds the end of the batch back only for a peer of the
+        // version 1.0 that claims a FREQ, the port of `delay_EOB` of
+        // `protocol.c`. A peer of the version 1.1 receives our end at once.
+        if srif.claimed() && !self.peer_11 {
             return Ok(());
         }
         let _ = self.send_text(Command::Eob, "").await;
         self.sent_eob = true;
+        Ok(())
+    }
+
+    async fn handle_frame(
+        &mut self,
+        frame: Frame,
+        receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
+        srif: &mut (dyn Srif + Send),
+        current: &mut Option<Incoming>,
+    ) -> Result<(), Error> {
+        match frame {
+            Frame::Command(Command::File, argument) => {
+                // The port of the deferred rename of `start_file_recv()`:
+                // the completed file takes its true name before the next
+                // file starts.
+                if let Some(complete) = self.in_complete.take() {
+                    self.finish_file(complete, receive, srif).await?;
+                }
+                let (netname, size, time, offset, extras) = parse_file_args(&argument)?;
+                if offset == NR_REQUEST {
+                    // The port of `start_file_recv()`: the peer is the
+                    // NR sender, and it asks us for the file.
+                    self.nr.they = true;
+                    let _ = self
+                        .send_text(Command::Get, &format!("{netname} {size} {time} 0"))
+                        .await;
+                    self.get_file_balance += 1;
+                    return Ok(());
+                }
+                // The port of the `M_FILE` handler: the answer of the
+                // peer ends a request that we sent.
+                if self.nr.they && self.get_file_balance > 0 {
+                    self.get_file_balance -= 1;
+                }
+                // The port of the `M_FILE` handler: the extra arguments
+                // select the compression of the file.
+                let mut methods = Methods::none();
+                for extra in &extras {
+                    if let Some(method) = Method::from_name(extra) {
+                        methods.insert(method);
+                    }
+                }
+                if methods.contains(Method::Gz) && methods.contains(Method::Bz2) {
+                    let _ = self
+                        .send_text(
+                            Command::Err,
+                            &format!("Can't handle GZ and BZ2 at the same time for {netname}"),
+                        )
+                        .await;
+                    return Err(Error::Protocol(format!(
+                        "both GZ and BZ2 extras are specified for {netname}"
+                    )));
+                }
+                // The port of `skip_test()` of `start_file_recv()`: a
+                // rule of the `skip` directive declines the file.
+                let amask = self.addr_type();
+                if let Some(rule) = skip_test(&self.config.skip, amask, &netname, size) {
+                    let _ = self
+                        .send_text(
+                            if rule.destr {
+                                Command::Got
+                            } else {
+                                Command::Skip
+                            },
+                            &format!("{netname} {size} {time}"),
+                        )
+                        .await;
+                    return Ok(());
+                }
+                // The port of `inb_test()` of `start_file_recv()`: we
+                // hold the file already.
+                let now = now();
+                let mut rnd = random();
+                let tfile = TFile {
+                    netname: netname.clone(),
+                    size,
+                    time,
+                    start: now,
+                };
+                if self
+                    .inbound
+                    .inb_test(&netname, size, time, self.config.spool.renamestyle)
+                    .is_some()
+                {
+                    let _ = self
+                        .send_text(Command::Got, &format!("{netname} {size} {time}"))
+                        .await;
+                    return Ok(());
+                }
+                // The port of `inb_fopen()` of `start_file_recv()`: the
+                // partial file of the transfer.
+                let file = self.inbound.inb_fopen(
+                    &tfile,
+                    &self.config.spool,
+                    FreeSpace::default(),
+                    now,
+                    &mut rnd,
+                );
+                let Some(file) = file else {
+                    let _ = self
+                        .send_text(Command::Skip, &format!("{netname} {size} {time}"))
+                        .await;
+                    return Ok(());
+                };
+                let received = file.metadata().map(|m| m.len()).unwrap_or(0);
+                if offset != received as i64 {
+                    // The port of `start_file_recv()`: we ask for the
+                    // file from the position of the partial file, and we
+                    // forget the partial that we hold.
+                    let _ = self
+                        .send_text(Command::Get, &format!("{netname} {size} {time} {received}"))
+                        .await;
+                    self.get_file_balance += 1;
+                    return Ok(());
+                } else if offset != 0 || self.nr.they {
+                    self.get_file_balance = self.get_file_balance.saturating_sub(1);
+                }
+                // The port of `start_file_recv()`: the rate of the file
+                // starts before the data.
+                self.setup_rate_limit(false, &netname);
+                *current = Some(Incoming {
+                    tfile,
+                    file,
+                    method: methods.preferred(),
+                    decompressor: None,
+                    received,
+                });
+            }
+            Frame::Data(data) => {
+                let Some(mut file) = current.take() else {
+                    // The C code discards a block without a file.
+                    return Ok(());
+                };
+                // The port of the compressed branch of `recv_block()`.
+                let bytes = match file.method {
+                    None => data,
+                    Some(method) => {
+                        if file.decompressor.is_none() {
+                            file.decompressor = Some(Decompressor::new(method));
+                        }
+                        let mut out = Vec::new();
+                        let mut input = &data[..];
+                        loop {
+                            let decompressor = file.decompressor.as_mut().unwrap();
+                            let step = decompressor.decompress(input, BLOCK_SIZE).map_err(|e| {
+                                Error::Protocol(format!(
+                                    "decompression of {} failed: {e}",
+                                    file.tfile.netname
+                                ))
+                            })?;
+                            out.extend_from_slice(&step.data);
+                            input = &input[step.consumed..];
+                            if step.ended {
+                                // The C code ends the stream and starts a
+                                // new one for the next block.
+                                file.decompressor = None;
+                                break;
+                            }
+                            // A stream may hold input inside itself and
+                            // produce no output for a moment.
+                            if step.consumed == 0 && step.data.is_empty() {
+                                break;
+                            }
+                        }
+                        out
+                    }
+                };
+                // The port of the `fwrite()` of `recv_block()`: the
+                // bytes of the file go to the partial file.
+                if std::io::Write::write_all(&mut file.file, &bytes).is_err() {
+                    return Err(Error::Protocol(format!(
+                        "cannot write {}",
+                        file.tfile.netname
+                    )));
+                }
+                file.received += bytes.len() as u64;
+                if file.received > file.tfile.size {
+                    return Err(Error::Protocol(format!(
+                        "the file {} holds {} extra bytes",
+                        file.tfile.netname,
+                        file.received - file.tfile.size
+                    )));
+                }
+                if file.received == file.tfile.size {
+                    let complete = CompleteFile {
+                        tfile: file.tfile,
+                        method: file.method,
+                    };
+                    let _ = self
+                        .send_text(
+                            Command::Got,
+                            &format!(
+                                "{} {} {}",
+                                complete.tfile.netname, complete.tfile.size, complete.tfile.time
+                            ),
+                        )
+                        .await;
+                    self.report.files_received += 1;
+                    self.report.bytes_received += complete.tfile.size;
+                    if self.nd.they {
+                        // The port of the `THEY_ND` branch of
+                        // `recv_block()`: the rename waits for the
+                        // next file or for the end of the batch.
+                        self.in_complete = Some(complete);
+                    } else {
+                        self.finish_file(complete, receive, srif).await?;
+                    }
+                } else {
+                    *current = Some(file);
+                }
+            }
+            Frame::Command(Command::Nul, argument) => {
+                // The C code reads an option of the peer at any time.
+                self.handle_nul(&argument, srif);
+            }
+            Frame::Command(Command::Got, argument) => {
+                // The port of `GOT()`: the peer acknowledged a file.
+                let (netname, size, time) = parse_sent_args(&argument)?;
+                let mut address = None;
+                for file in &self.sent_fls {
+                    if file.matches(&netname, size, time) {
+                        address = file.fa.clone();
+                        break;
+                    }
+                }
+                self.sent_fls
+                    .retain(|file| !file.matches(&netname, size, time));
+                // The port of `GOT()`: a request of the NR mode clears
+                // the link status, an ND sender saves the answer of the
+                // peer as the new status.
+                if let Some(fa) = address {
+                    if self.off_req_sent || !self.nd.we {
+                        let _ = binkd_spool::status::set_status(&self.config.domains, &fa, "");
+                    } else {
+                        let _ = binkd_spool::status::set_status(
+                            &self.config.domains,
+                            &fa,
+                            &text(&argument),
+                        );
+                    }
+                }
+            }
+            Frame::Command(Command::Get, argument) => {
+                self.get_file(&argument).await?;
+            }
+            Frame::Command(Command::Skip, argument) => {
+                self.skip_file(&argument)?;
+            }
+            Frame::Command(Command::Ok, _) => {
+                // The login of the peer completes with our `M_OK`.
+            }
+            Frame::Command(Command::Pwd, argument) => {
+                // The peer asks for the password after the login.
+                if !self.check_password(&argument) {
+                    self.send_text(Command::Err, "Incorrect password").await?;
+                    return Err(Error::BadPassword);
+                }
+                self.send_text(Command::Ok, "").await?;
+            }
+            Frame::Command(Command::Eob, _) => {
+                self.peer_eob = true;
+                // The port of `EOB()`: the peer answered every claim of
+                // the batch, so the session answers the exchange now.
+                srif.end_of_batch();
+                // The port of `EOB()`: a partial file of a peer of the
+                // NR mode stays for the next session, and the port
+                // removes it otherwise.
+                if let Some(file) = current.take() {
+                    if !self.nr.they {
+                        let mut rnd = random();
+                        self.inbound
+                            .inb_reject(&file.tfile, &self.config.spool, now(), &mut rnd);
+                    }
+                }
+                // The port of `EOB()`: the completed file takes its
+                // true name at the end of the batch.
+                if let Some(complete) = self.in_complete.take() {
+                    self.finish_file(complete, receive, srif).await?;
+                }
+            }
+            Frame::Command(Command::Err, argument) => {
+                return Err(peer_error(&argument));
+            }
+            Frame::Command(Command::Bsy, argument) => {
+                return Err(Error::Busy(text(&argument)));
+            }
+            other => {
+                return Err(Error::Protocol(format!("{other:?} after the login")));
+            }
+        }
         Ok(())
     }
 
@@ -1220,7 +1582,6 @@ where
         complete: CompleteFile,
         receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
         srif: &mut (dyn Srif + Send),
-        timeout: std::time::Duration,
     ) -> Result<(), Error> {
         // The port of `inb_done()`: the partial file takes its true name.
         let mut rnd = random();
@@ -1246,20 +1607,8 @@ where
         // files that an SRIF exchange answered wait for the end of the batch.
         // The C code takes the name of the file in the inbound directory.
         let peer = self.peer();
-        // The port of `inb_done()`: the events of the file run here, and the
-        // files of an SRIF exchange go to the queue of the session at once,
-        // the port of `state->q`, which the C code sends in the send path.
         let answered = srif.on_file(&name, &peer);
-        for path in answered {
-            let file = queued_file(&path);
-            self.send_queued(&file, srif, timeout).await?;
-        }
-        // The port of the send path of the C code: the answerer of a peer of
-        // the version 1.0 sends the end of the batch after the request file,
-        // because the peer sends the end of the batch only after our own.
-        if !self.peer_11 {
-            self.send_eob_for_v10().await?;
-        }
+        self.answered.extend(answered);
         Ok(())
     }
 
@@ -1410,337 +1759,62 @@ where
     ) -> Result<(), Error> {
         let mut current: Option<Incoming> = None;
         loop {
-            // The C code ends the batch when the peer sent its end, every file
-            // that we sent is acknowledged, every request that we sent is
-            // answered, and no file is in transfer.
+            // The send path of the C code: the files that an exchange
+            // answered, and our own end of the batch when the session has
+            // nothing more to send.
+            self.send_pending(srif, timeout).await?;
+            // The C code ends the batch when the peer sent its end, our own
+            // end went out, every file that we sent is acknowledged, every
+            // request that we sent is answered, and no file is in transfer.
             if self.peer_eob
+                && self.sent_eob
                 && self.sent_fls.is_empty()
                 && self.get_file_balance == 0
                 && current.is_none()
             {
-                // The port of the end of the batch of `protocol()`: a batch of
-                // more than the two `M_EOB` frames starts the next one.
-                // The C code answers the end of the session for a peer of the
-                // version 1.0, or for a batch that holds no more than the two
-                // `M_EOB` frames.
-                if self.msgs_in_batch <= 2 || !self.peer_11 {
-                    break;
+                // The port of the end of the batch of `protocol()`: a batch
+                // of more than the two `M_EOB` frames starts the next one.
+                let peer = self.peer();
+                let answered = srif.flush(&peer);
+                self.answered.extend(answered);
+                self.send_pending(srif, timeout).await?;
+                if self.msgs_in_batch <= 2 || self.config.protocol == Protocol::V10 {
+                    return Ok(());
                 }
                 self.msgs_in_batch = 0;
                 self.peer_eob = false;
                 self.sent_eob = false;
-                // The port of `process_rcvdlist()`: the files that an SRIF
-                // exchange answered in the batch go before our own end.
-                let peer = self.peer();
-                for path in srif.flush(&peer) {
-                    let file = queued_file(&path);
-                    self.send_queued(&file, srif, timeout).await?;
-                }
-                let _ = self.send_text(Command::Eob, "").await;
-                self.sent_eob = true;
                 continue;
             }
-            let frame = match self.read(timeout).await {
-                Ok(frame) => frame,
-                // The peer may close the transport at the moment when the
-                // exchange is complete, the port of the tolerance of the C code
-                // for an error of the transport at the end of a session.
-                Err(Error::Io(_))
-                    if self.peer_eob
-                        && self.sent_fls.is_empty()
-                        && self.get_file_balance == 0
-                        && current.is_none() =>
-                {
-                    break;
-                }
-                Err(e) => return Err(e),
+            // The read of the C code: the frames of the read ahead first,
+            // then one frame of the transport. The C code breaks the read
+            // loop when the transport fails, and the condition above decides
+            // the status of the session then.
+            let frame = match self.try_read_frame().await {
+                Ok(Some(frame)) => frame,
+                Ok(None) => match self.read(timeout).await {
+                    Ok(frame) => frame,
+                    Err(_) => break,
+                },
+                Err(_) => break,
             };
-            match frame {
-                Frame::Command(Command::File, argument) => {
-                    // The port of the deferred rename of `start_file_recv()`:
-                    // the completed file takes its true name before the next
-                    // file starts.
-                    if let Some(complete) = self.in_complete.take() {
-                        self.finish_file(complete, receive, srif, timeout).await?;
-                    }
-                    let (netname, size, time, offset, extras) = parse_file_args(&argument)?;
-                    if offset == NR_REQUEST {
-                        // The port of `start_file_recv()`: the peer is the
-                        // NR sender, and it asks us for the file.
-                        self.nr.they = true;
-                        let _ = self
-                            .send_text(Command::Get, &format!("{netname} {size} {time} 0"))
-                            .await;
-                        self.get_file_balance += 1;
-                        continue;
-                    }
-                    // The port of the `M_FILE` handler: the answer of the
-                    // peer ends a request that we sent.
-                    if self.nr.they && self.get_file_balance > 0 {
-                        self.get_file_balance -= 1;
-                    }
-                    // The port of the `M_FILE` handler: the extra arguments
-                    // select the compression of the file.
-                    let mut methods = Methods::none();
-                    for extra in &extras {
-                        if let Some(method) = Method::from_name(extra) {
-                            methods.insert(method);
-                        }
-                    }
-                    if methods.contains(Method::Gz) && methods.contains(Method::Bz2) {
-                        let _ = self
-                            .send_text(
-                                Command::Err,
-                                &format!("Can't handle GZ and BZ2 at the same time for {netname}"),
-                            )
-                            .await;
-                        return Err(Error::Protocol(format!(
-                            "both GZ and BZ2 extras are specified for {netname}"
-                        )));
-                    }
-                    // The port of `skip_test()` of `start_file_recv()`: a
-                    // rule of the `skip` directive declines the file.
-                    let amask = self.addr_type();
-                    if let Some(rule) = skip_test(&self.config.skip, amask, &netname, size) {
-                        let _ = self
-                            .send_text(
-                                if rule.destr {
-                                    Command::Got
-                                } else {
-                                    Command::Skip
-                                },
-                                &format!("{netname} {size} {time}"),
-                            )
-                            .await;
-                        continue;
-                    }
-                    // The port of `inb_test()` of `start_file_recv()`: we
-                    // hold the file already.
-                    let now = now();
-                    let mut rnd = random();
-                    let tfile = TFile {
-                        netname: netname.clone(),
-                        size,
-                        time,
-                        start: now,
-                    };
-                    if self
-                        .inbound
-                        .inb_test(&netname, size, time, self.config.spool.renamestyle)
-                        .is_some()
-                    {
-                        let _ = self
-                            .send_text(Command::Got, &format!("{netname} {size} {time}"))
-                            .await;
-                        continue;
-                    }
-                    // The port of `inb_fopen()` of `start_file_recv()`: the
-                    // partial file of the transfer.
-                    let file = self.inbound.inb_fopen(
-                        &tfile,
-                        &self.config.spool,
-                        FreeSpace::default(),
-                        now,
-                        &mut rnd,
-                    );
-                    let Some(file) = file else {
-                        let _ = self
-                            .send_text(Command::Skip, &format!("{netname} {size} {time}"))
-                            .await;
-                        continue;
-                    };
-                    let received = file.metadata().map(|m| m.len()).unwrap_or(0);
-                    if offset != received as i64 {
-                        // The port of `start_file_recv()`: we ask for the
-                        // file from the position of the partial file, and we
-                        // forget the partial that we hold.
-                        let _ = self
-                            .send_text(Command::Get, &format!("{netname} {size} {time} {received}"))
-                            .await;
-                        self.get_file_balance += 1;
-                        continue;
-                    } else if offset != 0 || self.nr.they {
-                        self.get_file_balance = self.get_file_balance.saturating_sub(1);
-                    }
-                    // The port of `start_file_recv()`: the rate of the file
-                    // starts before the data.
-                    self.setup_rate_limit(false, &netname);
-                    current = Some(Incoming {
-                        tfile,
-                        file,
-                        method: methods.preferred(),
-                        decompressor: None,
-                        received,
-                    });
-                }
-                Frame::Data(data) => {
-                    let Some(mut file) = current.take() else {
-                        // The C code discards a block without a file.
-                        continue;
-                    };
-                    // The port of the compressed branch of `recv_block()`.
-                    let bytes = match file.method {
-                        None => data,
-                        Some(method) => {
-                            if file.decompressor.is_none() {
-                                file.decompressor = Some(Decompressor::new(method));
-                            }
-                            let mut out = Vec::new();
-                            let mut input = &data[..];
-                            loop {
-                                let decompressor = file.decompressor.as_mut().unwrap();
-                                let step =
-                                    decompressor.decompress(input, BLOCK_SIZE).map_err(|e| {
-                                        Error::Protocol(format!(
-                                            "decompression of {} failed: {e}",
-                                            file.tfile.netname
-                                        ))
-                                    })?;
-                                out.extend_from_slice(&step.data);
-                                input = &input[step.consumed..];
-                                if step.ended {
-                                    // The C code ends the stream and starts a
-                                    // new one for the next block.
-                                    file.decompressor = None;
-                                    break;
-                                }
-                                // A stream may hold input inside itself and
-                                // produce no output for a moment.
-                                if step.consumed == 0 && step.data.is_empty() {
-                                    break;
-                                }
-                            }
-                            out
-                        }
-                    };
-                    // The port of the `fwrite()` of `recv_block()`: the
-                    // bytes of the file go to the partial file.
-                    if std::io::Write::write_all(&mut file.file, &bytes).is_err() {
-                        return Err(Error::Protocol(format!(
-                            "cannot write {}",
-                            file.tfile.netname
-                        )));
-                    }
-                    file.received += bytes.len() as u64;
-                    if file.received > file.tfile.size {
-                        return Err(Error::Protocol(format!(
-                            "the file {} holds {} extra bytes",
-                            file.tfile.netname,
-                            file.received - file.tfile.size
-                        )));
-                    }
-                    if file.received == file.tfile.size {
-                        let complete = CompleteFile {
-                            tfile: file.tfile,
-                            method: file.method,
-                        };
-                        let _ = self
-                            .send_text(
-                                Command::Got,
-                                &format!(
-                                    "{} {} {}",
-                                    complete.tfile.netname,
-                                    complete.tfile.size,
-                                    complete.tfile.time
-                                ),
-                            )
-                            .await;
-                        self.report.files_received += 1;
-                        self.report.bytes_received += complete.tfile.size;
-                        if self.nd.they {
-                            // The port of the `THEY_ND` branch of
-                            // `recv_block()`: the rename waits for the
-                            // next file or for the end of the batch.
-                            self.in_complete = Some(complete);
-                        } else {
-                            self.finish_file(complete, receive, srif, timeout).await?;
-                        }
-                    } else {
-                        current = Some(file);
-                    }
-                }
-                Frame::Command(Command::Nul, argument) => {
-                    // The C code reads an option of the peer at any time.
-                    self.handle_nul(&argument, srif);
-                }
-                Frame::Command(Command::Got, argument) => {
-                    // The port of `GOT()`: the peer acknowledged a file.
-                    let (netname, size, time) = parse_sent_args(&argument)?;
-                    let mut address = None;
-                    for file in &self.sent_fls {
-                        if file.matches(&netname, size, time) {
-                            address = file.fa.clone();
-                            break;
-                        }
-                    }
-                    self.sent_fls
-                        .retain(|file| !file.matches(&netname, size, time));
-                    // The port of `GOT()`: a request of the NR mode clears
-                    // the link status, an ND sender saves the answer of the
-                    // peer as the new status.
-                    if let Some(fa) = address {
-                        if self.off_req_sent || !self.nd.we {
-                            let _ = binkd_spool::status::set_status(&self.config.domains, &fa, "");
-                        } else {
-                            let _ = binkd_spool::status::set_status(
-                                &self.config.domains,
-                                &fa,
-                                &text(&argument),
-                            );
-                        }
-                    }
-                }
-                Frame::Command(Command::Get, argument) => {
-                    self.get_file(&argument).await?;
-                }
-                Frame::Command(Command::Skip, argument) => {
-                    self.skip_file(&argument)?;
-                }
-                Frame::Command(Command::Ok, _) => {
-                    // The login of the peer completes with our `M_OK`.
-                }
-                Frame::Command(Command::Pwd, argument) => {
-                    // The peer asks for the password after the login.
-                    if !self.check_password(&argument) {
-                        self.send_text(Command::Err, "Incorrect password").await?;
-                        return Err(Error::BadPassword);
-                    }
-                    self.send_text(Command::Ok, "").await?;
-                }
-                Frame::Command(Command::Eob, _) => {
-                    self.peer_eob = true;
-                    // The port of `EOB()`: a partial file of a peer of the
-                    // NR mode stays for the next session, and the port
-                    // removes it otherwise.
-                    if let Some(file) = current.take() {
-                        if !self.nr.they {
-                            let mut rnd = random();
-                            self.inbound.inb_reject(
-                                &file.tfile,
-                                &self.config.spool,
-                                now(),
-                                &mut rnd,
-                            );
-                        }
-                    }
-                    // The port of `EOB()`: the completed file takes its
-                    // true name at the end of the batch.
-                    if let Some(complete) = self.in_complete.take() {
-                        self.finish_file(complete, receive, srif, timeout).await?;
-                    }
-                }
-                Frame::Command(Command::Err, argument) => {
-                    return Err(peer_error(&argument));
-                }
-                Frame::Command(Command::Bsy, argument) => {
-                    return Err(Error::Busy(text(&argument)));
-                }
-                other => {
-                    return Err(Error::Protocol(format!("{other:?} after the login")));
-                }
-            }
+            self.handle_frame(frame, receive, srif, &mut current)
+                .await?;
         }
-        Ok(())
+        // The port of the end of `protocol()`: the session is successful
+        // when it sent its end, the peer sent its end, every file that we
+        // sent is acknowledged, and no file is in transfer.
+        if self.sent_eob
+            && self.peer_eob
+            && self.sent_fls.is_empty()
+            && self.get_file_balance == 0
+            && current.is_none()
+        {
+            return Ok(());
+        }
+        Err(Error::Io(
+            "the session ended before the exchange completed".to_string(),
+        ))
     }
 }
 

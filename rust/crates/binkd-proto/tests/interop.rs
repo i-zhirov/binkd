@@ -1229,8 +1229,9 @@ fn start_c_server_bwlim(
 /// receives the file that the external program of the port answers, the port of an
 /// external FREQ processor.
 #[tokio::test]
-#[ignore = "the port answers the end of a batch of a peer of the version 1.1 before the \
-            exchange of a request file, and the C client ends its session then"]
+#[ignore = "the C code holds its end of a batch back only for a peer of the version 1.0, \
+            so it answers the end of the batch of a peer of the version 1.1 at once, and the C \
+            client of this test ends its session before the exchange of the request file"]
 async fn c_client_claims_freq_to_rust_server() {
     let Some(_) = c_binary() else {
         eprintln!("skip: set BINKD_C to the path of the C binary");
@@ -1264,6 +1265,7 @@ async fn c_client_claims_freq_to_rust_server() {
     let mut srif = Erp {
         answer: answer.clone(),
         requests: Arc::new(Mutex::new(Vec::new())),
+        claims: 0,
     };
 
     // The listener of the port advertises the version 1.0, the port of the
@@ -1338,12 +1340,19 @@ struct Erp {
     answer: std::path::PathBuf,
     /// The names of the request files that the program read.
     requests: Arc<Mutex<Vec<String>>>,
+    /// The FREQ claims of the peer that the program did not answer yet, the
+    /// port of `delay_EOB` of `protocol.c`.
+    claims: usize,
 }
 
 impl Srif for Erp {
-    fn claim(&mut self) {}
+    fn claim(&mut self) {
+        self.claims += 1;
+    }
 
-    fn end_of_batch(&mut self) {}
+    fn end_of_batch(&mut self) {
+        self.claims = 0;
+    }
 
     fn on_file(&mut self, filename: &str, _peer: &Peer) -> Vec<String> {
         // The program of the entry runs for the request file of the peer, and
@@ -1357,6 +1366,10 @@ impl Srif for Erp {
 
     fn flush(&mut self, _peer: &Peer) -> Vec<String> {
         Vec::new()
+    }
+
+    fn claimed(&self) -> bool {
+        self.claims > 0
     }
 
     fn finish(&mut self) {}
