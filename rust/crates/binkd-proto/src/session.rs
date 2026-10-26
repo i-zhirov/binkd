@@ -431,21 +431,30 @@ where
     S: AsyncRead + AsyncWrite + Unpin,
 {
     let mut session = Session::new(stream, role, config);
-    session.handshake(srif, timeout).await?;
-    // The port of the `maxservers` check of `protocol()`: the C code answers
-    // `M_BSY` after the banner, and only for a session that the peer called.
-    if role == Role::Server
-        && config.max_servers >= 0
-        && config.servers > config.max_servers as usize
-    {
-        let _ = session.send_text(Command::Bsy, "Too many servers").await;
-        return Err(Error::Busy("too many servers".to_string()));
+    let result = async {
+        session.handshake(srif, timeout).await?;
+        // The port of the `maxservers` check of `protocol()`: the C code
+        // answers `M_BSY` after the banner, and only for a session that the
+        // peer called.
+        if role == Role::Server
+            && config.max_servers >= 0
+            && config.servers > config.max_servers as usize
+        {
+            let _ = session.send_text(Command::Bsy, "Too many servers").await;
+            return Err(Error::Busy("too many servers".to_string()));
+        }
+        // The port of the part of `ADR()` that reads the `-bw` of the nodes.
+        session.setup_session_limits();
+        let files = files(&session.report.peer_addresses);
+        session.send_files(&files, srif, timeout).await?;
+        session.receive_files(receive, srif, timeout).await
     }
-    // The port of the part of `ADR()` that reads the `-bw` of the nodes.
-    session.setup_session_limits();
-    let files = files(&session.report.peer_addresses);
-    session.send_files(&files, srif, timeout).await?;
-    session.receive_files(receive, srif, timeout).await?;
+    .await;
+    // The port of the flush of the queue of `protocol()`: the C code sends
+    // the queue of the session after the loop, so the frames of the session
+    // leave the transport even when the loop ends with an error.
+    let _ = session.flush().await;
+    result?;
     // The port of `evt_set()`: the events that wait for the end of the session
     // run here, and the files that an exchange answered go last.
     srif.finish();
@@ -518,6 +527,9 @@ struct Session<S> {
     /// the session of the C code, `state->q`, which `do_prescan()` builds and
     /// the send path sends.
     prescan_files: Vec<SendFile>,
+    /// The bytes that wait for the write of the session, the port of the buffer
+    /// of the C code, `state->obuf` and `state->oleft`.
+    output: Vec<u8>,
 }
 
 impl<S> Session<S>
@@ -571,6 +583,7 @@ where
             pending_header: None,
             answered: Vec::new(),
             prescan_files: Vec::new(),
+            output: Vec::new(),
         }
     }
 
@@ -595,11 +608,29 @@ where
         // The port of the meter of `send_block()`: the wait of the limit comes
         // before the write, and the bytes of the frame come after it.
         self.wait_rate(true).await;
+        // The port of the fill of the buffer of `send_block()`: the C code
+        // fills the buffer of the session in the send path and it writes the
+        // buffer in the branch of the `select()` of the loop, after the read
+        // of the frame of the peer.
+        self.output.extend_from_slice(&data);
+        self.bw_send.bytes += data.len() as u64;
+        if self.output.len() >= self.config.blksize {
+            self.flush().await?;
+        }
+        Ok(())
+    }
+
+    /// Writes the bytes that wait, the port of the write branch of the
+    /// `select()` of the loop of `protocol()`.
+    async fn flush(&mut self) -> Result<(), Error> {
+        if self.output.is_empty() {
+            return Ok(());
+        }
+        let data = std::mem::take(&mut self.output);
         self.stream
             .write_all(&data)
             .await
             .map_err(|e| Error::Io(e.to_string()))?;
-        self.bw_send.bytes += data.len() as u64;
         self.stream
             .flush()
             .await
@@ -618,8 +649,17 @@ where
     async fn read(&mut self, timeout: std::time::Duration) -> Result<Frame, Error> {
         loop {
             if let Some(frame) = self.take_frame()? {
+                // The port of the write branch of the `select()` of the loop
+                // of `protocol()`: the C code writes the buffer of the
+                // session after it reads the frame of the peer.
+                self.flush().await?;
                 return Ok(frame);
             }
+            // The C code writes the buffer of the session when the transport
+            // is clear, the port of the write branch of the `select()`: the
+            // branch runs in the pass of the read, so the buffer of the
+            // session leaves before the port waits for the frame of the peer.
+            self.flush().await?;
             self.read_more(timeout).await?;
         }
     }
@@ -652,6 +692,7 @@ where
     async fn try_read_frame(&mut self) -> Result<Option<Frame>, Error> {
         loop {
             if let Some(frame) = self.take_frame()? {
+                self.flush().await?;
                 return Ok(Some(frame));
             }
             let mut buf = [0u8; 4096];
@@ -831,6 +872,11 @@ where
             .collect();
         self.send_text(Command::Adr, &addresses.join(" ")).await?;
 
+        // The port of the write branch of the `select()` of the loop of
+        // `protocol()`: the C code writes the banner of the session in the
+        // pass of the read, so the peer reads the banner before it answers
+        // the frame of the session.
+        self.flush().await?;
         // The frames of the peer up to the login acknowledgement.
         loop {
             match self.read(timeout).await? {
@@ -1004,6 +1050,11 @@ where
         if self.we_crypt && self.they_crypt && self.secure() && self.md5 && !self.any_password() {
             self.crypt = Some(Crypt::new(&self.config.password, self.role));
         }
+        // The port of the write branch of the `select()` of the loop of
+        // `protocol()`: the C code writes the options and the answer of the
+        // login in the pass of the read, so the peer reads them before it
+        // sends the frame of the session.
+        self.flush().await?;
         Ok(())
     }
 

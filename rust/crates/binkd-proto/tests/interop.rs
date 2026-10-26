@@ -1574,6 +1574,18 @@ async fn c_client_skips_the_request_of_rust_server() {
     let log = std::fs::read_to_string(dir.join("c-client.log")).unwrap_or_default();
     assert!(log.contains("rcvd msg FILE"), "{log}");
     assert!(log.contains("skipping"), "{log}");
+    // The C client ends the session with the status of a failure, the port of
+    // the skip of its request file: the peer holds its own end of the batch
+    // back while the count of the claims of the version 1.0 is set, the port of
+    // `delay_EOB` of `protocol.c`, and the request file that the peer
+    // declined is the one that answers the claim. The C client holds the same
+    // status against the C server of the C project, the port of the run of the
+    // two binaries of the oracle, so the port of the test holds the outcome of
+    // the C code.
+    assert!(
+        log.contains("done (to 2:5047/13@fidonet, failed, S/R: 1/1"),
+        "{log}"
+    );
 }
 
 /// The external FREQ processor of the test, the port of the program of an
