@@ -19,6 +19,15 @@
 # tz_off(tzoff) -> minutes
 # netname(type, path) -> string
 #   type: 'm' mail, 'r' request, another character keeps the name.
+#   The C code takes the path of a queue entry and the port takes the name of
+#   a file, so the cases hold a name without a directory.
+#   The week of an arcmail name holds the case of every boundary: the days 0
+#   to 6 answer the letters of the week, the day 7, a first character below
+#   '0' (the '-' case; a '/' or a '.' of a path would not reach the port,
+#   because the C code takes the name of the file from the path), a second
+#   character that is no '#', an extension of 2 or of 4 characters, an
+#   extension of 3 characters with a letter, an empty extension, and a name
+#   without a dot hold no case.
 #   The random names of the mail and of the request hold no case, because
 #   the C code answers the time and the sequence of rand().
 # See tests/README.md for the field format.
@@ -76,8 +85,13 @@ netname	-	13b7000d.4#x	=>	13b7000d.thx
 netname	-	13b7000d.5#x	=>	13b7000d.frx
 netname	-	13b7000d.6#x	=>	13b7000d.sax
 netname	-	13b7000d.7#x	=>	13b7000d.7#x
+netname	-	13b7000d.-#x	=>	13b7000d.-#x
+netname	-	13b7000d.1x2	=>	13b7000d.1x2
+netname	-	13b7000d.1#xy	=>	13b7000d.1#xy
 netname	-	13b7000d.1x	=>	13b7000d.1x
 netname	-	13b7000d.pkt	=>	13b7000d.pkt
+netname	-	13b7000d.	=>	13b7000d.
+netname	-	13b7000d	=>	13b7000d
 tz_off	0	=>	0
 tz_off	3600	=>	60
 tz_off	-3600	=>	-60
