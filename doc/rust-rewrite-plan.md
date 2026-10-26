@@ -948,6 +948,13 @@ Progress:
   the port holds a file that the peer declined. The test of the flag reads the
   files of the report that the port received, the port of the count of the C code
   that the port holds open.
+- A gap that the move of the count of `GOT()` found: the port reads no `GOT` of
+  the peer for the file of the exchange, so the count of the port holds no file
+  of an acknowledgement and the count of the C code holds the file of the peer.
+  The trace of the port holds the frame of the acknowledgement and the count of
+  the port holds no file. The read path of the session after the end of the batch
+  is open with the frame, so the count of the port holds the announcement of a
+  file only until the read path takes the frame of the acknowledgement.
 - A gap that the test of the flag found in the batch of a peer of the version
   1.1: the C code starts the next batch of a session that holds more than the
   two `M_EOB` frames, the port of the test of `protocol()`, and the port
