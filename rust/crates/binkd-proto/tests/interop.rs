@@ -1565,15 +1565,10 @@ async fn c_client_skips_the_request_of_rust_server() {
     // back, the port of `state->r_skipped_flag` of `protocol.c`.
     assert!(report.skipped, "{report:?}");
     // The port announced the request file of its queue and the file of the
-    // exchange, and the peer declined the request file. The count of the files
-    // of the port holds the announcement of a file, the port of
-    // `current_file_was_sent()`, and the C code holds the acknowledgement
-    // of the peer, the port of `GOT()`, so the count of the port holds the
-    // request file that the peer declined: a gap of the count.
-    // The port reads no `GOT` of the peer for the file of the exchange
-    // either, so the port holds no file of the acknowledgement yet: a gap of
-    // the read path of the session after the end of the batch.
-    assert_eq!(report.files_sent, 2, "{report:?}");
+    // exchange, and the peer declined the request file, so the count of the
+    // files of the port holds the file that the peer acknowledged only, the
+    // port of the count of `GOT()` of `protocol.c`.
+    assert_eq!(report.files_sent, 1, "{report:?}");
     assert_eq!(report.received.len(), 1, "{report:?}");
     assert!(report.received[0].netname.ends_with(".req"), "{report:?}");
     let log = std::fs::read_to_string(dir.join("c-client.log")).unwrap_or_default();

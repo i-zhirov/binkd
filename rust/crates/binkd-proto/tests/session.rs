@@ -773,7 +773,10 @@ async fn session_with_multi_batch() {
 #[tokio::test]
 async fn session_with_skip_mask() {
     let (client, server) = session_with_skip(false).await;
-    assert_eq!(client.files_sent, 1);
+    // The answerer declines the file with `M_SKIP`, so the count of the files
+    // of the session holds the acknowledgement of the peer only, the port of
+    // `GOT()`, and the declined file holds no count.
+    assert_eq!(client.files_sent, 0);
     assert_eq!(server.files_received, 0);
     assert!(server.received.is_empty());
 }

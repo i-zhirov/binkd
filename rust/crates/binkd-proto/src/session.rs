@@ -624,6 +624,31 @@ where
         }
     }
 
+    /// Answers the frames that the read ahead holds, the port of the `select()`
+    /// of the loop of `protocol()`.
+    ///
+    /// The C code reads one frame of the transport at the top of its loop and
+    /// it answers the frame then, so the frames that arrive with the frame of
+    /// the peer wait for the next pass of the loop. The port reads ahead, so it
+    /// answers the frames of the read ahead here.
+    async fn drain_frames(
+        &mut self,
+        receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
+        srif: &mut (dyn Srif + Send),
+        current: &mut Option<Incoming>,
+    ) -> Result<(), Error> {
+        loop {
+            match self.try_read_frame().await {
+                Ok(Some(frame)) => {
+                    self.handle_frame(frame, receive, srif, current).await?;
+                }
+                Ok(None) => break,
+                Err(_) => break,
+            }
+        }
+        Ok(())
+    }
+
     async fn try_read_frame(&mut self) -> Result<Option<Frame>, Error> {
         loop {
             if let Some(frame) = self.take_frame()? {
@@ -1382,30 +1407,7 @@ where
             }
             Frame::Command(Command::Got, argument) => {
                 // The port of `GOT()`: the peer acknowledged a file.
-                let (netname, size, time) = parse_sent_args(&argument)?;
-                let mut address = None;
-                for file in &self.sent_fls {
-                    if file.matches(&netname, size, time) {
-                        address = file.fa.clone();
-                        break;
-                    }
-                }
-                self.sent_fls
-                    .retain(|file| !file.matches(&netname, size, time));
-                // The port of `GOT()`: a request of the NR mode clears
-                // the link status, an ND sender saves the answer of the
-                // peer as the new status.
-                if let Some(fa) = address {
-                    if self.off_req_sent || !self.nd.we {
-                        let _ = binkd_spool::status::set_status(&self.config.domains, &fa, "");
-                    } else {
-                        let _ = binkd_spool::status::set_status(
-                            &self.config.domains,
-                            &fa,
-                            &text(&argument),
-                        );
-                    }
-                }
+                self.got_file(&argument)?;
             }
             Frame::Command(Command::Get, argument) => {
                 self.get_file(&argument).await?;
@@ -1479,8 +1481,6 @@ where
         let file = &file;
         let method = self.send_method(file);
         self.send_file(file, method).await?;
-        self.report.files_sent += 1;
-        self.report.bytes_sent += file.size;
         // The port of `current_file_was_sent()`: the peer may ask for
         // the file with `M_GET` or decline it with `M_SKIP`, and it
         // acknowledges it with `M_GOT`.
@@ -1704,11 +1704,19 @@ where
     fn got_file(&mut self, argument: &[u8]) -> Result<(), Error> {
         let (netname, size, time) = parse_sent_args(argument)?;
         let mut address = None;
+        let mut sent = None;
         for file in &self.sent_fls {
             if file.matches(&netname, size, time) {
                 address = file.fa.clone();
+                sent = Some(file.size);
                 break;
             }
+        }
+        // The port of `GOT()`: the acknowledgement of the peer counts the
+        // file, so a file that the peer declined holds no count.
+        if let Some(sent) = sent {
+            self.report.files_sent += 1;
+            self.report.bytes_sent += sent;
         }
         self.sent_fls
             .retain(|file| !file.matches(&netname, size, time));
@@ -1892,6 +1900,13 @@ where
             self.handle_frame(frame, receive, srif, &mut current)
                 .await?;
         }
+        // The port answers the frames that the read ahead holds before it
+        // returns, the port of the read of the loop of `protocol()`: the C
+        // code reads one frame of the transport at the top of its loop, so the
+        // peer answers the file of the session after its own end of the batch,
+        // and the frames that arrived with the frame of the peer wait for the
+        // pass of the read. The port reads ahead, so it answers them here.
+        self.drain_frames(receive, srif, &mut current).await?;
         // The port of the end of `protocol()`: the session is successful
         // when it sent its end, the peer sent its end, every file that we
         // sent is acknowledged, and no file is in transfer.
