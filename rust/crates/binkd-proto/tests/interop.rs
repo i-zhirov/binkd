@@ -1465,11 +1465,15 @@ async fn c_client_skips_the_request_of_rust_server() {
     std::fs::create_dir_all(rust_dir.join("in")).unwrap();
     let port = free_port();
     // The C client declines every request file of the peer, the port of the
-    // `skip` directive, and it answers a timeout of the transport with the
-    // `timeout` of the config, so a hold of the session ends the test. The C
-    // code takes the size of a `skip` entry before the mask, and the size of
-    // the entry of the test is `0`: the C code reads the size `-` as a mask
-    // then, the port of `read_skip()` of `readcfg.c`.
+    // `skip` directive, and it holds its own end of the batch back, the port of
+    // `delay_EOB`, so it answers the frame of the peer no more and the test
+    // holds the session of the C client until the timeout of the config. The
+    // test holds a short timeout of the C client, the port of the test harness,
+    // so the session of the C client ends the test in a moment and not in the
+    // 20 seconds of the run of the two binaries of the oracle. The C code
+    // takes the size of a `skip` entry before the mask, and the size of the
+    // entry of the test is `0`: the C code reads the size `-` as a mask then,
+    // the port of `read_skip()` of `readcfg.c`.
     let config = format!(
         "domain fidonet outb 2\n\
          address 2:5047/100@fidonet\n\
@@ -1481,7 +1485,7 @@ async fn c_client_skips_the_request_of_rust_server() {
          log c-client.log\n\
          loglevel 10\n\
          conlog 0\n\
-         timeout 20\n\
+         timeout 2\n\
          node 2:5047/13@fidonet 127.0.0.1:{port} secret\n\
          prescan\n\
          skip 0 *.req\n\
