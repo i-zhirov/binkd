@@ -1574,14 +1574,25 @@ async fn c_client_skips_the_request_of_rust_server() {
     let log = std::fs::read_to_string(dir.join("c-client.log")).unwrap_or_default();
     assert!(log.contains("rcvd msg FILE"), "{log}");
     assert!(log.contains("skipping"), "{log}");
-    // The C client ends the session with the status of a failure, the port of
-    // the skip of its request file: the peer holds its own end of the batch
-    // back while the count of the claims of the version 1.0 is set, the port of
-    // `delay_EOB` of `protocol.c`, and the request file that the peer
-    // declined is the one that answers the claim. The C client holds the same
-    // status against the C server of the C project, the port of the run of the
-    // two binaries of the oracle, so the port of the test holds the outcome of
-    // the C code.
+    // The C client ends the session with the status of a failure, and the
+    // status is NOT a bug of the port: the same C client ends the session
+    // with the status of a failure against the C server of the C project too,
+    // the port of the run of the two binaries of the oracle. The claim of the
+    // port holds the count of the claims of the version 1.0, the port of
+    // `delay_EOB` of `protocol.c`, and the request file that the C client
+    // declined is the one that would answer the claim, so the C client holds
+    // its own end of the batch back and its own timeout ends the session.
+    //
+    // The run of the two binaries of the oracle holds the proof, the port of
+    // the log of the two sides:
+    //
+    //   the C client: done (to 2:5047/13@fidonet, failed, S/R: 1/0)
+    //   the C server: done (from 2:5047/100@fidonet, OK, S/R: 0/1)
+    //
+    // The port holds the status of the C server, the port of the session of
+    // the C code, so the session of the port ends with the status of a
+    // success and the C client ends the session of the test with the status
+    // of a failure.
     assert!(
         log.contains("done (to 2:5047/13@fidonet, failed, S/R: 1/1"),
         "{log}"
