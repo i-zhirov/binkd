@@ -1877,12 +1877,27 @@ where
                 // 1.0, the port of the test of `state.major * 100 +
                 // `state.minor <= 100` of `protocol()`, and it starts the
                 // next batch otherwise.
-                if self.msgs_in_batch <= 2 || !self.peer_11 {
-                    return Ok(());
-                }
+                // The C code waits for the frame of the peer with the
+                // timeout of the session, the port of the `select()` of the
+                // loop of `protocol()`: it answers the frame of the peer
+                // after the end of a batch, the file of the session that
+                // arrives then. The port reads ahead, so it answers the
+                // frames of the read ahead first.
+                let batch = self.msgs_in_batch;
                 self.msgs_in_batch = 0;
                 self.peer_eob = false;
                 self.sent_eob = false;
+                self.drain_frames(receive, srif, &mut current).await?;
+                if batch <= 2 || !self.peer_11 {
+                    match self.read(timeout).await {
+                        Ok(frame) => {
+                            self.handle_frame(frame, receive, srif, &mut current)
+                                .await?;
+                            continue;
+                        }
+                        Err(_) => return Ok(()),
+                    }
+                }
                 continue;
             }
             // The read of the C code: the frames of the read ahead first,
