@@ -27,6 +27,7 @@
 #include "ftnaddr.h"
 #include "crypt.h"
 #include "protoco2.h"
+#include "prothlp.h"
 #include "md5b.h"
 #include "readflo.h"
 #include "harness.h"
@@ -484,6 +485,17 @@ static char *run_case (const char *func, int argc, char **argv)
     return xstrdup (istic (argv[0]) ? "1" : "0");
   if (strcmp (func, "isarcmail") == 0)
     return xstrdup (isarcmail (argv[0]) ? "1" : "0");
+  if (strcmp (func, "netname") == 0)
+  {
+    TFILE t;
+    char s[MAX_NETNAME + 1];
+
+    memset (&t, 0, sizeof (t));
+    t.type = argv[0][0];
+    strnzcpy (t.path, argv[1], sizeof (t.path));
+    netname (s, &t, NULL);
+    return xstrdup (s);
+  }
   if (strcmp (func, "tz_off") == 0)
   {
     char *out = malloc (32);

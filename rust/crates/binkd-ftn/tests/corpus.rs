@@ -239,6 +239,7 @@ fn run_case(func: &str, args: &[Vec<u8>]) -> Option<Vec<u8>> {
         "isreq" => yes(text::isreq(&args[0])),
         "istic" => yes(text::istic(&args[0])),
         "isarcmail" => yes(text::isarcmail(&args[0])),
+        "netname" => Some(text::netname(&args[1], &mut || 0)),
         "tz_off" => Some(text::tz_off(int(&args[0]) as i32).to_string().into_bytes()),
         "pkt_getaddr" => {
             let raw = hex_decode(&args[0])?;

@@ -936,6 +936,11 @@ Progress:
   of a file from the queue, and the port takes it from the name, as the scan of
   `q_add_dir()` of `ftnq.c` does. The tests of the network take a file of an
   inbound by its extension then. (done)
+- The week of `netname_()` of `prothlp.c` holds the cases of the corpus now,
+  the port of the days of the week and of the names that hold no case: the case
+  of the day 0 to 6 answers `su`, `mo`, `tu`, `we`, `th`, `fr`, and `sa`, the
+  day 7 and an extension of two characters hold no case, and a name of the mail
+  holds no case, the port of the random name of the port of the test. (done)
 - The port of `state->r_skipped_flag` of `protocol.c`: the session holds the
   queue of the session back when the peer skipped a file of it, the port of
   `SKIP()`, and `OK_SEND_FILES()` reads the flag. The test of the flag runs

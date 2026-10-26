@@ -17,6 +17,10 @@
 # istic(name) -> 0 or 1
 # isarcmail(name) -> 0 or 1
 # tz_off(tzoff) -> minutes
+# netname(type, path) -> string
+#   type: 'm' mail, 'r' request, another character keeps the name.
+#   The random names of the mail and of the request hold no case, because
+#   the C code answers the time and the sequence of rand().
 # See tests/README.md for the field format.
 
 quote	0	plain	=>	plain
@@ -64,6 +68,16 @@ isarcmail	12345.su1	=>	1
 isarcmail	12345.mo0	=>	1
 isarcmail	12345.th9	=>	1
 isarcmail	12345.pkt	=>	0
+netname	-	13b7000d.0#x	=>	13b7000d.sux
+netname	-	13b7000d.1#x	=>	13b7000d.mox
+netname	-	13b7000d.2#x	=>	13b7000d.tux
+netname	-	13b7000d.3#x	=>	13b7000d.wex
+netname	-	13b7000d.4#x	=>	13b7000d.thx
+netname	-	13b7000d.5#x	=>	13b7000d.frx
+netname	-	13b7000d.6#x	=>	13b7000d.sax
+netname	-	13b7000d.7#x	=>	13b7000d.7#x
+netname	-	13b7000d.1x	=>	13b7000d.1x
+netname	-	13b7000d.pkt	=>	13b7000d.pkt
 tz_off	0	=>	0
 tz_off	3600	=>	60
 tz_off	-3600	=>	-60

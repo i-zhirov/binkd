@@ -31,7 +31,7 @@ WARNINGS := -Wall -Wno-unused-parameter
 
 # The binkd modules that the tests link.  Add a module here when a
 # new test needs it.
-MODULES := pmatch ftndom ftnaddr ftnnode getw crypt md5b readflo tools xalloc ftnq bsy inbound unix/rename
+MODULES := pmatch ftndom ftnaddr ftnnode getw crypt md5b readflo tools prothlp xalloc ftnq bsy inbound unix/rename
 
 TESTS := test_crypt test_md5 test_corpus test_spool
 
