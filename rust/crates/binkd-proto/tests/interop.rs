@@ -1470,10 +1470,16 @@ async fn c_client_skips_the_request_of_rust_server() {
     // holds the session of the C client until the timeout of the config. The
     // test holds a short timeout of the C client, the port of the test harness,
     // so the session of the C client ends the test in a moment and not in the
-    // 20 seconds of the run of the two binaries of the oracle. The C code
-    // takes the size of a `skip` entry before the mask, and the size of the
-    // entry of the test is `0`: the C code reads the size `-` as a mask then,
-    // the port of `read_skip()` of `readcfg.c`.
+    // 20 seconds of the run of the two binaries of the oracle. The timeout of
+    // the C code is the silence of the select of its loop, the port of
+    // `tv.tv_sec = config->nettimeout` of `protocol.c`, and not the budget
+    // of the session: every frame of the peer starts the wait of the select
+    // again, so a slow machine holds the margin of the timeout. The exchange
+    // of the session holds 30 ms, the port of the run of the two binaries of
+    // the oracle, and the margin is 66 times the exchange. The C code takes
+    // the size of a `skip` entry before the mask, and the size of the entry
+    // of the test is `0`: the C code reads the size `-` as a mask then, the
+    // port of `read_skip()` of `readcfg.c`.
     let config = format!(
         "domain fidonet outb 2\n\
          address 2:5047/100@fidonet\n\
