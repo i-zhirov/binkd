@@ -551,7 +551,7 @@ impl Daemon {
 ///
 /// The C code of `complete_login()` scans the queue for the addresses of the
 /// peer and the send loop takes the files one by one.
-fn files_of(spool: &Mutex<SpoolConfig>, peer: &[FtnAddr], now: i64) -> Vec<SendFile> {
+pub fn files_of(spool: &Mutex<SpoolConfig>, peer: &[FtnAddr], now: i64) -> Vec<SendFile> {
     let Some(first) = peer.first() else {
         return Vec::new();
     };
@@ -587,7 +587,13 @@ fn files_of(spool: &Mutex<SpoolConfig>, peer: &[FtnAddr], now: i64) -> Vec<SendF
 /// closure must not run `inb_done()` again: a second call finds no temporary file
 /// and answers `missing tmp file`. The closure holds the counters of the daemon, the
 /// port of the `Log (1, "%s -> %s")` line of the C code.
-fn receive_file(spool: &Mutex<SpoolConfig>, dir: &str, file: &ReceivedFile, now: i64, log: &Log) {
+pub fn receive_file(
+    spool: &Mutex<SpoolConfig>,
+    dir: &str,
+    file: &ReceivedFile,
+    now: i64,
+    log: &Log,
+) {
     let _ = spool;
     let _ = dir;
     let _ = now;

@@ -11,7 +11,13 @@
 
 pub mod cli;
 pub mod daemon;
+pub mod engine;
 pub mod pipe;
 pub mod platform;
 pub mod start;
 pub mod version;
+
+pub use binkd_config::Config;
+pub use binkd_ftn::addr::FtnAddr;
+pub use binkd_proto::{Report, Role};
+pub use engine::Engine;
