@@ -2,19 +2,22 @@
 //! listener manager, and the exit, the port of the daemon part of `main()` of
 //! `binkd.c`, of `breaksig.c`, of `exitproc.c`, and of `server.c`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use binkd_config::reload::{Outcome as ReloadOutcome, Reloader};
 use binkd_config::Config;
 use binkd_ftn::addr::FtnAddr;
 use binkd_ftn::text::extract_filename;
 use binkd_log::{Log, CONNECTION, DEBUG, DEBUG2, ERROR, INFO, START, TRACE};
-use binkd_net::{listen, session::SessionOptions};
+use binkd_net::{listen, session::SessionOptions, Caller};
 use binkd_proto::{ReceivedFile, SendFile};
 use binkd_spool::busy::BusyList;
 use binkd_spool::config::SpoolConfig;
 use binkd_spool::fsutil;
 use binkd_spool::queue::Queue;
+use binkd_spool::tryfile;
 use tokio::task::JoinHandle;
 
 use crate::cli::{self, Options};
@@ -180,10 +183,23 @@ impl Daemon {
     /// The C code runs the server and the client managers here. The port of this
     /// slice runs the listener of the server; the client manager arrives with the
     /// next slice.
-    pub async fn serve(&mut self, signals: &mut Signals) {
+    pub async fn serve(&mut self, signals: &mut Signals) -> i32 {
+        // The port of the `-P` switches: the C code creates the polls of the
+        // nodes before the managers run.
+        self.make_polls();
+        // The port of `-p`: the client manager runs one pass, and the program
+        // ends, the port of the `poll_flag` check of `clientmgr()`.
+        if self.options.poll {
+            self.client_pass().await;
+            return 0;
+        }
         // The port of the `do { ... } while (status == 0)` loop of `servmgr()`:
         // a reload closes the listen sockets and the manager starts again.
         let mut listener = self.spawn_listener();
+        // The port of `branch (clientmgr, 0, 0)` of `main()`: the client
+        // manager runs beside the server.
+        let stop = Arc::new(AtomicBool::new(false));
+        let mut clients = self.spawn_client(Arc::clone(&stop));
         loop {
             match signals.next().await {
                 Event::Exit(number) => {
@@ -210,11 +226,150 @@ impl Daemon {
                 }
             }
         }
-        // The port of `close_srvmgr_socket()` of `exitproc.c`: the task holds
-        // the listen sockets, so the end of the task closes them.
+        // The port of `close_srvmgr_socket()` of `exitproc.c` and of the
+        // end of `clientmgr()`: the tasks hold the sockets, so their end
+        // closes them.
+        stop.store(true, Ordering::SeqCst);
         if let Some(task) = listener.take() {
             task.abort();
         }
+        if let Some(task) = clients.take() {
+            task.abort();
+        }
+        0
+    }
+
+    /// Writes the polls of the `-P` switches, the port of `poll_node()` of
+    /// `binkd.c`.
+    ///
+    /// The C code parses the address of the switch and creates an empty poll
+    /// file, the `.ilo` of the node.
+    fn make_polls(&mut self) {
+        for poll in self.options.polls.clone() {
+            let Some(fa) = FtnAddr::parse(&poll, &self.config.spool.domains) else {
+                self.log.message(
+                    ERROR,
+                    &format!("cannot parse the node {poll}"),
+                    &platform::now(),
+                );
+                continue;
+            };
+            if !tryfile::create_poll(&fa, b'i', &self.config.spool) {
+                self.log.message(
+                    ERROR,
+                    &format!("cannot create the poll of {poll}"),
+                    &platform::now(),
+                );
+            }
+        }
+    }
+
+    /// Returns the settings of a session, the port of the reads of the config
+    /// in `protocol()` of `protocol.c`.
+    fn session_options(&self) -> SessionOptions {
+        let timeout = Duration::from_secs(self.config.nettimeout.max(1) as u64);
+        SessionOptions::new(timeout, !self.options.no_crypt, false)
+    }
+
+    /// Runs one pass of the client manager, the port of `do_client()` of
+    /// `client.c`.
+    async fn client_pass(&mut self) {
+        let (client, _) = self.options.roles();
+        if !client {
+            return;
+        }
+        let mut caller = Caller::new();
+        let options = self.session_options();
+        let spool = Arc::new(Mutex::new(self.config.spool.clone()));
+        // The port of the scan of `do_client()` and of `call_all()`: the C
+        // code scans the queue for the client manager, the port of
+        // `q_scan (SCAN_LISTED, config)`.
+        let files = {
+            let spool = Arc::clone(&spool);
+            move |fa: &FtnAddr| files_of(&spool, std::slice::from_ref(fa), platform::now().epoch)
+        };
+        let results = caller
+            .call_all(&mut self.config, &self.log, &platform::now, options, &files)
+            .await;
+        for (fa, result) in results {
+            match result {
+                Ok(report) => {
+                    self.log.message(
+                        INFO,
+                        &format!(
+                            "called {fa:?}: {} files sent, {} files received",
+                            report.files_sent, report.files_received
+                        ),
+                        &platform::now(),
+                    );
+                }
+                Err(error) => {
+                    self.log.message(
+                        ERROR,
+                        &format!("the call of {fa:?} failed: {error:?}"),
+                        &platform::now(),
+                    );
+                }
+            }
+        }
+    }
+
+    /// Runs the client manager, the port of `clientmgr()` of `client.c`.
+    ///
+    /// The C code loops on the passes and waits `call_delay` after a call and
+    /// `rescan_delay` when the queue holds no node; a signal ends the loop.
+    fn spawn_client(&self, stop: Arc<AtomicBool>) -> Option<JoinHandle<()>> {
+        let (client, _) = self.options.roles();
+        if !client {
+            return None;
+        }
+        let mut config = self.config.clone();
+        let log = Arc::clone(&self.log);
+        let options = self.session_options();
+        let delay = Duration::from_secs(self.config.rescan_delay.max(0) as u64);
+        Some(tokio::spawn(async move {
+            loop {
+                let mut caller = Caller::new();
+                let spool = Arc::new(Mutex::new(config.spool.clone()));
+                let files = {
+                    let spool = Arc::clone(&spool);
+                    move |fa: &FtnAddr| {
+                        files_of(&spool, std::slice::from_ref(fa), platform::now().epoch)
+                    }
+                };
+                let results = caller
+                    .call_all(&mut config, &log, &platform::now, options, &files)
+                    .await;
+                for (fa, result) in results {
+                    match result {
+                        Ok(report) => {
+                            log.message(
+                                INFO,
+                                &format!(
+                                    "called {fa:?}: {} files sent, {} files received",
+                                    report.files_sent, report.files_received
+                                ),
+                                &platform::now(),
+                            );
+                        }
+                        Err(error) => {
+                            log.message(
+                                ERROR,
+                                &format!("the call of {fa:?} failed: {error:?}"),
+                                &platform::now(),
+                            );
+                        }
+                    }
+                }
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+                tokio::time::sleep(delay).await;
+                if stop.load(Ordering::SeqCst) {
+                    break;
+                }
+            }
+        }))
     }
 
     /// Starts the listener of the server, the port of `do_server()` of
@@ -230,8 +385,7 @@ impl Daemon {
         }
         let config = self.config.clone();
         let log = Arc::clone(&self.log);
-        let timeout = std::time::Duration::from_secs(self.config.nettimeout.max(1) as u64);
-        let options = SessionOptions::new(timeout, !self.options.no_crypt, false);
+        let options = self.session_options();
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let files = {
             let spool = Arc::clone(&spool);

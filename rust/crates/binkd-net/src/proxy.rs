@@ -45,7 +45,7 @@ pub async fn proxy_address(
     socks: &str,
     family: Family,
     log: &Arc<Log>,
-    now: &impl Fn() -> DateTime,
+    now: &(impl Fn() -> DateTime + Sync),
 ) -> Result<SocketAddr, ProxyError> {
     let http = !proxy.is_empty();
     let entry = if http { proxy } else { socks };
@@ -121,7 +121,7 @@ struct Handshake<'a> {
     /// The time that a read waits for the peer, the port of `nettimeout`.
     timeout: Duration,
     log: &'a Arc<Log>,
-    now: &'a dyn Fn() -> DateTime,
+    now: &'a (dyn Fn() -> DateTime + Sync),
 }
 
 /// Runs the handshake of the proxy, the port of `h_connect()` of `https.c`.
@@ -135,7 +135,7 @@ pub async fn h_connect(
     config: &Config,
     timeout: Duration,
     log: &Arc<Log>,
-    now: &impl Fn() -> DateTime,
+    now: &(impl Fn() -> DateTime + Sync),
 ) -> Result<(), ProxyError> {
     let state = Handshake {
         config,

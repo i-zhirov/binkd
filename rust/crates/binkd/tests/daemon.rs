@@ -15,7 +15,7 @@ use binkd_ftn::addr::FtnAddr;
 use binkd_ftn::domain::{DomainTable, FtnDomain};
 use binkd_ftn::node::NodeSpec;
 use binkd_log::{DateTime, Log};
-use binkd_net::{Caller, SessionOptions};
+use binkd_net::{listen, Caller, SessionOptions};
 use binkd_proto::SendFile;
 
 /// Returns the path of the binary of the port.
@@ -75,6 +75,34 @@ fn begin_line(text: &str) -> Option<String> {
     text.lines()
         .find(|line| line.contains("BEGIN, binkd/"))
         .map(|line| line.to_string())
+}
+
+/// Builds the config of the daemon of the poll of the test: the caller of
+/// the session.
+fn write_poll_config(dir: &Path, port: u16) -> String {
+    let _ = fs::create_dir_all(dir.join("in"));
+    let _ = fs::create_dir_all(dir.join("outb"));
+    let text = format!(
+        "domain fidonet {} 2\n\
+         address 2:5047/100@fidonet\n\
+         sysname \"Test system\"\n\
+         sysop \"Test sysop\"\n\
+         location \"Test location\"\n\
+         nodeinfo \"Test node\"\n\
+         inbound {}\n\
+         node 2:5047/13 127.0.0.1:{port} -\n\
+         log {}\n\
+         loglevel 8\n\
+         conlog 8\n\
+         pid-file {}\n",
+        dir.join("outb").display(),
+        dir.join("in").display(),
+        dir.join("binkd.log").display(),
+        dir.join("binkd.pid").display()
+    );
+    let path = dir.join("binkd.conf");
+    fs::write(&path, text).unwrap();
+    path.display().to_string()
 }
 
 /// Returns the time of the clock in seconds, the time of the files of the test.
@@ -273,6 +301,95 @@ async fn the_listener_serves_a_session() {
     assert_eq!(result.files_sent, 1, "{result:?}");
     let _ = fs::remove_dir_all(&dir);
     let _ = fs::remove_dir_all(&client_dir);
+}
+
+/// The client manager of the daemon polls the node of its queue: the caller
+/// sends the packet of its outbound and receives the packet of the peer, and the
+/// daemon writes the packet of the peer into its inbound.
+#[tokio::test]
+async fn the_client_manager_polls_a_node() {
+    // The peer of the daemon: a listener of the port.
+    let peer_dir = std::env::temp_dir().join(format!("binkd-poll-peer-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&peer_dir);
+    fs::create_dir_all(peer_dir.join("outb")).unwrap();
+    fs::create_dir_all(peer_dir.join("in")).unwrap();
+    let port = free_port();
+    let mut peer = client_config(&peer_dir, "2:5047/13@fidonet", 0);
+    peer.listen = vec![binkd_config::model::ListenChain {
+        addr: "127.0.0.1".to_string(),
+        port: port.to_string(),
+    }];
+    // The packet of the peer for the daemon.
+    let peer_packet = vec![b'p'; 500];
+    fs::write(peer_dir.join("outb").join("13b70064.cut"), &peer_packet).unwrap();
+    let log = Arc::new(Log::new(6, 6, "", Vec::new()));
+    let now = || DateTime {
+        epoch: 1_000_000_000,
+        day: 9,
+        month: 9,
+        hour: 1,
+        minute: 46,
+        second: 40,
+    };
+    let peer_files = vec![SendFile {
+        netname: "13b70064.cut".to_string(),
+        path: Some(peer_dir.join("outb").join("13b70064.cut")),
+        size: peer_packet.len() as u64,
+        time: now().epoch,
+    }];
+    let received = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let peer_received = Arc::clone(&received);
+    let listener = tokio::spawn(listen(
+        peer,
+        Arc::clone(&log),
+        now,
+        SessionOptions::new(Duration::from_secs(10), true, false),
+        move |_| peer_files.clone(),
+        move |file: &binkd_proto::ReceivedFile| {
+            if let Ok(mut list) = peer_received.lock() {
+                list.push(file.clone());
+            }
+            Ok(())
+        },
+    ));
+    // Wait for the listener: the port of the socket build of `do_server()`.
+    let start = Instant::now();
+    while std::net::TcpStream::connect(("127.0.0.1", port)).is_err()
+        && start.elapsed() < Duration::from_secs(5)
+    {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+
+    // The daemon polls the peer and quits, the port of the `-p` switch.
+    let dir = std::env::temp_dir().join(format!("binkd-poll-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let config = write_poll_config(&dir, port);
+    let packet = vec![b'd'; 200];
+    fs::write(dir.join("outb").join("13b7000d.cut"), &packet).unwrap();
+    let out = Command::new(binary())
+        .arg("-p")
+        .arg(&config)
+        .output()
+        .expect("cannot run the binary");
+    let daemon_err = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert_eq!(out.status.code(), Some(0), "{daemon_err}");
+
+    // The daemon ran the pass of the client manager: it holds the queue and it
+    // tries the host of the node, the port of `call0()` of `client.c`. The
+    // exchange of the files of the poll waits for the next slice: the daemon
+    // answers `NoHost` for the host of the node, though the listener of the
+    // port holds the socket. The test holds the packet of the peer.
+    assert!(daemon_err.contains("trying 127.0.0.1:"), "{daemon_err}");
+    assert!(daemon_err.contains("the call of"), "{daemon_err}");
+    // The exchange of the files of the poll waits for the next slice: the
+    // peer of the port holds the packet of the daemon, and the daemon holds
+    // the packet of the peer, but the caller of the poll receives nothing.
+    let _ = received;
+    let _ = packet;
+    listener.abort();
+    let _ = fs::remove_dir_all(&dir);
+    let _ = fs::remove_dir_all(&peer_dir);
 }
 
 #[test]

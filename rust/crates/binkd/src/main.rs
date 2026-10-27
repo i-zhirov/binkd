@@ -70,10 +70,10 @@ async fn run_daemon(mut daemon: Box<daemon::Daemon>, log: &Arc<Log>) -> i32 {
             return 1;
         }
     };
-    // The port of the loop of `servmgr()` and of `exitfunc()`.
-    daemon.serve(&mut signals).await;
+    // The port of the loop of `servmgr()`, of `clientmgr()`, and of `exitfunc()`.
+    let code = daemon.serve(&mut signals).await;
     daemon.stop();
-    0
+    code
 }
 
 /// Returns the name of the file of a path, the port of

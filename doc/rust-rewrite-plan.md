@@ -1010,6 +1010,15 @@ Deliverables:
 - An integration test with the sample config. (done: the test of
   `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
+- The client manager: the daemon runs the passes of `binkd_net::Caller`, the port
+  of `do_client()` and of `clientmgr()` of `client.c`, with `-p` running one pass
+  and ending the program, and the `-P` switches writing the polls of the nodes, the
+  port of `poll_node()` of `binkd.c`. The port of `call_all()` scans the queue of
+  the spool and calls the nodes, the port of `q_scan (SCAN_LISTED, config)` and of
+  `q_next_node()`. (done; the exchange of the files of a poll waits for the same
+  wiring as the listener: the peer of the port holds the packet of the daemon, and
+  the daemon holds the packet of the peer, but the caller of the poll receives
+  nothing yet)
 - The listener manager: the daemon starts `binkd_net::listen()` for a run with
   the server role, the port of `do_server()` of `server.c`, and the loop of
   `servmgr()` rebuilds the listener on a reload. (done; the run of the port waits

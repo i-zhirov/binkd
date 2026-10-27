@@ -99,7 +99,7 @@ impl Caller {
         &mut self,
         config: &mut Config,
         log: &Arc<Log>,
-        now: &impl Fn() -> DateTime,
+        now: &(impl Fn() -> DateTime + Sync),
         options: SessionOptions,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Option<Result<Report, CallError>> {
@@ -165,7 +165,7 @@ impl Caller {
         call: &Call,
         config: &mut Config,
         log: &Arc<Log>,
-        now: &impl Fn() -> DateTime,
+        now: &(impl Fn() -> DateTime + Sync),
         options: SessionOptions,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Result<Report, CallError> {
@@ -327,7 +327,7 @@ impl Caller {
         &mut self,
         config: &mut Config,
         log: &Arc<Log>,
-        now: &impl Fn() -> DateTime,
+        now: &(impl Fn() -> DateTime + Sync),
         options: SessionOptions,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Vec<(FtnAddr, Result<Report, CallError>)> {
