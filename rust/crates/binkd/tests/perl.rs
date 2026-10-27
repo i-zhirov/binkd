@@ -6,13 +6,104 @@
 //! that the hook of the log changed, the port of `perl_on_log()`.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// Returns the path of the C binary of the Perl hooks, when the environment
 /// names it.
 fn oracle() -> Option<PathBuf> {
     std::env::var("BINKD_C_PERL").ok().map(PathBuf::from)
+}
+
+/// Runs the oracle with a config of the test and a bound on the run.
+fn run_oracle(oracle: &PathBuf, dir: &Path, node: bool, args: &[&str]) -> String {
+    let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/perl/hooks.pl");
+    let mark = dir.join("mark.txt");
+    let log = dir.join("binkd.log");
+    let _ = fs::create_dir_all(dir.join("in"));
+    let text = format!(
+        "domain fidonet {} 2\n\
+         address 2:5047/100@fidonet\n\
+         sysname \"Test system\"\n\
+         sysop \"Test sysop\"\n\
+         location \"Test location\"\n\
+         nodeinfo \"Test node\"\n\
+         inbound {}\n\
+         perl-hooks {}\n\
+         node 2:5047/13 127.0.0.1:1 -\n\
+         loglevel 8\n\
+         conlog 8\n\
+         log {}\n",
+        dir.join("outb").display(),
+        dir.join("in").display(),
+        script.display(),
+        log.display()
+    );
+    let text = if node {
+        text
+    } else {
+        text.replace("node 2:5047/13 127.0.0.1:1 -\n", "")
+    };
+    let config = dir.join("binkd.conf");
+    fs::write(&config, text).unwrap();
+    let out = Command::new(oracle)
+        .env("BINKD_PERL_MARK", &mark)
+        .args(args)
+        .arg(&config)
+        .output()
+        .expect("cannot run the oracle");
+    let text = fs::read_to_string(&mark).unwrap_or_default();
+    assert!(
+        !text.is_empty() || !out.status.success(),
+        "the oracle holds no mark: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    text
+}
+
+/// The port of `on_start()` of `perlhooks.c`: the C code calls the sub once
+/// when the managers start, and the sub answers no value. The `-n` switch ends
+/// the program before the managers run, so the case holds a poll.
+#[test]
+fn the_oracle_of_the_perl_hook_of_the_start() {
+    let Some(oracle) = oracle() else {
+        return;
+    };
+    let dir = std::env::temp_dir().join(format!("binkd-perl-start-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let text = run_oracle(&oracle, &dir, true, &["-p", "-P", "2:5047/13"]);
+    assert!(text.contains("start"), "{text}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The port of `on_call()` of `perlhooks.c`: the C code sets `$traf_mail`,
+/// `$traf_file`, and `$addr` before the call of the node, and the return value
+/// answers the C code.
+#[test]
+fn the_oracle_of_the_perl_hook_of_the_call() {
+    let Some(oracle) = oracle() else {
+        return;
+    };
+    let dir = std::env::temp_dir().join(format!("binkd-perl-call-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let text = run_oracle(&oracle, &dir, true, &["-p", "-P", "2:5047/13"]);
+    assert!(text.contains("call"), "{text}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// The port of `on_error()` of `perlhooks.c`: the C code sets `$addr`,
+/// `$error`, and `$where` for a call that failed.
+#[test]
+fn the_oracle_of_the_perl_hook_of_the_error() {
+    let Some(oracle) = oracle() else {
+        return;
+    };
+    let dir = std::env::temp_dir().join(format!("binkd-perl-error-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let text = run_oracle(&oracle, &dir, true, &["-p", "-P", "2:5047/13"]);
+    assert!(text.contains("call"), "{text}");
+    assert!(text.contains("error"), "{text}");
+    let _ = fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -45,7 +136,9 @@ fn the_oracle_of_the_perl_hook_changes_the_line_of_the_log() {
     let config = dir.join("binkd.conf");
     fs::write(&config, text).unwrap();
 
+    let mark = dir.join("mark.txt");
     let out = Command::new(&oracle)
+        .env("BINKD_PERL_MARK", &mark)
         .arg("-n")
         .arg(&config)
         .output()
