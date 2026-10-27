@@ -34,15 +34,23 @@ extern "C" {
         create: c_int,
     ) -> *mut Value;
     /// Sets a string value, the port of `sv_setpv()`.
-    pub fn binkd_perl_set_string(value: *mut Value, text: *const c_char);
+    pub fn binkd_perl_set_string(
+        perl: *mut Interpreter,
+        value: *mut Value,
+        text: *const c_char,
+    );
     /// Sets an integer value, the port of `sv_setiv()`.
-    pub fn binkd_perl_set_int(value: *mut Value, number: i64);
+    pub fn binkd_perl_set_int(perl: *mut Interpreter, value: *mut Value, number: i64);
     /// Returns the integer of a value, the port of `SvIV()`.
-    pub fn binkd_perl_int(value: *mut Value) -> i64;
+    pub fn binkd_perl_int(perl: *mut Interpreter, value: *mut Value) -> i64;
     /// Returns true for a defined value, the port of `SvOK()`.
-    pub fn binkd_perl_ok(value: *mut Value) -> c_int;
+    pub fn binkd_perl_ok(perl: *mut Interpreter, value: *mut Value) -> c_int;
     /// Returns the string of a value, the port of `SvPV()`.
-    pub fn binkd_perl_string(value: *mut Value, len: *mut Length) -> *mut c_char;
+    pub fn binkd_perl_string(
+        perl: *mut Interpreter,
+        value: *mut Value,
+        len: *mut Length,
+    ) -> *mut c_char;
     /// Calls a sub in scalar context, the port of `perl_call_pv()` with
     /// `G_EVAL|G_SCALAR`, and it answers the value of the sub.
     pub fn binkd_perl_call(perl: *mut Interpreter, name: *const c_char, flags: c_int)

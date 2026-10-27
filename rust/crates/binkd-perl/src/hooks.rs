@@ -88,23 +88,23 @@ impl Hooks {
             if value.is_null() {
                 return true;
             }
-            ffi::binkd_perl_set_string(value, text.as_ptr());
+            ffi::binkd_perl_set_string(self.perl, value, text.as_ptr());
             let lvl = ffi::binkd_perl_get_sv(self.perl, level_name.as_ptr(), 1);
             if !lvl.is_null() {
-                ffi::binkd_perl_set_int(lvl, *level as i64);
+                ffi::binkd_perl_set_int(self.perl, lvl, *level as i64);
             }
             let result = ffi::binkd_perl_call(self.perl, name.as_ptr(), G_EVAL | G_SCALAR);
             if ffi::binkd_perl_error(self.perl) != 0 {
                 return true;
             }
-            if result.is_null() || ffi::binkd_perl_ok(result) == 0 {
+            if result.is_null() || ffi::binkd_perl_ok(self.perl, result) == 0 {
                 return true;
             }
-            if ffi::binkd_perl_int(result) == 0 {
+            if ffi::binkd_perl_int(self.perl, result) == 0 {
                 return true;
             }
             let mut len: bridge::Length = 0;
-            let text = ffi::binkd_perl_string(value, &mut len);
+            let text = ffi::binkd_perl_string(self.perl, value, &mut len);
             if text.is_null() || len == 0 {
                 return true;
             }
@@ -115,7 +115,7 @@ impl Hooks {
             *message = bytes;
             let lvl = ffi::binkd_perl_get_sv(self.perl, level_name.as_ptr(), 0);
             if !lvl.is_null() {
-                *level = ffi::binkd_perl_int(lvl) as i32;
+                *level = ffi::binkd_perl_int(self.perl, lvl) as i32;
             }
         }
         false

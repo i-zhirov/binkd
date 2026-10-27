@@ -31,15 +31,35 @@ SV *binkd_perl_get_sv(PerlInterpreter *perl, const char *name, int create) {
   return get_sv(name, create);
 }
 
-void binkd_perl_set_string(SV *value, const char *text) { sv_setpv(value, text); }
+void binkd_perl_set_string(PerlInterpreter *perl, SV *value, const char *text) {
+  dTHX;
+  PERL_SET_CONTEXT(perl);
+  sv_setpv(value, text);
+}
 
-void binkd_perl_set_int(SV *value, IV number) { sv_setiv(value, number); }
+void binkd_perl_set_int(PerlInterpreter *perl, SV *value, IV number) {
+  dTHX;
+  PERL_SET_CONTEXT(perl);
+  sv_setiv(value, number);
+}
 
-IV binkd_perl_int(SV *value) { return SvIV(value); }
+IV binkd_perl_int(PerlInterpreter *perl, SV *value) {
+  dTHX;
+  PERL_SET_CONTEXT(perl);
+  return SvIV(value);
+}
 
-int binkd_perl_ok(SV *value) { return SvOK(value) ? 1 : 0; }
+int binkd_perl_ok(PerlInterpreter *perl, SV *value) {
+  dTHX;
+  PERL_SET_CONTEXT(perl);
+  return SvOK(value) ? 1 : 0;
+}
 
-char *binkd_perl_string(SV *value, STRLEN *len) { return SvPV(value, *len); }
+char *binkd_perl_string(PerlInterpreter *perl, SV *value, STRLEN *len) {
+  dTHX;
+  PERL_SET_CONTEXT(perl);
+  return SvPV(value, *len);
+}
 
 SV *binkd_perl_call(PerlInterpreter *perl, const char *name, int flags) {
   dTHX;
