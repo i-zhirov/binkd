@@ -6,7 +6,13 @@ rust-version.workspace = true
 license.workspace = true
 description = "The binkd mailer: the command line and the daemon, the port of `binkd.c`."
 
+[features]
+# The hooks of Perl: the default build holds the crate not, the decision of
+# `doc/decisions/perl-hooks.md`.
+perl = ["dep:binkd-perl"]
+
 [dependencies]
+binkd-perl = { path = "../binkd-perl", optional = true }
 binkd-config = { path = "../binkd-config" }
 binkd-ftn = { path = "../binkd-ftn" }
 binkd-net = { path = "../binkd-net" }

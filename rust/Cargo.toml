@@ -11,6 +11,9 @@ members = [
     "crates/binkd-corpus",
     "crates/binkd",
 ]
+# The crate of the FFI is optional: the default build holds it not, the port of
+# the decision of `doc/decisions/perl-hooks.md`.
+exclude = ["crates/binkd-perl"]
 
 [workspace.package]
 version = "0.1.0"

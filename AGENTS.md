@@ -291,7 +291,11 @@ fixes them):
 - **Rust style**: the rustfmt defaults. Run `cd rust && cargo fmt`.
 - **Static analysis**: `cd rust && cargo clippy --workspace --all-targets`
   with the workspace lints in `rust/Cargo.toml`: `unsafe_code = "forbid"`
-  and clippy `all = "warn"`. Do not weaken a workspace lint.
+  and clippy `all = "warn"`. Do not weaken a workspace lint. One exception:
+  `binkd-perl`, the crate of the FFI of the Perl hooks, holds
+  `unsafe_code = "allow"`, the decision of `doc/decisions/perl-hooks.md`. The
+  crate is optional and the default build holds it not; a build that wants the
+  hooks names the feature `perl` of the `binkd` crate.
 - **Doc comments**: every public item of a Rust crate has a `///` comment
   and every module a `//!` comment. State the C function that the port
   follows, for example "the port of `getw.c`".

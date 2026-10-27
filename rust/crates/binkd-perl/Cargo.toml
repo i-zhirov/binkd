@@ -1,0 +1,21 @@
+[package]
+name = "binkd-perl"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "GPL-2.0-or-later"
+description = "The FFI of the Perl hooks of binkd, the port of `perlhooks.c`."
+
+# The crate is not a member of the workspace: the default build holds it not,
+# the port of the decision of `doc/decisions/perl-hooks.md`.
+
+[dependencies]
+binkd-config = { path = "../binkd-config" }
+binkd-log = { path = "../binkd-log" }
+binkd-srif = { path = "../binkd-srif" }
+
+[lints.rust]
+# The exception of `doc/decisions/perl-hooks.md`: the crate links the C
+# `perlhooks.c` with the C ABI, so it alone holds `allow`. Every other crate
+# keeps `forbid`.
+unsafe_code = "allow"

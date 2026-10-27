@@ -16,6 +16,7 @@ dependencies = [
  "binkd-ftn",
  "binkd-log",
  "binkd-net",
+ "binkd-perl",
  "binkd-proto",
  "binkd-spool",
  "tokio",
@@ -58,6 +59,15 @@ dependencies = [
  "binkd-spool",
  "binkd-srif",
  "tokio",
+]
+
+[[package]]
+name = "binkd-perl"
+version = "0.1.0"
+dependencies = [
+ "binkd-config",
+ "binkd-log",
+ "binkd-srif",
 ]
 
 [[package]]

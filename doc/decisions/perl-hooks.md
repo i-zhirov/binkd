@@ -1,7 +1,11 @@
 # Decision: the Perl hooks
 
-Status: open. The plan recommends option 1 for the first release and option 2
-when a maintainer asks for it. The record waits for the decision of the team.
+Status: approved. The team takes option 1: the port links the C `perlhooks.c` with
+the C ABI in one crate of the FFI, `binkd-perl`, and the crate holds the
+exception of the lint `unsafe_code`. The crate is optional: a build of the port
+holds it only with the feature `perl`, so the default build holds no FFI and no
+`unsafe`. The exception holds the crate alone, the port of the rule of `AGENTS.md`
+that no crate weakens a workspace lint.
 
 ## Context
 
@@ -46,9 +50,10 @@ the port of Perl, and it must follow the API of the C hooks. Option 3 breaks the
 config compatibility of the operators, and the C code itself links the hooks only
 with `--with-perl`, whose default is no.
 
-The exception needs the approval of the maintainer, because `AGENTS.md` states that
-no crate weakens a workspace lint. The record of the approval goes into
-`AGENTS.md` with the exception, the port of the decision.
+The maintainer approved the exception. `AGENTS.md` holds the record of the
+approval and the port of the two rules: the crate `binkd-perl` holds
+`unsafe_code = "allow"` of its own, and every other crate keeps `forbid`. The
+crate is optional, and the default build of the workspace holds it not.
 
 ## The first slice
 
