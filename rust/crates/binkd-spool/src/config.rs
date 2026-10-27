@@ -112,8 +112,16 @@ pub struct SpoolConfig {
 
 impl SpoolConfig {
     /// Creates a config with the defaults of `lock_config_structure()`.
+    ///
+    /// The C code holds `-1` for `minfree` and for `minfree-nonsecure`, so the
+    /// check of the free space of `inb_fopen()` runs only when the config
+    /// names a value.
     pub fn new() -> SpoolConfig {
-        SpoolConfig::default()
+        SpoolConfig {
+            minfree: -1,
+            minfree_nonsecure: -1,
+            ..SpoolConfig::default()
+        }
     }
 
     /// Adds a node to the table.
@@ -146,5 +154,7 @@ mod tests {
         assert_eq!(config.tries, 0);
         assert_eq!(config.hold, 0);
         assert!(!config.send_if_pwd);
+        assert_eq!(config.minfree, -1);
+        assert_eq!(config.minfree_nonsecure, -1);
     }
 }
