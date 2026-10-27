@@ -1010,6 +1010,13 @@ Deliverables:
 - An integration test with the sample config. (done: the test of
   `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
+- The daemonize path: the `-D` switch detaches the process, the port of
+  `binkd_daemonize()` of `unix/daemonize.c`: the parent ends with the code 0
+  at once, and the child runs the daemon in a new process group with the
+  standard files of `/dev/null`, the port of the `setsid()` and of the
+  `freopen()` calls of the C code. `std` states no `fork()`, so the port runs the
+  same program again and the mark of the environment holds the port of the
+  `already_daemonized` of the C code. (done)
 - The inetd path: the `-i` switch runs one session on the sockets of the
   caller, the port of the `protocol (inetd_socket_in, inetd_socket_out, ...)` of
   `main()` of `binkd.c`, and the program ends with the code 0. The `-a` switch

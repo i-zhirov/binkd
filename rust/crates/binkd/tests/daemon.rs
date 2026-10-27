@@ -554,6 +554,47 @@ async fn the_inetd_session_runs_on_the_pipe() {
     let _ = fs::remove_dir_all(&caller_dir);
 }
 
+/// The `-D` switch: the parent ends at once and the child runs the daemon,
+/// the port of `binkd_daemonize()` of `unix/daemonize.c`.
+#[test]
+fn the_daemonize_switch_detaches_the_process() {
+    let dir = std::env::temp_dir().join(format!("binkd-detach-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let config = write_config(&dir);
+    let pid_file = dir.join("binkd.pid");
+
+    let out = Command::new(binary())
+        .arg("-D")
+        .arg(&config)
+        .output()
+        .expect("cannot run the binary");
+    // The parent ends at once with the code 0, the port of its `exit(0)`.
+    assert_eq!(out.status.code(), Some(0));
+
+    // The child runs the daemon and writes its own pid.
+    let start = Instant::now();
+    while !pid_file.is_file() && start.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(pid_file.is_file(), "the pid file did not appear");
+    let pid: u32 = fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    assert_ne!(pid, std::process::id(), "the pid is the pid of the test");
+    // The child lives, and the SIGTERM ends it and removes the pid file.
+    assert!(kill("-0", pid), "the child does not live");
+    assert!(kill("-TERM", pid), "cannot send the SIGTERM");
+    let start = Instant::now();
+    while pid_file.is_file() && start.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(!pid_file.exists(), "the pid file stays");
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn the_begin_line_matches_the_oracle() {
     let Some(c) = c_binary() else {
