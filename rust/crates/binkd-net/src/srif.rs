@@ -193,3 +193,32 @@ impl binkd_proto::Srif for Events {
         self.engine.finish(&mut context);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The port of `run()` of `run.c`: the runner runs the command of a
+    /// shell, the port of the `exec` event of `srif.c`.
+    #[test]
+    fn the_runner_runs_an_external_program() {
+        let dir = std::env::temp_dir().join(format!("binkd-run-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("out.txt");
+        let log = Arc::new(Log::new(6, 6, "", Vec::new()));
+        let now = DateTime {
+            epoch: 1_000_000_000,
+            day: 9,
+            month: 9,
+            hour: 1,
+            minute: 46,
+            second: 40,
+        };
+        let mut runner = Runner::new(log, now);
+        runner.run(&format!("echo hello > {}", file.display()));
+        assert!(file.is_file(), "the runner ran no program");
+        assert_eq!(std::fs::read_to_string(&file).unwrap().trim(), "hello");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}

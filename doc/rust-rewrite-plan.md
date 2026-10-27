@@ -1010,6 +1010,12 @@ Deliverables:
 - An integration test with the sample config. (done: the test of
   `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
+- The external program start: the port of `run()` of `run.c` runs the command of
+  the SRIF `exec` event of `srif.c` in the shell of the system, the port of the
+  `system()` of the C code, and it holds the exit code in the log. The port of
+  `binkd-net::srif::Runner` holds the run, the port of the `Runner` trait of
+  `binkd-srif`. The C code also holds `run3()` with the pipes of the client, a
+  feature of `client.c` that waits for its own slice. (done)
 - The daemonize path: the `-D` switch detaches the process, the port of
   `binkd_daemonize()` of `unix/daemonize.c`: the parent ends with the code 0
   at once, and the child runs the daemon in a new process group with the
