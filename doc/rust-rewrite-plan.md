@@ -100,8 +100,10 @@ The C code supports these targets:
 - DOS: DJGPP and MS C 6.
 - Amiga with ixemul.
 
-The Rust port targets UNIX and Windows first. The plan keeps the C code
-for OS/2, DOS, and Amiga until a decision (section 7).
+The Rust port targets UNIX and Windows. OS/2, DOS, and Amiga are out of
+scope for the port, the decision of `doc/decisions/legacy-platforms.md`: the C
+code keeps the three systems, the reference and the build of the port. A system of
+the three that a maintainer asks for gets its own record and its own phase.
 
 ### 2.4 Test state
 

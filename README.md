@@ -6,6 +6,12 @@ FTN-based (Fido Technology Network) networks.
 
 ## Compiling
 
+The Rust port of the mailer, the workspace of `rust/`, targets UNIX and Windows.
+OS/2, DOS, and Amiga are out of scope for the port: the C code keeps the three
+systems and the reference of the port, the decision of
+`doc/decisions/legacy-platforms.md`. The C code builds the three from the same
+sources, and the port holds no support of them.
+
 non-UNIX:
 
 1. Find in mkfls/ a subdirectory for your system/compiler, copy all files 
