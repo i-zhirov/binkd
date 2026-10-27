@@ -196,6 +196,10 @@ async fn the_oracle_of_the_perl_hooks_of_the_session() {
     );
     let config = dir.join("binkd.conf");
     fs::write(&config, text).unwrap();
+    // The packet of the oracle for the caller: the oracle sends it, so the
+    // hooks of the send of a file run, the port of `perl_before_send()` and of
+    // `perl_after_sent()` of `perlhooks.c`.
+    fs::write(dir.join("outb").join("13b7000d.cut"), vec![b'd'; 400]).unwrap();
     let mut child = Command::new(&oracle)
         .env("BINKD_PERL_MARK", &mark)
         .arg(&config)
@@ -239,14 +243,16 @@ async fn the_oracle_of_the_perl_hooks_of_the_session() {
             &|_| files.clone(),
         )
         .await;
-    // The mark holds the hooks of the session.
+    // The mark holds the hooks of the session: the caller ends the session, and
+    // the oracle holds every hook of the end of the session, so the test ends
+    // the oracle first, the port of the `SIGTERM` of the C code.
+    let _ = child.kill();
+    let _ = child.wait();
     let start = Instant::now();
     while !mark.is_file() && start.elapsed() < Duration::from_secs(10) {
         std::thread::sleep(Duration::from_millis(20));
     }
     let text = fs::read_to_string(&mark).unwrap_or_default();
-    let _ = child.kill();
-    let _ = child.wait();
     for name in [
         "on_handshake",
         "after_handshake",
