@@ -45,11 +45,8 @@ extern "C" {
     pub fn binkd_perl_string(value: *mut Value, len: *mut Length) -> *mut c_char;
     /// Calls a sub in scalar context, the port of `perl_call_pv()` with
     /// `G_EVAL|G_SCALAR`, and it answers the value of the sub.
-    pub fn binkd_perl_call(
-        perl: *mut Interpreter,
-        name: *const c_char,
-        flags: c_int,
-    ) -> *mut Value;
+    pub fn binkd_perl_call(perl: *mut Interpreter, name: *const c_char, flags: c_int)
+        -> *mut Value;
     /// Returns true when the interpreter holds an error, the port of
     /// `SvTRUE(ERRSV)`.
     pub fn binkd_perl_error(perl: *mut Interpreter) -> c_int;
