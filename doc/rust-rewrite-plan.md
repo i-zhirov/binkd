@@ -998,15 +998,31 @@ Exit criteria:
 Deliverables:
 
 - The `binkd` crate with the CLI, the startup order, the signals, the
-  pid file, the config reload, and the external program start.
-- The public library API and an example.
-- An integration test with the sample config.
+  pid file, the config reload, and the external program start. (the command
+  line, the version text, the platform values, and the paths that read the
+  config are done: `-h`, `-v`, `-vv`, `-d`, `-n`, the messages of the errors
+  of the command line, and the ends of the config; the startup order, the
+  signals, the pid file, the config reload, and the external program start
+  arrive with the next slices)
+- The public library API and an example. (the library of the slice holds the
+  command line, the version text, the platform values, and the startup order;
+  the engine and the example arrive with the next slices)
+- An integration test with the sample config. (done: the test of
+  `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
+  checks the text, the error text, and the exit code of every path)
+- A bug that the test of the binary found in the log: the port of `vLog()` of
+  `tools.c` wrote no newline after the console line of a message of a level that
+  is no error of the config. The C code ends such a line with `\n` and holds no
+  newline for a negative level, the level of the errors of the config, whose
+  message ends its own line. (done)
 
 Exit criteria:
 
 - The Rust binary passes every level 4 scenario.
 - The example embeds a session in another program.
-- The command line options match `binkd.8`.
+- The command line options match `binkd.8`. (the options of the slice match the
+  C code and `binkd.8`: the switches, the usage text, and the exit codes of
+  `-h`, `-v`, `-vv`, `-d`, `-n`, and of the errors of the command line)
 
 ### Phase 7: Perl hooks and legacy platforms
 

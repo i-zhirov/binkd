@@ -128,7 +128,14 @@ impl Log {
             if level <= inner.console_level && !inner.no_console {
                 let line = console_line(level, now, inner.pid, text);
                 let mut stderr = std::io::stderr();
-                let _ = write!(stderr, "{line}");
+                // The C code ends the line of a level that is no error of
+                // the config, and the message itself ends the line of a
+                // negative level.
+                if level >= 0 {
+                    let _ = writeln!(stderr, "{line}");
+                } else {
+                    let _ = write!(stderr, "{line}");
+                }
                 let _ = stderr.flush();
                 // A negative level goes to the console alone.
                 if level < 0 {

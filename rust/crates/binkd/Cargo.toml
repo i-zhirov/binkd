@@ -1,0 +1,14 @@
+[package]
+name = "binkd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The binkd mailer: the command line and the daemon, the port of `binkd.c`."
+
+[dependencies]
+binkd-config = { path = "../binkd-config" }
+binkd-log = { path = "../binkd-log" }
+
+[lints]
+workspace = true

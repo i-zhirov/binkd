@@ -42,7 +42,7 @@ Rust crates are also a library for embedding in other programs.
   also targets OS/2, DOS, and Amiga.
 - **Project Type**: Other. A long-running network daemon with a library
   workspace. The C code is a flat program; the Rust workspace is a
-  library workspace with a planned thin binary.
+  library workspace with a thin binary.
 - **Performance Goals**: N/A, not documented. The code limits the transfer
   rate with the `limit-rate` directive.
 - **Constraints**: The Rust code MUST keep full functional equivalence with
@@ -89,7 +89,9 @@ binkd/
         ├── binkd-proto/        # binkp frames and the session state machine
         ├── binkd-log/          # text and binary session logs
         ├── binkd-net/          # listen sockets and outgoing calls
-        └── binkd-corpus/       # test-only corpus reader
+        ├── binkd-srif/         # the SRIF interface and its event engine
+        ├── binkd-corpus/       # test-only corpus reader
+        └── binkd/              # the binary: CLI, daemon, signals
 ```
 
 The other C files at the root are the remaining modules of the mailer.
@@ -108,6 +110,9 @@ Prerequisites and install steps are in `README.md`.
 - **Test (C) with AddressSanitizer**:
   `make -C tests CFLAGS="-O0 -g -fsanitize=address -fno-omit-frame-pointer"`
 - **Build (Rust)**: `cd rust && cargo build --workspace`
+- **Run (Rust)**: `cd rust && cargo run -p binkd -- -v` (the port of the C
+  binary; the daemon is not built yet, so only the paths that read the config
+  run)
 - **Test (Rust)**: `cd rust && cargo test --workspace`
 - **Check the minimum supported Rust version** (needs the 1.85 toolchain):
   `cd rust && cargo +1.85 check --workspace`
@@ -174,7 +179,7 @@ Prerequisites and install steps are in `README.md`.
 
 Design for a long-running network daemon with an embeddable library
 core. The C code runs as a daemon; the Rust workspace is a library with a
-planned thin binary.
+thin binary.
 
 - The daemon runs as a long-lived process. Clean up sockets, spool
   temporary files, `.bsy` flags, and child processes on shutdown. Do not
@@ -247,8 +252,8 @@ binkd-corpus (test-only corpus reader)
 Each layer calls the layer below it. No layer calls a layer above it.
 `binkd-ftn` is a leaf: it depends on `std` only. Today the workspace has
 `binkd-ftn`, `binkd-spool`, `binkd-config`, `binkd-proto`, `binkd-log`,
-`binkd-net`, and `binkd-corpus`; the other crates arrive in the later phases of
-`doc/rust-rewrite-plan.md`.
+`binkd-net`, `binkd-srif`, `binkd-corpus`, and `binkd`; the other crates arrive
+in the later phases of `doc/rust-rewrite-plan.md`.
 
 The layers of the C code, for reference:
 

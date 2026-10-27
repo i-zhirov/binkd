@@ -9,6 +9,7 @@ members = [
     "crates/binkd-net",
     "crates/binkd-srif",
     "crates/binkd-corpus",
+    "crates/binkd",
 ]
 
 [workspace.package]
