@@ -463,6 +463,98 @@ fn the_daemon_reloads_a_changed_config() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+/// The `-i` switch: the server runs one session on the sockets of the caller,
+/// the port of the `protocol (inetd_socket_in, inetd_socket_out, ...)` of `main()`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_inetd_session_runs_on_the_pipe() {
+    let dir = std::env::temp_dir().join(format!("binkd-inetd-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let config = write_config(&dir);
+    // The packet of the daemon for the caller.
+    let daemon_packet = vec![b'i'; 400];
+    fs::write(dir.join("outb").join("13b7000d.cut"), &daemon_packet).unwrap();
+
+    let mut child = tokio::process::Command::new(binary())
+        .arg("-i")
+        .arg("-a")
+        .arg("127.0.0.1:12345")
+        .arg(&config)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("cannot run the binary");
+
+    // The caller of the test runs the session over the pipes of the daemon.
+    let input = child.stdout.take().unwrap();
+    let output = child.stdin.take().unwrap();
+    let mut pipe = binkd::pipe::Pipe::new(input, output);
+    let log = Arc::new(Log::new(0, 0, "", Vec::new()));
+    let now = || DateTime {
+        epoch: 1_000_000_000,
+        day: 9,
+        month: 9,
+        hour: 1,
+        minute: 46,
+        second: 40,
+    };
+    let client = client_config(&dir, "2:5047/13@fidonet", 0);
+    // The packet of the caller: the outbound of the daemon holds no file of
+    // the caller, so the two sides exchange one file each.
+    let caller_dir =
+        std::env::temp_dir().join(format!("binkd-inetd-caller-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&caller_dir);
+    fs::create_dir_all(&caller_dir).unwrap();
+    let packet = vec![b'c'; 300];
+    fs::write(caller_dir.join("13b70064.cut"), &packet).unwrap();
+    let files = vec![SendFile {
+        netname: "13b70064.cut".to_string(),
+        path: Some(caller_dir.join("13b70064.cut")),
+        size: packet.len() as u64,
+        time: now().epoch,
+    }];
+    let settings = binkd_net::session_config(&client, None, true, false);
+    let mut received: Vec<binkd_proto::ReceivedFile> = Vec::new();
+    let result = binkd_proto::run(
+        &mut pipe,
+        binkd_proto::Role::Client,
+        &settings,
+        &files,
+        &mut |file| {
+            received.push(file.clone());
+            Ok(())
+        },
+        Duration::from_secs(10),
+    )
+    .await;
+    assert!(result.is_ok(), "{result:?}");
+
+    // The daemon holds the packet of the caller in its inbound.
+    let start = Instant::now();
+    let mut found = false;
+    while !found && start.elapsed() < Duration::from_secs(10) {
+        found = fs::read_dir(dir.join("in"))
+            .map(|entries| entries.flatten().count() > 0)
+            .unwrap_or(false);
+        if !found {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    assert!(found, "the daemon holds no packet of the caller");
+
+    // The caller received the packet of the daemon.
+    assert_eq!(received.len(), 1, "{result:?}");
+    assert_eq!(fs::read(&received[0].path).unwrap(), daemon_packet);
+    // The end of the pipes of the caller ends the session of the daemon.
+    drop(pipe);
+    // The daemon ends with the code 0 after the session, the port of the
+    // `exit (0)` of the `-i` switch of `main()`.
+    assert_eq!(child.wait().await.unwrap().code(), Some(0));
+    let _ = fs::remove_dir_all(&dir);
+    let _ = fs::remove_dir_all(&caller_dir);
+}
+
 #[test]
 fn the_begin_line_matches_the_oracle() {
     let Some(c) = c_binary() else {

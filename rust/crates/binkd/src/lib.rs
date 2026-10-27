@@ -11,6 +11,7 @@
 
 pub mod cli;
 pub mod daemon;
+pub mod pipe;
 pub mod platform;
 pub mod start;
 pub mod version;

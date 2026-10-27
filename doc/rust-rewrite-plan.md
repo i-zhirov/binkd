@@ -1010,6 +1010,11 @@ Deliverables:
 - An integration test with the sample config. (done: the test of
   `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
+- The inetd path: the `-i` switch runs one session on the sockets of the
+  caller, the port of the `protocol (inetd_socket_in, inetd_socket_out, ...)` of
+  `main()` of `binkd.c`, and the program ends with the code 0. The `-a` switch
+  holds the remote address of the session, the port of the `remote_addr` of the C
+  code. (done)
 - The check of the config files on a timer: the daemon runs `checkcfg()` of
   `readcfg.c` on every pass of `CHECKCFG_INTERVAL`, the port of `rescan_delay`,
   and it restarts the listener of the port when a file changed. (done)

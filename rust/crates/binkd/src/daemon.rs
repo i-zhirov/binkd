@@ -184,6 +184,13 @@ impl Daemon {
     /// slice runs the listener of the server; the client manager arrives with the
     /// next slice.
     pub async fn serve(&mut self, signals: &mut Signals) -> i32 {
+        // The port of the `-i` switch: the server runs one session on the
+        // sockets of the caller, the port of the `protocol (inetd_socket_in,
+        // inetd_socket_out, ...)` of `main()`, and the program ends.
+        if self.options.inetd {
+            self.inetd_session().await;
+            return 0;
+        }
         // The port of the `-P` switches: the C code creates the polls of the
         // nodes before the managers run.
         self.make_polls();
@@ -257,6 +264,62 @@ impl Daemon {
             task.abort();
         }
         0
+    }
+
+    /// Runs one session on the standard input and output, the port of the
+    /// `-i` switch of `main()` of `binkd.c`.
+    ///
+    /// The C code runs the session of the caller, the port of the
+    /// `protocol (inetd_socket_in, inetd_socket_out, ...)`, and it answers the
+    /// `-a` switch for the remote address and the `-f` switch for the node.
+    async fn inetd_session(&mut self) {
+        let peer = self
+            .options
+            .remote_addr
+            .as_deref()
+            .and_then(|addr| addr.parse().ok())
+            .unwrap_or_else(|| "0.0.0.0:0".parse().unwrap());
+        let timeout = self.session_options().timeout;
+        let settings = binkd_net::session_config(&self.config, None, !self.options.no_crypt, false);
+        let spool = Arc::new(Mutex::new(self.config.spool.clone()));
+        let mut files = {
+            let spool = Arc::clone(&spool);
+            move |peer: &[FtnAddr]| files_of(&spool, peer, platform::now().epoch)
+        };
+        let mut srf = binkd_net::srif::Events::new(
+            &self.config,
+            peer,
+            Arc::clone(&self.log),
+            platform::now(),
+        );
+        let mut pipe = crate::pipe::Pipe::new(tokio::io::stdin(), tokio::io::stdout());
+        let result = binkd_proto::run_with(
+            &mut pipe,
+            binkd_proto::Role::Server,
+            &settings,
+            &mut files,
+            &mut |file: &ReceivedFile| {
+                receive_file(
+                    &spool,
+                    &self.config.inbound,
+                    file,
+                    platform::now().epoch,
+                    &self.log,
+                );
+                Ok(())
+            },
+            &mut srf,
+            timeout,
+        )
+        .await;
+        if let Err(error) = result {
+            // The C code of `protocol()` logs the end of the session.
+            self.log.message(
+                CONNECTION,
+                &format!("session failed: {error}"),
+                &platform::now(),
+            );
+        }
     }
 
     /// Writes the polls of the `-P` switches, the port of `poll_node()` of
