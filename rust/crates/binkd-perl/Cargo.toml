@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.85"
 license = "GPL-2.0-or-later"
 description = "The FFI of the Perl hooks of binkd, the port of `perlhooks.c`."
+build = "build.rs"
 
 # The crate is not a member of the workspace: the default build holds it not,
 # the port of the decision of `doc/decisions/perl-hooks.md`.

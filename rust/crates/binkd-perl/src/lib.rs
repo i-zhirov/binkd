@@ -7,11 +7,12 @@
 //! exception of the lint `unsafe_code`, the decision of
 //! `doc/decisions/perl-hooks.md`.
 //!
-//! The port follows the C `perlhooks.c` function by function: the hooks of the
-//! process and of the session, and the API of the script, `on_log`, `on_start`,
-//! and the rest. The behaviour of every hook is pinned by the cases of
-//! `crates/binkd/tests/perl.rs` against the oracle of `--with-perl`.
+//! The port follows the C `perlhooks.c` function by function, and the behaviour of
+//! every hook is pinned by the cases of `crates/binkd/tests/perl.rs` against the
+//! oracle of `--with-perl`.
 
-/// The name of the crate, the port of the part of the C code that a build of the
-/// port holds.
-pub const NAME: &str = "binkd-perl";
+pub mod bridge;
+pub mod ffi;
+pub mod hooks;
+
+pub use hooks::Hooks;
