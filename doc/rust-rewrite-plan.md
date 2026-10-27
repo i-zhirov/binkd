@@ -1004,9 +1004,12 @@ Deliverables:
   of the command line, and the ends of the config; the startup order, the
   signals, the pid file, the config reload, and the external program start
   arrive with the next slices)
-- The public library API and an example. (the library of the slice holds the
-  command line, the version text, the platform values, and the startup order;
-  the engine and the example arrive with the next slices)
+- The public library API and an example. (done: `binkd::Engine` holds the port of
+  the managers of `server.c` and of `client.c` that a caller may embed, the caller
+  creates one engine per instance, and the functions answer a value and never end the
+  process; the example of `crates/binkd/examples/embed.rs` parses a config, creates
+  an engine, binds the listener, and calls a node, the port of the two managers of
+  `main()` without the process of the daemon)
 - An integration test with the sample config. (done: the test of
   `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
