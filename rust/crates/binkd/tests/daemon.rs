@@ -167,9 +167,9 @@ fn wait_for(child: &mut Child, timeout: Duration) -> Option<i32> {
     None
 }
 
-/// The listener of the daemon serves a session of the caller: the caller sends
-/// its packet and receives the packet of the daemon, and the daemon writes the
-/// packet of the caller into its inbound.
+/// The listener of the daemon serves a session of the caller: each side sends
+/// its packet of the outbound and receives the packet of the peer, and the
+/// daemon writes the packet of the caller into its inbound.
 #[tokio::test]
 async fn the_listener_serves_a_session() {
     let dir = std::env::temp_dir().join(format!("binkd-serve-{}", std::process::id()));
@@ -197,6 +197,7 @@ async fn the_listener_serves_a_session() {
     let client_dir = std::env::temp_dir().join(format!("binkd-call-{}", std::process::id()));
     let _ = fs::remove_dir_all(&client_dir);
     fs::create_dir_all(client_dir.join("outb")).unwrap();
+    fs::create_dir_all(client_dir.join("in")).unwrap();
     let mut client = client_config(&client_dir, "2:5047/13@fidonet", port);
     let packet = vec![b'c'; 300];
     fs::write(client_dir.join("outb").join("13b70064.cut"), &packet).unwrap();
@@ -225,9 +226,11 @@ async fn the_listener_serves_a_session() {
             SessionOptions::new(Duration::from_secs(10), true, false),
             &|_| files.clone(),
         )
-        .await
-        .expect("the call of the caller failed")
-        .expect("the session failed");
+        .await;
+    let result = match result {
+        Some(Ok(report)) => report,
+        other => panic!("the call of the caller failed: {other:?}"),
+    };
     // The session of the manager ran: the caller holds the addresses of
     // the daemon.
     assert_eq!(result.peer_addresses.len(), 1, "{result:?}");
@@ -236,13 +239,22 @@ async fn the_listener_serves_a_session() {
         (2, 5047)
     );
     assert_eq!(result.peer_addresses[0].node, 100);
+    // The daemon holds the packet of the client in its inbound.
+    let start = Instant::now();
+    let mut found = false;
+    while !found && start.elapsed() < Duration::from_secs(10) {
+        found = fs::read_dir(dir.join("in"))
+            .map(|entries| entries.flatten().count() > 0)
+            .unwrap_or(false);
+        if !found {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    let inbound_holds = found;
 
     assert!(kill("-TERM", child.id()), "cannot send the SIGTERM");
     assert_eq!(wait_for(&mut child, Duration::from_secs(10)), Some(0));
-    // The log of the daemon holds the listener and the session. The exchange
-    // of the files of this test waits for the next slice: the completion of a
-    // received file searches the temporary name, and the answerer of the port
-    // must pass the state of the session to the receive closure.
+    // The log of the daemon holds the listener and the session.
     let mut daemon_err = String::new();
     if let Some(stderr) = child.stderr.as_mut() {
         use std::io::Read;
@@ -251,6 +263,14 @@ async fn the_listener_serves_a_session() {
     assert!(daemon_err.contains("listen on 127.0.0.1:"), "{daemon_err}");
     assert!(daemon_err.contains("incoming from"), "{daemon_err}");
     assert!(daemon_err.contains("started server #1"), "{daemon_err}");
+    assert!(inbound_holds, "the daemon holds no packet of the client");
+
+    // The caller received the packet of the daemon.
+    assert_eq!(result.files_received, 1, "{result:?}\n{daemon_err}");
+    assert_eq!(result.received.len(), 1, "{result:?}");
+    assert_eq!(fs::read(&result.received[0].path).unwrap(), vec![b's'; 400]);
+
+    assert_eq!(result.files_sent, 1, "{result:?}");
     let _ = fs::remove_dir_all(&dir);
     let _ = fs::remove_dir_all(&client_dir);
 }

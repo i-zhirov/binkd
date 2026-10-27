@@ -1014,13 +1014,15 @@ Deliverables:
   the server role, the port of `do_server()` of `server.c`, and the loop of
   `servmgr()` rebuilds the listener on a reload. (done; the run of the port waits
   for a signal, because the client manager arrives with the next slice)
-- Two gaps that the test of the listener found, and that the next slice must hold:
-  the completion of a received file, `inb_done()` of `inbound.c`, searches the
-  temporary name in the directory of the temporary inbound and holds no file of the
-  session, so the daemon answers `missing tmp file`; and the answerer of the port
-  sends no file of its queue, though the scan of `files_of()` finds it. The test of
-  the port holds the session, the addresses of the peer, the scan, and the signals,
-  and the exchange of the files waits for the fix of the two.
+- A gap that the test of the listener found, and that the port holds now: the
+  answerer of the port sent no file of its queue, though the scan of `files_of()`
+  found the file of the peer, so the caller received nothing. The port of the session
+  already renames a received file, the port of `finish_file()`, so the receive closure
+  of the daemon must not run `inb_done()` a second time: the second call answers
+  `missing tmp file`. The test of the port holds the exchange of the files in both
+  directions now: each side sends the packet of its outbound and receives the packet
+  of the peer, and the daemon writes the packet of the caller into its inbound.
+  (done)
 - A bug that the test of the binary found in the log: the port of `vLog()` of
   `tools.c` wrote no newline after the console line of a message of a level that
   is no error of the config. The C code ends such a line with `\n` and holds no

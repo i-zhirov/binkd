@@ -14,7 +14,6 @@ use binkd_proto::{ReceivedFile, SendFile};
 use binkd_spool::busy::BusyList;
 use binkd_spool::config::SpoolConfig;
 use binkd_spool::fsutil;
-use binkd_spool::inbound::{Inbound, TFile};
 use binkd_spool::queue::Queue;
 use tokio::task::JoinHandle;
 
@@ -334,43 +333,23 @@ fn files_of(spool: &Mutex<SpoolConfig>, peer: &[FtnAddr], now: i64) -> Vec<SendF
     files
 }
 
-/// Completes a received file, the port of `inb_done()` of `inbound.c`.
+/// Notes a received file, the port of the counters of `inb_done()` of
+/// `inbound.c`.
 ///
-/// The C code of the session renames the temporary file to the name of the
-/// inbound directory and runs the events and the counters. The port of this slice
-/// holds the rename; the events and the counters arrive with the SRIF slice.
+/// The C code renames the temporary file inside the session, and the caller of the
+/// port does the same in `finish_file()` of `binkd-proto`, so the port of this
+/// closure must not run `inb_done()` again: a second call finds no temporary file
+/// and answers `missing tmp file`. The closure holds the counters of the daemon, the
+/// port of the `Log (1, "%s -> %s")` line of the C code.
 fn receive_file(spool: &Mutex<SpoolConfig>, dir: &str, file: &ReceivedFile, now: i64, log: &Log) {
-    let Ok(mut spool) = spool.lock() else {
-        return;
-    };
-    let mut inbound = Inbound {
-        dir: dir.to_string(),
-        // The security and the addresses of the session arrive with the SRIF
-        // slice: the C code holds them in `state`, which the port does not
-        // pass to the receive closure.
-        secure: false,
-        fa: Vec::new(),
-        nfa: 0,
-        skip_all_flag: false,
-    };
-    let tfile = TFile {
-        netname: file.netname.clone(),
-        size: file.size,
-        time: file.time,
-        start: 0,
-    };
-    let mut rnd = platform::rnd();
-    if inbound
-        .inb_done(&tfile, &mut spool, now, &mut rnd)
-        .is_none()
-    {
-        // The port of the `Log (1, "missing tmp file for %s!")` of `inb_done()`.
-        log.message(
-            ERROR,
-            &format!("missing tmp file for {}!", file.netname),
-            &platform::now(),
-        );
-    }
+    let _ = spool;
+    let _ = dir;
+    let _ = now;
+    log.message(
+        INFO,
+        &format!("{} -> {}", file.netname, file.path.display()),
+        &platform::now(),
+    );
 }
 
 #[cfg(test)]
