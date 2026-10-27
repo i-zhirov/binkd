@@ -1099,7 +1099,17 @@ options in a decision record:
    compatibility for the hook users.
 
 The plan recommends option 1 for the first release, then option 2 when a
-maintainer asks for it.
+maintainer asks for it. The record of `doc/decisions/perl-hooks.md` holds the
+recommendation and the exception of the lint of `unsafe_code` for one crate of the
+FFI, `binkd-perl`, which waits for the approval of the maintainer.
+
+The cases of the oracle of the hooks hold the port of the C `--with-perl` binary,
+`BINKD_C_PERL`, and the script `tests/perl/hooks.pl`: the config hooks
+`config_loaded` and `need_reload`, the log hook `on_log`, the start hook
+`on_start`, the call hooks `on_call` and `on_error`, and the session hooks
+`on_handshake`, `after_handshake`, `before_send`, `after_sent`, `on_send`,
+`on_recv`, and `after_session`. (done: the six cases of
+`crates/binkd/tests/perl.rs` pass with the oracle of `--with-perl`)
 
 Legacy platforms: OS/2, DOS, and Amiga. The plan keeps the C code for
 these platforms and marks them out of scope for the Rust port. A decision

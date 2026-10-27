@@ -53,7 +53,10 @@ sub after_recv {
 
 sub before_send {
   mark("before_send");
-  return 1;
+  # The C code of `perl_before_send()` of `perlhooks.c` aborts the send of a
+  # file when the hook answers a value above 0, the port of the check of
+  # `protocol.c`, so the hook answers 0 and the file goes.
+  return 0;
 }
 
 sub after_sent {
