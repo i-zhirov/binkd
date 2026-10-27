@@ -1,0 +1,2 @@
+# The crate is not a member of the workspace, so it holds a lock of its own.
+Cargo.lock
