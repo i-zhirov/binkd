@@ -490,7 +490,6 @@ async fn the_inetd_session_runs_on_the_pipe() {
     let input = child.stdout.take().unwrap();
     let output = child.stdin.take().unwrap();
     let mut pipe = binkd::pipe::Pipe::new(input, output);
-    let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
         day: 9,
