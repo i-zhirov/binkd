@@ -26,6 +26,66 @@ sub on_error {
   return 1;
 }
 
+sub on_handshake {
+  mark("on_handshake");
+  return "";
+}
+
+sub after_handshake {
+  mark("after_handshake");
+  return "";
+}
+
+sub after_session {
+  mark("after_session");
+  return 1;
+}
+
+sub before_recv {
+  mark("before_recv");
+  return 1;
+}
+
+sub after_recv {
+  mark("after_recv");
+  return 1;
+}
+
+sub before_send {
+  mark("before_send");
+  return 1;
+}
+
+sub after_sent {
+  mark("after_sent");
+  return 1;
+}
+
+sub on_send {
+  mark("on_send");
+  return 1;
+}
+
+sub on_recv {
+  mark("on_recv");
+  return 1;
+}
+
+sub setup_rlimit {
+  mark("setup_rlimit");
+  return 1;
+}
+
+sub need_reload {
+  mark("need_reload");
+  return 0;
+}
+
+sub config_loaded {
+  mark("config_loaded");
+  return 1;
+}
+
 sub mark {
   my ($name) = @_;
   my $path = $ENV{BINKD_PERL_MARK};
