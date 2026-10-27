@@ -6,7 +6,7 @@
 
 use std::sync::Arc;
 
-use binkd::{Config, Engine, FtnAddr};
+use binkd::{Engine, FtnAddr};
 use binkd_log::{Log, ERROR};
 
 #[tokio::main]
