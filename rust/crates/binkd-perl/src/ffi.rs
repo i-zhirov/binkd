@@ -34,11 +34,7 @@ extern "C" {
         create: c_int,
     ) -> *mut Value;
     /// Sets a string value, the port of `sv_setpv()`.
-    pub fn binkd_perl_set_string(
-        perl: *mut Interpreter,
-        value: *mut Value,
-        text: *const c_char,
-    );
+    pub fn binkd_perl_set_string(perl: *mut Interpreter, value: *mut Value, text: *const c_char);
     /// Sets an integer value, the port of `sv_setiv()`.
     pub fn binkd_perl_set_int(perl: *mut Interpreter, value: *mut Value, number: i64);
     /// Returns the integer of a value, the port of `SvIV()`.
