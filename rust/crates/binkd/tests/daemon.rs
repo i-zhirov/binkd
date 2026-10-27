@@ -378,17 +378,37 @@ async fn the_client_manager_polls_a_node() {
     // The daemon ran the pass of the client manager and exchanged the files
     // with the peer, the port of `do_client()` of `client.c`.
     assert!(daemon_err.contains("trying 127.0.0.1:"), "{daemon_err}");
+    assert!(
+        daemon_err.contains("1 files sent, 1 files received"),
+        "{daemon_err}"
+    );
 
-    // The daemon ran the pass of the client manager and exchanged the files
-    // with the peer, the port of `do_client()` of `client.c`. The peer holds
-    // no packet of the daemon yet: the port of `inb_done()` of `inbound.c`
-    // answers `None` for the file that `inb_fopen()` of the same port created
-    // just before, so the session ends with `cannot save` and the closure of the
-    // receive never runs. The next slice must trace `inb_done()` and its search
-    // of the temporary name.
-    assert!(daemon_err.contains("trying 127.0.0.1:"), "{daemon_err}");
-    let _ = received;
-    let _ = packet;
+    // The peer received the packet of the daemon.
+    let start = Instant::now();
+    while received.lock().map(|l| l.is_empty()).unwrap_or(false)
+        && start.elapsed() < Duration::from_secs(5)
+    {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let received = received.lock().map(|l| l.clone()).unwrap_or_default();
+    assert_eq!(received.len(), 1, "{daemon_err}");
+    assert_eq!(fs::read(&received[0].path).unwrap(), packet);
+
+    // The daemon holds the packet of the peer in its inbound.
+    let start = Instant::now();
+    let mut found = false;
+    while !found && start.elapsed() < Duration::from_secs(5) {
+        found = fs::read_dir(dir.join("in"))
+            .map(|entries| entries.flatten().count() > 0)
+            .unwrap_or(false);
+        if !found {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    assert!(
+        found,
+        "the daemon holds no packet of the peer\n{daemon_err}"
+    );
     listener.abort();
     let _ = fs::remove_dir_all(&dir);
     let _ = fs::remove_dir_all(&peer_dir);
