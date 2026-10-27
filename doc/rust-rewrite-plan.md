@@ -1015,10 +1015,18 @@ Deliverables:
   and ending the program, and the `-P` switches writing the polls of the nodes, the
   port of `poll_node()` of `binkd.c`. The port of `call_all()` scans the queue of
   the spool and calls the nodes, the port of `q_scan (SCAN_LISTED, config)` and of
-  `q_next_node()`. (done; the exchange of the files of a poll waits for the same
-  wiring as the listener: the peer of the port holds the packet of the daemon, and
-  the daemon holds the packet of the peer, but the caller of the poll receives
-  nothing yet)
+  `q_next_node()`. (done)
+- A bug that the test of the poll found in the test itself: the default runtime of
+  `#[tokio::test]` holds one thread, and the wait of the test blocked it with
+  `std::thread::sleep`, so the listener of the port in a task never ran and the
+  daemon answered `NoHost`. The test takes the multithread runtime now. (done)
+- The exchange of the files of a poll: the daemon calls the node, sends the packet of
+  its outbound, receives the packet of the peer into its inbound, and the peer
+  receives the packet of the daemon, the port of `do_client()` of `client.c`. The port
+  of `find_tmp_name()` and of `inb_done()` of `inbound.c` holds the two calls of a
+  file: `inb_fopen()` answers `Created` and writes the temporary name, and
+  `inb_done()` finds the `.hr` file, matches the name, the size, the time, and the
+  address, and answers `Found`. (done)
 - The listener manager: the daemon starts `binkd_net::listen()` for a run with
   the server role, the port of `do_server()` of `server.c`, and the loop of
   `servmgr()` rebuilds the listener on a reload. (done; the run of the port waits
