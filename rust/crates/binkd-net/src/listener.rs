@@ -21,6 +21,17 @@ pub enum ListenError {
     Io(std::io::Error),
 }
 
+impl std::fmt::Display for ListenError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ListenError::NoListen => write!(f, "no listen socket"),
+            ListenError::Io(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for ListenError {}
+
 /// Binds one listener for every `listen` entry, the port of the part of
 /// `do_server()` that builds the sockets.
 ///

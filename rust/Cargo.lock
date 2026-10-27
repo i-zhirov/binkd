@@ -13,7 +13,10 @@ name = "binkd"
 version = "0.1.0"
 dependencies = [
  "binkd-config",
+ "binkd-ftn",
  "binkd-log",
+ "binkd-net",
+ "binkd-proto",
  "binkd-spool",
  "tokio",
 ]

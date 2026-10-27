@@ -1010,6 +1010,17 @@ Deliverables:
 - An integration test with the sample config. (done: the test of
   `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
+- The listener manager: the daemon starts `binkd_net::listen()` for a run with
+  the server role, the port of `do_server()` of `server.c`, and the loop of
+  `servmgr()` rebuilds the listener on a reload. (done; the run of the port waits
+  for a signal, because the client manager arrives with the next slice)
+- Two gaps that the test of the listener found, and that the next slice must hold:
+  the completion of a received file, `inb_done()` of `inbound.c`, searches the
+  temporary name in the directory of the temporary inbound and holds no file of the
+  session, so the daemon answers `missing tmp file`; and the answerer of the port
+  sends no file of its queue, though the scan of `files_of()` finds it. The test of
+  the port holds the session, the addresses of the peer, the scan, and the signals,
+  and the exchange of the files waits for the fix of the two.
 - A bug that the test of the binary found in the log: the port of `vLog()` of
   `tools.c` wrote no newline after the console line of a message of a level that
   is no error of the config. The C code ends such a line with `\n` and holds no

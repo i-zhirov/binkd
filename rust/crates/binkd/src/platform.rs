@@ -45,6 +45,19 @@ pub fn date(time: &DateTime) -> String {
     )
 }
 
+/// Returns the next random number, the port of `rnd()` of `tools.c`.
+///
+/// The C code seeds `rand()` with the time on the first call and answers
+/// `time(0) + rand()` masked to 32 bits. The port keeps the state of the
+/// sequence in the closure, so no global state holds it.
+pub fn rnd() -> impl FnMut() -> u32 {
+    let mut state = now().epoch as u32 ^ std::process::id();
+    move || {
+        state = state.wrapping_mul(1_103_515_245).wrapping_add(12_345);
+        (now().epoch as u32).wrapping_add(state & 0x7fff_ffff)
+    }
+}
+
 /// Returns the name of the system, the port of `uname()` of
 /// `get_os_string()` of `tools.c`.
 ///

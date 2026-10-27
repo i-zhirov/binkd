@@ -1,14 +1,22 @@
-//! The daemon of binkd: the startup order, the signals, the pid file, and the
-//! exit, the port of the daemon part of `main()` of `binkd.c`, of `breaksig.c`,
-//! and of `exitproc.c`.
+//! The daemon of binkd: the startup order, the signals, the pid file, the
+//! listener manager, and the exit, the port of the daemon part of `main()` of
+//! `binkd.c`, of `breaksig.c`, of `exitproc.c`, and of `server.c`.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use binkd_config::reload::{Outcome as ReloadOutcome, Reloader};
 use binkd_config::Config;
+use binkd_ftn::addr::FtnAddr;
+use binkd_ftn::text::extract_filename;
 use binkd_log::{Log, CONNECTION, DEBUG, DEBUG2, ERROR, INFO, START, TRACE};
+use binkd_net::{listen, session::SessionOptions};
+use binkd_proto::{ReceivedFile, SendFile};
 use binkd_spool::busy::BusyList;
+use binkd_spool::config::SpoolConfig;
 use binkd_spool::fsutil;
+use binkd_spool::inbound::{Inbound, TFile};
+use binkd_spool::queue::Queue;
+use tokio::task::JoinHandle;
 
 use crate::cli::{self, Options};
 use crate::platform;
@@ -77,6 +85,8 @@ impl Signals {
 pub struct Daemon {
     /// The config in use, the port of `current_config`.
     config: Config,
+    /// The switches of the command line.
+    options: Options,
     /// The check of the config files, the port of `checkcfg()`.
     reloader: Reloader,
     /// The busy flags of the spool, the port of `bsy_list` of `bsy.c`.
@@ -90,8 +100,7 @@ impl Daemon {
     /// after the config.
     ///
     /// The C code writes the `BEGIN` line, starts the busy list, and seeds the
-    /// random numbers. The port of this slice holds the line and the list; the
-    /// managers arrive with the next slices.
+    /// random numbers. The port of this slice holds the line and the list.
     pub fn new(config: Config, options: &Options, log: Arc<Log>, args: &[String]) -> Daemon {
         // The port of `print_args()` and of `Log (4, "BEGIN, ...")` of `main()`.
         log.message(
@@ -115,6 +124,7 @@ impl Daemon {
         }
         Daemon {
             config,
+            options: options.clone(),
             reloader,
             busy,
             log,
@@ -169,9 +179,12 @@ impl Daemon {
     /// `servmgr()` of `server.c` and of `main()` of `binkd.c`.
     ///
     /// The C code runs the server and the client managers here. The port of this
-    /// slice waits for the signals and checks the config files: the managers
-    /// arrive with the next slices.
+    /// slice runs the listener of the server; the client manager arrives with the
+    /// next slice.
     pub async fn serve(&mut self, signals: &mut Signals) {
+        // The port of the `do { ... } while (status == 0)` loop of `servmgr()`:
+        // a reload closes the listen sockets and the manager starts again.
+        let mut listener = self.spawn_listener();
         loop {
             match signals.next().await {
                 Event::Exit(number) => {
@@ -180,23 +193,78 @@ impl Daemon {
                     // that the managers read.
                     self.log
                         .message(INFO, &format!("got signal #{number}."), &platform::now());
-                    return;
+                    break;
                 }
                 Event::Hangup => {
                     // The port of `sighandler()` of `binkd.c` and of the
                     // start of `checkcfg()` of `readcfg.c`.
                     self.log.message(CONNECTION, "got SIGHUP", &platform::now());
-                    self.reload();
+                    if self.reload() {
+                        // The port of the socket close of `do_server()`:
+                        // the caller of `listen()` stops the task and starts
+                        // a new one with the new config.
+                        if let Some(task) = listener.take() {
+                            task.abort();
+                        }
+                        listener = self.spawn_listener();
+                    }
                 }
             }
         }
+        // The port of `close_srvmgr_socket()` of `exitproc.c`: the task holds
+        // the listen sockets, so the end of the task closes them.
+        if let Some(task) = listener.take() {
+            task.abort();
+        }
+    }
+
+    /// Starts the listener of the server, the port of `do_server()` of
+    /// `server.c`.
+    ///
+    /// The C code builds the sockets of every `listen` entry and accepts the
+    /// connections; the port calls `binkd_net::listen()`, which does the same.
+    /// The C code runs no listener for a run without the server role.
+    fn spawn_listener(&self) -> Option<JoinHandle<()>> {
+        let (_, server) = self.options.roles();
+        if !server {
+            return None;
+        }
+        let config = self.config.clone();
+        let log = Arc::clone(&self.log);
+        let timeout = std::time::Duration::from_secs(self.config.nettimeout.max(1) as u64);
+        let options = SessionOptions::new(timeout, !self.options.no_crypt, false);
+        let spool = Arc::new(Mutex::new(self.config.spool.clone()));
+        let files = {
+            let spool = Arc::clone(&spool);
+            move |peer: &[FtnAddr]| files_of(&spool, peer, platform::now().epoch)
+        };
+        let receive = {
+            let spool = Arc::clone(&spool);
+            let inbound = self.config.inbound.clone();
+            let log = Arc::clone(&self.log);
+            move |file: &ReceivedFile| {
+                receive_file(&spool, &inbound, file, platform::now().epoch, &log);
+                Ok(())
+            }
+        };
+        let task_log = Arc::clone(&log);
+        Some(tokio::spawn(async move {
+            if let Err(error) = listen(config, log, platform::now, options, files, receive).await {
+                // The C code of `do_server()` logs the error of the socket
+                // build and returns -1, which ends the loop of `servmgr()`.
+                task_log.message(ERROR, &format!("servmgr: {error}"), &platform::now());
+            }
+        }))
     }
 
     /// Checks the config files, the port of `checkcfg()` of `readcfg.c`.
-    pub fn reload(&mut self) {
+    ///
+    /// Answers true when the daemon takes a new config, the port of the nonzero
+    /// return of `checkcfg()` that restarts the listen sockets.
+    pub fn reload(&mut self) -> bool {
         self.reloader.set_forced(true);
         match self.reloader.check() {
-            ReloadOutcome::Unchanged => {}
+            ReloadOutcome::Unchanged => false,
             ReloadOutcome::Reloaded(config) => {
                 self.log
                     .message(CONNECTION, "Reloading configuration...", &platform::now());
@@ -207,10 +275,12 @@ impl Daemon {
                     config.nolog.clone(),
                 );
                 self.config = *config;
+                true
             }
             ReloadOutcome::Failed(error) => {
                 self.log
                     .message(ERROR, &format!("{error}\n"), &platform::now());
+                false
             }
         }
     }
@@ -228,5 +298,107 @@ impl Daemon {
         if !path.is_empty() {
             let _ = std::fs::remove_file(path);
         }
+    }
+}
+
+/// Returns the files of a peer, the port of the queue scan of the answerer:
+/// `q_scan_addrs()` and `q_get_sizes()` of `ftnq.c`.
+///
+/// The C code of `complete_login()` scans the queue for the addresses of the
+/// peer and the send loop takes the files one by one.
+fn files_of(spool: &Mutex<SpoolConfig>, peer: &[FtnAddr], now: i64) -> Vec<SendFile> {
+    let Some(first) = peer.first() else {
+        return Vec::new();
+    };
+    let Ok(mut spool) = spool.lock() else {
+        return Vec::new();
+    };
+    let mut queue = Queue::new();
+    queue.scan_addrs(peer, true, &mut spool, now, false);
+    queue.get_sizes();
+    let mut files = Vec::new();
+    while let Some(index) = queue.select_next_file(first, &[]) {
+        let entry = &queue.entries[index];
+        files.push(SendFile {
+            // The C code announces the name of the file, the port of the
+            // `netname` of the queue entry.
+            netname: String::from_utf8_lossy(extract_filename(
+                entry.path.to_string_lossy().as_bytes(),
+            ))
+            .into_owned(),
+            path: Some(entry.path.clone()),
+            size: entry.size,
+            time: entry.time,
+        });
+    }
+    files
+}
+
+/// Completes a received file, the port of `inb_done()` of `inbound.c`.
+///
+/// The C code of the session renames the temporary file to the name of the
+/// inbound directory and runs the events and the counters. The port of this slice
+/// holds the rename; the events and the counters arrive with the SRIF slice.
+fn receive_file(spool: &Mutex<SpoolConfig>, dir: &str, file: &ReceivedFile, now: i64, log: &Log) {
+    let Ok(mut spool) = spool.lock() else {
+        return;
+    };
+    let mut inbound = Inbound {
+        dir: dir.to_string(),
+        // The security and the addresses of the session arrive with the SRIF
+        // slice: the C code holds them in `state`, which the port does not
+        // pass to the receive closure.
+        secure: false,
+        fa: Vec::new(),
+        nfa: 0,
+        skip_all_flag: false,
+    };
+    let tfile = TFile {
+        netname: file.netname.clone(),
+        size: file.size,
+        time: file.time,
+        start: 0,
+    };
+    let mut rnd = platform::rnd();
+    if inbound
+        .inb_done(&tfile, &mut spool, now, &mut rnd)
+        .is_none()
+    {
+        // The port of the `Log (1, "missing tmp file for %s!")` of `inb_done()`.
+        log.message(
+            ERROR,
+            &format!("missing tmp file for {}!", file.netname),
+            &platform::now(),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use binkd_ftn::domain::{DomainTable, FtnDomain};
+    use binkd_ftn::node::NodeSpec;
+
+    #[test]
+    fn the_scan_finds_the_file_of_a_peer() {
+        let dir = std::env::temp_dir().join(format!("binkd-files-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("outb")).unwrap();
+        std::fs::write(dir.join("outb/13b7000d.cut"), vec![b's'; 400]).unwrap();
+        let mut spool = SpoolConfig::new();
+        spool.domains = DomainTable::new(vec![FtnDomain {
+            name: "fidonet".to_string(),
+            path: dir.display().to_string(),
+            dir: "outb".to_string(),
+            z: [2, -1],
+            idomain: None,
+            alias4: None,
+        }]);
+        let peer = FtnAddr::parse("2:5047/13@fidonet", &spool.domains).unwrap();
+        spool.add_node(&peer, &NodeSpec::default(), 1_000_000_000);
+        let spool = Mutex::new(spool);
+        let files = files_of(&spool, &[peer], 1_000_000_000);
+        assert_eq!(files.len(), 1, "{files:?}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

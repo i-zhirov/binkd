@@ -8,9 +8,15 @@ description = "The binkd mailer: the command line and the daemon, the port of `b
 
 [dependencies]
 binkd-config = { path = "../binkd-config" }
+binkd-ftn = { path = "../binkd-ftn" }
+binkd-net = { path = "../binkd-net" }
+binkd-proto = { path = "../binkd-proto" }
 binkd-log = { path = "../binkd-log" }
 binkd-spool = { path = "../binkd-spool" }
 tokio = { version = "=1.54.0", features = ["rt", "rt-multi-thread", "macros", "signal", "time"] }
+
+[dev-dependencies]
+tokio = { version = "=1.54.0", features = ["rt-multi-thread", "macros"] }
 
 [lints]
 workspace = true

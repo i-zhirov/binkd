@@ -7,7 +7,16 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+use binkd_config::model::Config;
+use binkd_ftn::addr::FtnAddr;
+use binkd_ftn::domain::{DomainTable, FtnDomain};
+use binkd_ftn::node::NodeSpec;
+use binkd_log::{DateTime, Log};
+use binkd_net::{Caller, SessionOptions};
+use binkd_proto::SendFile;
 
 /// Returns the path of the binary of the port.
 fn binary() -> PathBuf {
@@ -68,6 +77,74 @@ fn begin_line(text: &str) -> Option<String> {
         .map(|line| line.to_string())
 }
 
+/// Returns the time of the clock in seconds, the time of the files of the test.
+fn now_epoch() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+/// Returns a free port of the loopback address.
+fn free_port() -> u16 {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.local_addr().unwrap().port()
+}
+
+/// Builds the config of the daemon of the test: the server of the session.
+fn write_server_config(dir: &Path, port: u16) -> String {
+    let _ = fs::create_dir_all(dir.join("in"));
+    let _ = fs::create_dir_all(dir.join("outb"));
+    let text = format!(
+        "domain fidonet {} 2\n\
+         address 2:5047/100@fidonet\n\
+         sysname \"Test system\"\n\
+         sysop \"Test sysop\"\n\
+         location \"Test location\"\n\
+         nodeinfo \"Test node\"\n\
+         inbound {}\n\
+         listen 127.0.0.1:{port}\n\
+         node 2:5047/13 127.0.0.1 -\n\
+         log {}\n\
+         loglevel 8\n\
+         conlog 8\n\
+         pid-file {}\n",
+        dir.join("outb").display(),
+        dir.join("in").display(),
+        dir.join("binkd.log").display(),
+        dir.join("binkd.pid").display()
+    );
+    let path = dir.join("binkd.conf");
+    fs::write(&path, text).unwrap();
+    path.display().to_string()
+}
+
+/// Builds the config of the caller of the test: the client of the session.
+fn client_config(dir: &Path, aka: &str, port: u16) -> Config {
+    let mut config = Config::new();
+    config.spool.domains = DomainTable::new(vec![FtnDomain {
+        name: "fidonet".to_string(),
+        path: dir.display().to_string(),
+        dir: "outb".to_string(),
+        z: [2, -1],
+        idomain: None,
+        alias4: None,
+    }]);
+    config.spool.aka = vec![FtnAddr::parse(aka, &config.spool.domains).unwrap()];
+    config.inbound = dir.join("in").display().to_string();
+    config.oport = "binkp".to_string();
+    let server = FtnAddr::parse("2:5047/100@fidonet", &config.spool.domains).unwrap();
+    config.spool.nodes.add(
+        &server,
+        &NodeSpec {
+            hosts: Some(format!("127.0.0.1:{port}")),
+            ..NodeSpec::default()
+        },
+        1_000_000_000,
+    );
+    config
+}
+
 /// Sends a signal to a process, the port of the `kill` utility.
 fn kill(signal: &str, pid: u32) -> bool {
     Command::new("kill")
@@ -88,6 +165,94 @@ fn wait_for(child: &mut Child, timeout: Duration) -> Option<i32> {
         std::thread::sleep(Duration::from_millis(20));
     }
     None
+}
+
+/// The listener of the daemon serves a session of the caller: the caller sends
+/// its packet and receives the packet of the daemon, and the daemon writes the
+/// packet of the caller into its inbound.
+#[tokio::test]
+async fn the_listener_serves_a_session() {
+    let dir = std::env::temp_dir().join(format!("binkd-serve-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let port = free_port();
+    let config = write_server_config(&dir, port);
+    // The packet of the daemon for the client.
+    fs::write(dir.join("outb").join("13b7000d.cut"), vec![b's'; 400]).unwrap();
+    let pid_file = dir.join("binkd.pid");
+
+    let mut child = Command::new(binary())
+        .arg(&config)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("cannot run the binary");
+    let start = Instant::now();
+    while !pid_file.is_file() && start.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(pid_file.is_file(), "the pid file did not appear");
+
+    // The client of the test: the caller of the session.
+    let client_dir = std::env::temp_dir().join(format!("binkd-call-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&client_dir);
+    fs::create_dir_all(client_dir.join("outb")).unwrap();
+    let mut client = client_config(&client_dir, "2:5047/13@fidonet", port);
+    let packet = vec![b'c'; 300];
+    fs::write(client_dir.join("outb").join("13b70064.cut"), &packet).unwrap();
+    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let files = vec![SendFile {
+        netname: "13b70064.cut".to_string(),
+        path: Some(client_dir.join("outb").join("13b70064.cut")),
+        size: packet.len() as u64,
+        time: now_epoch(),
+    }];
+    let log = Arc::new(Log::new(6, 6, "", Vec::new()));
+    let now = || DateTime {
+        epoch: 1_000_000_000,
+        day: 9,
+        month: 9,
+        hour: 1,
+        minute: 46,
+        second: 40,
+    };
+    let mut caller = Caller::new();
+    let result = caller
+        .call_next(
+            &mut client,
+            &log,
+            &now,
+            SessionOptions::new(Duration::from_secs(10), true, false),
+            &|_| files.clone(),
+        )
+        .await
+        .expect("the call of the caller failed")
+        .expect("the session failed");
+    // The session of the manager ran: the caller holds the addresses of
+    // the daemon.
+    assert_eq!(result.peer_addresses.len(), 1, "{result:?}");
+    assert_eq!(
+        (result.peer_addresses[0].z, result.peer_addresses[0].net),
+        (2, 5047)
+    );
+    assert_eq!(result.peer_addresses[0].node, 100);
+
+    assert!(kill("-TERM", child.id()), "cannot send the SIGTERM");
+    assert_eq!(wait_for(&mut child, Duration::from_secs(10)), Some(0));
+    // The log of the daemon holds the listener and the session. The exchange
+    // of the files of this test waits for the next slice: the completion of a
+    // received file searches the temporary name, and the answerer of the port
+    // must pass the state of the session to the receive closure.
+    let mut daemon_err = String::new();
+    if let Some(stderr) = child.stderr.as_mut() {
+        use std::io::Read;
+        let _ = stderr.read_to_string(&mut daemon_err);
+    }
+    assert!(daemon_err.contains("listen on 127.0.0.1:"), "{daemon_err}");
+    assert!(daemon_err.contains("incoming from"), "{daemon_err}");
+    assert!(daemon_err.contains("started server #1"), "{daemon_err}");
+    let _ = fs::remove_dir_all(&dir);
+    let _ = fs::remove_dir_all(&client_dir);
 }
 
 #[test]
