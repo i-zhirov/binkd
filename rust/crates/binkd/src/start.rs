@@ -3,14 +3,14 @@
 use std::fmt;
 
 use binkd_config::Parser;
-use binkd_log::{Log, ERROR, FATAL};
+use binkd_log::{Log, FATAL};
 
-use crate::cli::{self, Options};
+use crate::cli;
+use crate::daemon::Daemon;
 use crate::platform;
 use crate::version;
 
 /// The outcome of a run, the port of the ends of `main()` of `binkd.c`.
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
     /// The program writes the text to the standard output and ends with the
     /// code, the port of the `printf()` and of the `exit()` of `main()`.
@@ -21,11 +21,7 @@ pub enum Outcome {
         text: String,
     },
     /// The command line runs the daemon, the port of the rest of `main()`.
-    ///
-    /// The port of this slice holds no daemon: the startup order, the
-    /// signals, the pid file, the config reload, and the external program
-    /// start arrive with the next slices.
-    Daemon(Box<Options>),
+    Daemon(Box<Daemon>),
 }
 
 /// The error of a run, the port of the `Log (0, ...)` messages of `main()`.
@@ -63,17 +59,22 @@ impl From<binkd_config::Error> for Error {
 /// Runs the command line, the port of `main()` of `binkd.c` up to the point
 /// the port reaches.
 ///
-/// The C code parses the command line, reads the config, and runs the daemon.
-/// The port of this slice holds the command line and the paths that end the
-/// program: `-d` dumps the config, `-n` checks the config, and `-v` states
-/// the version. The caller supplies the log, as the C code of the port of
-/// `binkd-log` keeps the log of the process.
-pub fn run(args: &[String], log: &Log) -> Result<Outcome, Error> {
+/// The C code parses the command line, reads the config, and runs the daemon. The
+/// port of this slice holds the command line, the paths that end the program, and
+/// the startup of the daemon: `-d` dumps the config, `-n` checks the config,
+/// `-v` states the version, and a run without them starts the daemon. The caller
+/// supplies the log, as the C code of the port of `binkd-log` keeps the log of
+/// the process.
+pub fn run(args: &[String], log: &std::sync::Arc<Log>) -> Result<Outcome, Error> {
     let options = cli::parse(args)?;
 
     // The C code of `parseargs()` writes this message before the config.
     if options.extra {
-        log.message(ERROR, "Extra parameters ignored", &platform::now());
+        log.message(
+            binkd_log::ERROR,
+            "Extra parameters ignored",
+            &platform::now(),
+        );
     }
 
     if let Some(path) = options.config.clone() {
@@ -99,6 +100,9 @@ pub fn run(args: &[String], log: &Log) -> Result<Outcome, Error> {
             &config.logpath,
             config.nolog.clone(),
         );
+        // The port of `print_args()` and of the `Log (4, "BEGIN, ...")`.
+        let mut daemon = Daemon::new(config, &options, log.clone(), args);
+        // The C code ends here on the `-n` switch and writes no pid file.
         if options.no {
             log.message(FATAL, "Exit on option '-n'", &platform::now());
             return Ok(Outcome::Exit {
@@ -106,7 +110,9 @@ pub fn run(args: &[String], log: &Log) -> Result<Outcome, Error> {
                 text: String::new(),
             });
         }
-        return Ok(Outcome::Daemon(Box::new(options)));
+        // The port of the pid file block of `main()`.
+        daemon.write_pid();
+        return Ok(Outcome::Daemon(Box::new(daemon)));
     }
 
     if options.verbose > 0 {

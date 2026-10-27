@@ -1,6 +1,9 @@
 //! The version text of binkd, the port of the version block of `main()` of
 //! `binkd.c`.
 
+/// The name of the mailer, the port of `MYNAME` of `Config.h`.
+pub const NAME: &str = "binkd";
+
 /// The version of the port, the port of `MYVER` of `Config.h`.
 ///
 /// The C code states the version of the C project in `Config.h`, and the

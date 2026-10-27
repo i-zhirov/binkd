@@ -1015,6 +1015,13 @@ Deliverables:
   is no error of the config. The C code ends such a line with `\n` and holds no
   newline for a negative level, the level of the errors of the config, whose
   message ends its own line. (done)
+- The daemon startup: the `BEGIN` line with the arguments, the busy list, the
+  pid file, the streams of `SIGTERM`, `SIGINT`, and `SIGHUP`, the end of the
+  daemon on a signal, the check of the config files on `SIGHUP`, and the cleanup
+  of `exitfunc()`. (done; the daemon of the slice waits for a signal, because
+  the listener and the caller arrive with the next slice. The port takes the
+  `signal` feature of `tokio` for the handlers, because `std` states no signal
+  of a process: the feature holds the small `signal-hook-registry` crate)
 
 Exit criteria:
 

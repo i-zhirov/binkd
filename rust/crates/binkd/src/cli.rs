@@ -36,6 +36,27 @@ the Free Software Foundation. See COPYING.
 Report bugs to 2:463/68 or binkd-bugs@happy.kiev.ua.
 ";
 
+/// Returns the arguments of the command line, the port of `print_args()` of
+/// `tools.c`.
+///
+/// The C code puts a space before every argument and quotes an argument that is
+/// empty or that holds a character at most `' '`.
+pub fn print_args(args: &[String]) -> String {
+    let mut text = String::new();
+    for arg in args {
+        let quote = arg.is_empty() || arg.bytes().any(|c| c <= b' ');
+        text.push(' ');
+        if quote {
+            text.push('"');
+        }
+        text.push_str(arg);
+        if quote {
+            text.push('"');
+        }
+    }
+    text
+}
+
 /// The switches of the command line, the port of the flags of `parseargs()`.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Options {
@@ -330,6 +351,12 @@ mod tests {
         // The port of the fallthrough of the `default` case to `case 'n'`.
         let options = parse(&args(&["binkd", "-?"])).unwrap();
         assert!(options.no);
+    }
+
+    #[test]
+    fn the_arguments_of_the_begin_line() {
+        let list = args(&["-d", "my config.conf", ""]);
+        assert_eq!(print_args(&list), " -d \"my config.conf\" \"\"");
     }
 
     #[test]

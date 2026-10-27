@@ -328,14 +328,16 @@ fixes them):
 
 ### Dependency Management
 
-- **Pin all dependency versions explicitly.** `binkd-proto` depends on
-  `tokio` with an exact version (`=1.54.0`, the features `rt`, `net`,
-  `io-util`, `macros`, and `time`), on `flate2` with the pure Rust backend
-  (`=1.1.10`, `rust_backend`), and on `bzip2` (`=0.6.1`). Every other crate
-  uses `std` only. Add a dependency only with an exact version.
+- **Pin all dependency versions explicitly.** `binkd-proto`, `binkd-net`, and
+  `binkd` depend on `tokio` with an exact version (`=1.54.0`) and the features
+  that each crate needs; `binkd` adds the `signal` feature for the handlers of
+  the daemon, which `std` cannot install. `binkd-proto` depends on `flate2` with
+  the pure Rust backend (`=1.1.10`, `rust_backend`) and on `bzip2` (`=0.6.1`).
+  Every other crate uses `std` only. Add a dependency only with an exact
+  version.
 - **Prefer vanilla solutions.** Use `std` when it solves the problem. The
   Rust port of a C module uses `std` only, apart from the async runtime of
-  `binkd-proto`.
+  the session and of the daemon.
 - **Reputable sources only.** A dependency MUST be well-established and
   actively maintained.
 - **Avoid unpopular libraries.** Do not add a niche or obscure crate.
