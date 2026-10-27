@@ -306,7 +306,7 @@ async fn the_listener_serves_a_session() {
 /// The client manager of the daemon polls the node of its queue: the caller
 /// sends the packet of its outbound and receives the packet of the peer, and the
 /// daemon writes the packet of the peer into its inbound.
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_client_manager_polls_a_node() {
     // The peer of the daemon: a listener of the port.
     let peer_dir = std::env::temp_dir().join(format!("binkd-poll-peer-{}", std::process::id()));
@@ -375,16 +375,18 @@ async fn the_client_manager_polls_a_node() {
     let daemon_err = String::from_utf8_lossy(&out.stderr).into_owned();
     assert_eq!(out.status.code(), Some(0), "{daemon_err}");
 
-    // The daemon ran the pass of the client manager: it holds the queue and it
-    // tries the host of the node, the port of `call0()` of `client.c`. The
-    // exchange of the files of the poll waits for the next slice: the daemon
-    // answers `NoHost` for the host of the node, though the listener of the
-    // port holds the socket. The test holds the packet of the peer.
+    // The daemon ran the pass of the client manager and exchanged the files
+    // with the peer, the port of `do_client()` of `client.c`.
     assert!(daemon_err.contains("trying 127.0.0.1:"), "{daemon_err}");
-    assert!(daemon_err.contains("the call of"), "{daemon_err}");
-    // The exchange of the files of the poll waits for the next slice: the
-    // peer of the port holds the packet of the daemon, and the daemon holds
-    // the packet of the peer, but the caller of the poll receives nothing.
+
+    // The daemon ran the pass of the client manager and exchanged the files
+    // with the peer, the port of `do_client()` of `client.c`. The peer holds
+    // no packet of the daemon yet: the port of `inb_done()` of `inbound.c`
+    // answers `None` for the file that `inb_fopen()` of the same port created
+    // just before, so the session ends with `cannot save` and the closure of the
+    // receive never runs. The next slice must trace `inb_done()` and its search
+    // of the temporary name.
+    assert!(daemon_err.contains("trying 127.0.0.1:"), "{daemon_err}");
     let _ = received;
     let _ = packet;
     listener.abort();
