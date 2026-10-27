@@ -1010,6 +1010,9 @@ Deliverables:
 - An integration test with the sample config. (done: the test of
   `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
+- The check of the config files on a timer: the daemon runs `checkcfg()` of
+  `readcfg.c` on every pass of `CHECKCFG_INTERVAL`, the port of `rescan_delay`,
+  and it restarts the listener of the port when a file changed. (done)
 - The client manager: the daemon runs the passes of `binkd_net::Caller`, the port
   of `do_client()` and of `clientmgr()` of `client.c`, with `-p` running one pass
   and ending the program, and the `-P` switches writing the polls of the nodes, the

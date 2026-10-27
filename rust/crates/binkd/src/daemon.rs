@@ -200,9 +200,29 @@ impl Daemon {
         // manager runs beside the server.
         let stop = Arc::new(AtomicBool::new(false));
         let mut clients = self.spawn_client(Arc::clone(&stop));
+        // The port of the `select()` timeout of `do_server()`: the C code
+        // checks the config files on every pass of `CHECKCFG_INTERVAL`, the
+        // port of `rescan_delay`.
+        let delay = Duration::from_secs(self.config.rescan_delay.max(1) as u64);
+        let mut ticker = tokio::time::interval(delay);
+        ticker.tick().await;
         loop {
-            match signals.next().await {
-                Event::Exit(number) => {
+            let event = tokio::select! {
+                event = signals.next() => Some(event),
+                _ = ticker.tick() => None,
+            };
+            match event {
+                None => {
+                    // The port of the timeout branch of `do_server()`: the
+                    // check reloads only when a config file changed.
+                    if self.reload_check() {
+                        if let Some(task) = listener.take() {
+                            task.abort();
+                        }
+                        listener = self.spawn_listener();
+                    }
+                }
+                Some(Event::Exit(number)) => {
                     // The port of `exitsig()` of `breaksig.c`: the C code of
                     // the thread build logs at the level 1 and sets the flag
                     // that the managers read.
@@ -210,7 +230,7 @@ impl Daemon {
                         .message(INFO, &format!("got signal #{number}."), &platform::now());
                     break;
                 }
-                Event::Hangup => {
+                Some(Event::Hangup) => {
                     // The port of `sighandler()` of `binkd.c` and of the
                     // start of `checkcfg()` of `readcfg.c`.
                     self.log.message(CONNECTION, "got SIGHUP", &platform::now());
@@ -416,6 +436,15 @@ impl Daemon {
     /// return of `checkcfg()` that restarts the listen sockets.
     pub fn reload(&mut self) -> bool {
         self.reloader.set_forced(true);
+        self.reload_check()
+    }
+
+    /// Checks the config files of a pass, the port of `checkcfg()` of
+    /// `readcfg.c` without the force of a signal.
+    ///
+    /// The `-C` switch holds the check of every pass of the C code, the port
+    /// of the `checkcfg_flag`.
+    pub fn reload_check(&mut self) -> bool {
         match self.reloader.check() {
             ReloadOutcome::Unchanged => false,
             ReloadOutcome::Reloaded(config) => {

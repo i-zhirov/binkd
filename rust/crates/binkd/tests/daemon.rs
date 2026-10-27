@@ -414,6 +414,55 @@ async fn the_client_manager_polls_a_node() {
     let _ = fs::remove_dir_all(&peer_dir);
 }
 
+/// The `-C` switch: the daemon checks the config files on every pass of the
+/// interval of the `select()` of `do_server()`, the port of `rescan-delay`.
+#[test]
+fn the_daemon_reloads_a_changed_config() {
+    let dir = std::env::temp_dir().join(format!("binkd-reload-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let config = write_config(&dir);
+    // The interval of the check of the C code, the port of `rescan_delay`.
+    let mut text = fs::read_to_string(&config).unwrap();
+    text.push_str("rescan-delay 1\n");
+    fs::write(&config, &text).unwrap();
+    let pid_file = dir.join("binkd.pid");
+    let log_file = dir.join("binkd.log");
+
+    let mut child = Command::new(binary())
+        .arg("-C")
+        .arg(&config)
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("cannot run the binary");
+    let start = Instant::now();
+    while !pid_file.is_file() && start.elapsed() < Duration::from_secs(10) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    assert!(pid_file.is_file(), "the pid file did not appear");
+
+    // The config file changes after the interval of the check.
+    std::thread::sleep(Duration::from_millis(1100));
+    let text = text.replace("Test system", "Reloaded system");
+    fs::write(&config, text).unwrap();
+    let start = Instant::now();
+    let mut reloaded = false;
+    while !reloaded && start.elapsed() < Duration::from_secs(10) {
+        reloaded = fs::read_to_string(&log_file)
+            .map(|log| log.contains("Reloading configuration..."))
+            .unwrap_or(false);
+        if !reloaded {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+    assert!(reloaded, "the daemon did not reload the changed config");
+
+    assert!(kill("-TERM", child.id()), "cannot send the SIGTERM");
+    assert_eq!(wait_for(&mut child, Duration::from_secs(10)), Some(0));
+    let _ = fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn the_begin_line_matches_the_oracle() {
     let Some(c) = c_binary() else {
