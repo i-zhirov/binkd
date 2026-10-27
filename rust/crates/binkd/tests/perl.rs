@@ -243,16 +243,18 @@ async fn the_oracle_of_the_perl_hooks_of_the_session() {
             &|_| files.clone(),
         )
         .await;
-    // The mark holds the hooks of the session: the caller ends the session, and
-    // the oracle holds every hook of the end of the session, so the test ends
-    // the oracle first, the port of the `SIGTERM` of the C code.
-    let _ = child.kill();
-    let _ = child.wait();
+    // The mark holds the hooks of the session: the caller ends its session, and
+    // the oracle holds `after_sent` when its own send of the file ends, so the
+    // test waits for the hook before it ends the oracle, the port of the
+    // `SIGTERM` of the C code.
     let start = Instant::now();
-    while !mark.is_file() && start.elapsed() < Duration::from_secs(10) {
+    let mut text = String::new();
+    while !text.contains("after_sent") && start.elapsed() < Duration::from_secs(10) {
+        text = fs::read_to_string(&mark).unwrap_or_default();
         std::thread::sleep(Duration::from_millis(20));
     }
-    let text = fs::read_to_string(&mark).unwrap_or_default();
+    let _ = child.kill();
+    let _ = child.wait();
     for name in [
         "on_handshake",
         "after_handshake",
