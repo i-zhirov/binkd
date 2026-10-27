@@ -267,6 +267,7 @@ fn the_oracle_of_the_perl_hook_changes_the_line_of_the_log() {
     let dir = std::env::temp_dir().join(format!("binkd-perl-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
+    fs::create_dir_all(dir.join("outb")).unwrap();
     let script = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../tests/perl/hooks.pl");
     let log = dir.join("binkd.log");
     let text = format!(
