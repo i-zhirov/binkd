@@ -5,7 +5,7 @@
 # two, the port of `perl_on_log()`.
 
 sub on_log {
-  s/BEGIN/BEGIN (perl)/;
+  s/Exit on option/Exit on option (perl)/;
   $lvl = 1;
   return 1;
 }
