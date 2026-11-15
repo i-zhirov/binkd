@@ -533,6 +533,7 @@ impl Daemon {
         let timeout = Duration::from_secs(self.config.nettimeout.max(1) as u64);
         let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
         options.no_md5 = self.options.no_md5;
+        options.free_space = platform::free_space;
         match &self.hooks {
             Some(hooks) => options.with_hooks(Arc::clone(hooks)),
             None => options,

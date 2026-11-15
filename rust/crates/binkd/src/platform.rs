@@ -1,6 +1,8 @@
 //! The platform values of the binary, the port of the parts of the C code
 //! that read the system.
 
+use std::path::Path;
+
 use binkd_log::DateTime;
 
 /// The names of the months, the port of `__DATE__` of the C code.
@@ -58,6 +60,17 @@ pub fn rnd() -> impl FnMut() -> u32 {
     }
 }
 
+/// Returns the free space of a directory in kilobytes, the port of
+/// `getfree()` of `unix/getfree.c` and `nt/getfree.c`.
+///
+/// `fs2::available_space()` answers bytes. A failed query answers
+/// `u64::MAX`, the value of the C `ULONG_MAX` error path.
+pub fn free_space(path: &Path) -> u64 {
+    fs2::available_space(path)
+        .map(|bytes| bytes / 1024)
+        .unwrap_or(u64::MAX)
+}
+
 /// Returns the name of the system, the port of `uname()` of
 /// `get_os_string()` of `tools.c`.
 ///
@@ -109,5 +122,22 @@ mod tests {
     #[test]
     fn the_system_holds_a_name() {
         assert!(!system().is_empty());
+    }
+
+    #[test]
+    fn the_free_space_of_a_directory() {
+        let dir = std::env::temp_dir().join(format!("binkd-free-space-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(free_space(&dir) > 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_free_space_of_a_missing_directory() {
+        let dir =
+            std::env::temp_dir().join(format!("binkd-free-space-missing-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(free_space(&dir), u64::MAX);
     }
 }

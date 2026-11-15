@@ -62,6 +62,7 @@ impl Engine {
         let timeout = std::time::Duration::from_secs(self.config.nettimeout.max(1) as u64);
         let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
         options.no_md5 = self.options.no_md5;
+        options.free_space = platform::free_space;
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let files = {
             let spool = Arc::clone(&spool);
@@ -92,6 +93,7 @@ impl Engine {
         let timeout = std::time::Duration::from_secs(self.config.nettimeout.max(1) as u64);
         let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
         options.no_md5 = self.options.no_md5;
+        options.free_space = platform::free_space;
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let files = {
             let spool = Arc::clone(&spool);
