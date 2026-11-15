@@ -130,6 +130,14 @@ async fn finish_daemon(mut daemon: Box<daemon::Daemon>, signals: &mut daemon::Si
 #[cfg(windows)]
 fn run_service_daemon(context: binkd_win::service::ServiceContext) -> i32 {
     let log = Arc::new(Log::new(ERROR, ERROR, "", Vec::new()));
+    let panic_log = Arc::clone(&log);
+    std::panic::set_hook(Box::new(move |info| {
+        panic_log.message(
+            ERROR,
+            &format!("panic in the service: {info}"),
+            &platform::now(),
+        );
+    }));
     let (sender, receiver) = tokio::sync::mpsc::channel(4);
     context.control.set_handler(move |event| {
         let event = match event {
