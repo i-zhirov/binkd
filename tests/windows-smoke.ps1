@@ -137,8 +137,9 @@ function Wait-NoProcess {
 function Assert-NoBusy {
     $busy = @(Get-ChildItem -LiteralPath $outbound, $inbound -Filter '*.bsy' `
             -Recurse -ErrorAction SilentlyContinue)
+    $busyNames = @($busy | ForEach-Object { $_.FullName })
     Assert-True -Condition ($busy.Count -eq 0) `
-        -Message "Busy files remain: $($busy.FullName -join ', ')"
+        -Message "Busy files remain: $($busyNames -join ', ')"
     Assert-True -Condition (-not (Test-Path -LiteralPath $pidFile)) `
         -Message "The pid file remains: $pidFile"
 }
