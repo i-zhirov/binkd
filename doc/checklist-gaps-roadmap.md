@@ -79,7 +79,7 @@ kilobyte/integer-division behavior, and make `minfree` and
 unit tests for the policy and a provider test with a real temporary
 directory, plus a corpus case for a non-negative `minfree`.
 
-- **Status:** In Progress
+- **Status:** Implemented
 - **Depends on:** —
 - **Requirements:** Checklist item 1; design §3 file-system effects,
   §4.1 equivalence policy

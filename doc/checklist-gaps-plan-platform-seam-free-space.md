@@ -5,7 +5,7 @@
 > Verify command passes.
 
 - **Date**: 2026-11-15
-- **Status**: In Progress
+- **Status**: Implemented
 - **Design**: [rust-rewrite-plan.md](rust-rewrite-plan.md)
 - **Roadmap**: [checklist-gaps-roadmap.md](checklist-gaps-roadmap.md) —
   slice: `platform-seam-free-space`
