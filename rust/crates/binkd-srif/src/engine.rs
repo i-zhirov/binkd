@@ -655,7 +655,10 @@ mod tests {
         let commands = commands.lock().unwrap().clone();
         assert_eq!(commands.len(), 1);
         let srf = dir.join("outb").join("13b7000d.srf");
-        assert_eq!(commands[0], format!("program -SRIF {}", srf.display()));
+        assert_eq!(
+            commands[0].replace('\\', "/"),
+            format!("program -SRIF {}", srf.display()).replace('\\', "/")
+        );
         // The request file holds the statements of the session. The C code
         // deletes the file at the end of the exchange, so the program of the
         // test reads it, the port of the ERP.
