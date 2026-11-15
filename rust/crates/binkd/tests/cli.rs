@@ -172,7 +172,11 @@ fn unknown_switch() {
 fn unknown_long_switch() {
     let (code, _out, err) = run_port(&["--other"], &corpus_dir());
     assert_eq!(code, 1);
-    assert!(err.ends_with("] binkd: --other: unknown command line switch\n"));
+    let name = binary().file_name().unwrap().to_string_lossy().into_owned();
+    assert!(
+        err.ends_with(&format!("] {name}: --other: unknown command line switch\n")),
+        "{err}"
+    );
 }
 
 #[test]

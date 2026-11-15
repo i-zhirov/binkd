@@ -623,8 +623,10 @@ static void run_op (char *args[], int n)
     /* The C code opens the temporary file by name. */
     snprintf (tmp, sizeof (tmp), "%s/%s", root, args[2]);
     strnzcpy (real, args[3], sizeof (real));
-    emitf ("check_pkthdr\t%s\t%d\t%s", args[1],
-            check_pkthdr (&session, args[1], tmp, real, &cfg), rel (real));
+    {
+      int result = check_pkthdr (&session, args[1], tmp, real, &cfg);
+      emitf ("check_pkthdr\t%s\t%d\t%s", args[1], result, rel (real));
+    }
   }
   else if (!strcmp (op, "process_hld"))
   {

@@ -134,7 +134,7 @@ jobs:
           cp mkfls/unix/* .
           chmod +x mkinstalldirs
           ./configure
-          make CFLAGS='-O2 -DPRTCLVER="1.0"'
+          make CFLAGS='-O2 -DPRTCLVER=\"1.0\"'
       - name: Run the protocol 1.0 interop tests
         env:
           BINKD_C_V10: ${{ github.workspace }}/binkd
