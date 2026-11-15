@@ -27,6 +27,11 @@ fn binary() -> PathBuf {
     PathBuf::from(env!("CARGO_BIN_EXE_binkd"))
 }
 
+/// Returns a path for a config line, with the separators of the config format.
+fn path_text(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Builds a config of the daemon for the test in a directory and answers its
 /// path.
 fn write_config(dir: &Path) -> String {
@@ -44,10 +49,10 @@ fn write_config(dir: &Path) -> String {
          loglevel 8\n\
          conlog 8\n\
          pid-file {}\n",
-        dir.join("outb").display(),
-        dir.join("in").display(),
-        dir.join("binkd.log").display(),
-        dir.join("binkd.pid").display()
+        path_text(&dir.join("outb")),
+        path_text(&dir.join("in")),
+        path_text(&dir.join("binkd.log")),
+        path_text(&dir.join("binkd.pid"))
     );
     let path = dir.join("binkd.conf");
     fs::write(&path, text).unwrap();
@@ -99,10 +104,10 @@ fn write_poll_config(dir: &Path, port: u16) -> String {
          loglevel 8\n\
          conlog 8\n\
          pid-file {}\n",
-        dir.join("outb").display(),
-        dir.join("in").display(),
-        dir.join("binkd.log").display(),
-        dir.join("binkd.pid").display()
+        path_text(&dir.join("outb")),
+        path_text(&dir.join("in")),
+        path_text(&dir.join("binkd.log")),
+        path_text(&dir.join("binkd.pid"))
     );
     let path = dir.join("binkd.conf");
     fs::write(&path, text).unwrap();
@@ -143,10 +148,10 @@ fn write_server_config(dir: &Path, port: u16) -> String {
          loglevel 8\n\
          conlog 8\n\
          pid-file {}\n",
-        dir.join("outb").display(),
-        dir.join("in").display(),
-        dir.join("binkd.log").display(),
-        dir.join("binkd.pid").display()
+        path_text(&dir.join("outb")),
+        path_text(&dir.join("in")),
+        path_text(&dir.join("binkd.log")),
+        path_text(&dir.join("binkd.pid"))
     );
     let path = dir.join("binkd.conf");
     fs::write(&path, text).unwrap();

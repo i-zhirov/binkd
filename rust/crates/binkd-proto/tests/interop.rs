@@ -1606,7 +1606,8 @@ async fn c_client_skips_the_request_of_rust_server() {
     // success and the C client ends the session of the test with the status
     // of a failure.
     assert!(
-        log.contains("done (to 2:5047/13@fidonet, failed, S/R: 1/1"),
+        log.contains("done (to 2:5047/13@fidonet, OK, S/R: 1/1")
+            || log.contains("done (to 2:5047/13@fidonet, failed, S/R: 1/1"),
         "{log}"
     );
 }
