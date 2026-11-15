@@ -59,7 +59,7 @@ test after the existing library-level matrix. This slice has no platform
 decision and closes checklist item 4 while the other slices are still
 unplanned.
 
-- **Status:** In Progress
+- **Status:** Implemented
 - **Depends on:** —
 - **Requirements:** Checklist item 4; design §4 Level 4, the
   `C | C`, `Rust | C`, and `C | Rust` rows
