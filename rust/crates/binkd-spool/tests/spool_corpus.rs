@@ -62,8 +62,8 @@ impl Runner {
         let root = self.root.to_string_lossy();
         let text = path.to_string_lossy();
         match text.strip_prefix(root.as_ref()) {
-            Some(rest) => rest.trim_start_matches('/').to_string(),
-            None => text.into_owned(),
+            Some(rest) => rest.trim_start_matches(['/', '\\']).replace('\\', "/"),
+            None => text.replace('\\', "/"),
         }
     }
 
