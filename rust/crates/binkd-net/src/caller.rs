@@ -432,6 +432,7 @@ impl Caller {
             };
             let mut settings = session_config(config, node.as_ref(), options.crypt, options.trace);
             settings.no_md5 = options.no_md5;
+            settings.free_space = options.free_space;
             // The port of `protocol()`: the caller sends the files of the
             // queue for the peer, the port of the scan of `q_scan_boxes()`.
             let files = files(&call.fa);

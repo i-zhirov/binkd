@@ -155,6 +155,7 @@ pub async fn listen(
         log.message(TRACE, &format!("started server #{count}"), &now());
         let mut settings = session_config(&config, None, options.crypt, options.trace);
         settings.no_md5 = options.no_md5;
+        settings.free_space = options.free_space;
         settings.max_servers = config.max_servers;
         settings.servers = count;
         let files = Arc::clone(&files);

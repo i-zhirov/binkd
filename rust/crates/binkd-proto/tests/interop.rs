@@ -171,6 +171,7 @@ fn session_config(
         addresses: vec![address(aka)],
         password: password.to_string(),
         inbound: dir.join("in"),
+        free_space: binkd_spool::inbound::assume_enough,
         spool: spool(dir),
         version: "rust-test/0.1".to_string(),
         blksize: 4096,

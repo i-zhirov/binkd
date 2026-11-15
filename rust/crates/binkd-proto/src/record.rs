@@ -380,6 +380,7 @@ mod tests {
             addresses: Vec::new(),
             password: String::new(),
             inbound: std::env::temp_dir(),
+            free_space: binkd_spool::inbound::assume_enough,
             spool: binkd_spool::config::SpoolConfig::new(),
             version: "test/1.0".to_string(),
             blksize: 4096,

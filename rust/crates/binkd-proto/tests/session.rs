@@ -52,6 +52,7 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         addresses: vec![address(aka)],
         password: password.to_string(),
         inbound: dir.to_path_buf(),
+        free_space: binkd_spool::inbound::assume_enough,
         spool: spool(dir),
         version: "test/1.0".to_string(),
         blksize: 4096,
@@ -194,6 +195,11 @@ async fn session(
         .await
     };
     tokio::join!(client, server)
+}
+
+/// Answers no free space for the provider test.
+fn no_space(_: &Path) -> u64 {
+    0
 }
 
 /// Makes a file of a size in a directory.
@@ -767,6 +773,53 @@ async fn session_with_multi_batch() {
     assert_eq!(client.files_received, 1);
     assert_eq!(client.received[0].netname, "13b70064.pkt");
     assert_eq!(client.received[0].size, 5);
+}
+
+/// The free-space provider of the settings reaches `inb_fopen()`: the receiver
+/// declines the file when the provider answers less than `minfree`.
+#[tokio::test]
+async fn the_free_space_provider_reaches_the_inbound() {
+    let client_dir = temp_dir("client-free-space");
+    let server_dir = temp_dir("server-free-space");
+    let out = temp_dir("out-free-space");
+    let client_out = out.join("client");
+    std::fs::create_dir_all(&client_out).unwrap();
+    let client_files = vec![make_file(&client_out, "13b7000d.pkt", 300)];
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "");
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "");
+    server_config.spool.minfree = 1;
+    server_config.spool.minfree_nonsecure = 1;
+    server_config.free_space = no_space;
+
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &client_files,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    let client = client.unwrap();
+    let server = server.unwrap();
+    assert_eq!(client.files_sent, 0, "{client:?}");
+    assert_eq!(server.files_received, 0, "{server:?}");
+    assert!(server.received.is_empty(), "{server:?}");
 }
 
 /// A session with a `skip` mask: the receiver declines the file with `M_SKIP`,

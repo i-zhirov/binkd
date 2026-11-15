@@ -7,6 +7,7 @@ use binkd_config::model::Config;
 use binkd_ftn::node::FtnNode;
 use binkd_proto::bw::{self, RateRule};
 use binkd_proto::{Methods, Protocol, SessionConfig, SkipRule, ZRule};
+use binkd_spool::inbound::{assume_enough, FreeSpaceFn};
 
 /// The settings of one session that a manager passes, the port of the parts of
 /// `STATE` that `do_server()` and `do_client()` set from the config.
@@ -24,6 +25,8 @@ pub struct SessionOptions {
     pub hooks: Option<binkd_proto::Factory>,
     /// Do not use CRAM-MD5, the port of `no_MD5` and of the `-m` switch.
     pub no_md5: bool,
+    /// The free-space provider of the inbound directories.
+    pub free_space: FreeSpaceFn,
 }
 
 impl SessionOptions {
@@ -35,12 +38,19 @@ impl SessionOptions {
             trace,
             hooks: None,
             no_md5: false,
+            free_space: assume_enough,
         }
     }
 
     /// Sets the source of the hooks of a session.
     pub fn with_hooks(mut self, hooks: binkd_proto::Factory) -> SessionOptions {
         self.hooks = Some(hooks);
+        self
+    }
+
+    /// Sets the free-space provider of the inbound directories.
+    pub fn with_free_space(mut self, provider: FreeSpaceFn) -> SessionOptions {
+        self.free_space = provider;
         self
     }
 }
@@ -92,6 +102,7 @@ pub fn session_config(
         addresses: config.spool.aka.clone(),
         password,
         inbound: std::path::PathBuf::from(&config.inbound),
+        free_space: assume_enough,
         version: mailer(),
         blksize: config.oblksize as usize,
         zminsize: config.zminsize.max(0) as u64,

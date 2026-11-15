@@ -77,6 +77,7 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         addresses: vec![address(aka)],
         password: String::new(),
         inbound: dir.join("in"),
+        free_space: binkd_spool::inbound::assume_enough,
         spool: spool(dir),
         version: "rust-test/0.1".to_string(),
         blksize: 4096,

@@ -44,6 +44,11 @@ fn address(s: &str, domains: &DomainTable) -> FtnAddr {
     FtnAddr::parse(s, domains).unwrap()
 }
 
+/// Answers no free space for the provider test.
+fn no_space(_: &Path) -> u64 {
+    0
+}
+
 fn time() -> DateTime {
     DateTime {
         epoch: 1_000_000_000,
@@ -81,6 +86,97 @@ fn packet(config: &mut Config, name: &str, content: &[u8], _node: &FtnAddr, now:
     let path = dir.join("outb").join(name);
     std::fs::write(&path, content).unwrap();
     let _queue = binkd_spool::queue::Queue::scan(&mut config.spool, now);
+}
+
+/// The free-space provider of the options reaches the listener session: the
+/// server declines the file when the provider answers less than `minfree`.
+#[tokio::test]
+async fn the_free_space_provider_of_the_options_reaches_the_session() {
+    use binkd_net::SessionOptions;
+    use std::sync::Mutex;
+
+    let server_dir = temp_dir("server-free-space");
+    let client_dir = temp_dir("client-free-space");
+    let log = Arc::new(Log::new(0, 0, "", Vec::new()));
+    let now = time;
+    let mut client_config = config(&client_dir, "2:5047/13@fidonet");
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet");
+    server_config.spool.minfree = 1;
+    server_config.spool.minfree_nonsecure = 1;
+
+    let server_aka = address("2:5047/100@fidonet", &server_config.spool.domains);
+    let port = {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().port()
+    };
+    server_config.listen = vec![binkd_config::model::ListenChain {
+        addr: "127.0.0.1".to_string(),
+        port: port.to_string(),
+    }];
+    client_config.spool.nodes.add(
+        &server_aka,
+        &NodeSpec {
+            hosts: Some(format!("127.0.0.1:{port}")),
+            ..NodeSpec::default()
+        },
+        now().epoch,
+    );
+    let content = vec![b'f'; 300];
+    packet(
+        &mut client_config,
+        "13b70064.cut",
+        &content,
+        &server_aka,
+        now().epoch,
+    );
+    let client_file = SendFile {
+        netname: "13b70064.cut".to_string(),
+        path: Some(client_dir.join("outb/13b70064.cut")),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    };
+
+    let received = Arc::new(Mutex::new(Vec::new()));
+    let server_received = Arc::clone(&received);
+    let server_log = Arc::clone(&log);
+    let server = tokio::spawn(binkd_net::listen(
+        server_config,
+        server_log,
+        now,
+        SessionOptions::new(Duration::from_secs(5), true, true).with_free_space(no_space),
+        |_| Vec::new(),
+        move |file| {
+            if let Ok(mut list) = server_received.lock() {
+                list.push(file.clone());
+            }
+            Ok(())
+        },
+    ));
+    let started = std::time::Instant::now();
+    while started.elapsed() < Duration::from_secs(5)
+        && tokio::net::TcpStream::connect(("127.0.0.1", port))
+            .await
+            .is_err()
+    {
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+
+    let mut caller = Caller::new();
+    let result = caller
+        .call_next(
+            &mut client_config,
+            &log,
+            &now,
+            SessionOptions::new(Duration::from_secs(5), true, true),
+            &|_| vec![client_file.clone()],
+        )
+        .await;
+    let report = result
+        .expect("the caller failed")
+        .expect("the session failed");
+    assert_eq!(report.files_sent, 0, "{report:?}");
+    assert!(received.lock().unwrap().is_empty());
+    server.abort();
 }
 
 #[tokio::test]

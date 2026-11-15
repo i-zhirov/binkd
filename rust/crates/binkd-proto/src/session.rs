@@ -22,7 +22,7 @@ use crate::frame::{self, Command, Frame};
 use crate::hooks::{
     FileVars, Handshake, Hooks, MessageSink, Opt, QueueFile, ReceivedVars, SentVars, SessionVars,
 };
-use binkd_spool::inbound::{FreeSpace, TFile};
+use binkd_spool::inbound::{FreeSpace, FreeSpaceFn, TFile};
 
 /// The role of the session.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -68,6 +68,9 @@ pub struct SessionConfig {
     pub password: String,
     /// The inbound directory of the session.
     pub inbound: PathBuf,
+    /// The provider of the free space of the inbound directories, in
+    /// kilobytes. The C code calls `getfree()` from the inbound code.
+    pub free_space: FreeSpaceFn,
     /// The name and the version of the mailer of the banner.
     pub version: String,
     /// The largest data block that we send, the port of `oblksize`.
@@ -648,6 +651,22 @@ impl<S> Session<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
+    /// Returns the free space of the inbound directories, the port of the
+    /// `getfree()` calls of `inb_fopen()`.
+    fn free_space_values(&self) -> FreeSpace {
+        let provider = self.config.free_space;
+        let inbound = provider(&self.config.inbound);
+        let temp_inbound = if self.config.spool.temp_inbound.is_empty() {
+            inbound
+        } else {
+            provider(Path::new(&self.config.spool.temp_inbound))
+        };
+        FreeSpace {
+            inbound,
+            temp_inbound,
+        }
+    }
+
     fn new(
         stream: S,
         role: Role,
@@ -1810,7 +1829,7 @@ where
                 let file = self.inbound.inb_fopen(
                     &tfile,
                     &self.config.spool,
-                    FreeSpace::default(),
+                    self.free_space_values(),
                     now,
                     &mut rnd,
                 );
