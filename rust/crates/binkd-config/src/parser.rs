@@ -852,7 +852,12 @@ impl<'a> Parser<'a> {
                     // The C code takes `s + 1`: the name after the separator.
                     let dir = String::from_utf8_lossy(&suffix[1..]).into_owned();
                     let cut = path.len() - suffix.len();
-                    (dir, path[..cut].to_string())
+                    let parent = if cut == 0 && path.starts_with('/') {
+                        "/".to_string()
+                    } else {
+                        path[..cut].to_string()
+                    };
+                    (dir, parent)
                 }
                 None => (path.clone(), ".".to_string()),
             };

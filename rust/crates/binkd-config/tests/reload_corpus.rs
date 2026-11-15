@@ -18,6 +18,11 @@ fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/config")
 }
 
+/// Normalizes the line endings of a dump.
+fn normalize(text: String) -> String {
+    text.replace("\r\n", "\n")
+}
+
 /// Copies the corpus into a temporary directory.
 fn copy_corpus(dir: &Path) -> PathBuf {
     let target = std::env::temp_dir().join(format!(
@@ -90,7 +95,8 @@ fn reload_corpus() {
 
         // The change of the file.
         change(&work, name);
-        let expected = fs::read_to_string(dir.join(format!("{name}.changed.expect"))).unwrap();
+        let expected =
+            normalize(fs::read_to_string(dir.join(format!("{name}.changed.expect"))).unwrap());
 
         // `SIGHUP` forces the reload.
         let mut reloader = Reloader::new(config.clone());
@@ -108,7 +114,7 @@ fn reload_corpus() {
             }
         };
         checks += 1;
-        let got = dump(&reloaded);
+        let got = normalize(dump(&reloaded));
         if got != expected {
             failures.push(format!(
                 "{name}: the dump of the reloaded config differs from the expectation"
@@ -150,7 +156,7 @@ fn reload_corpus() {
                 .current_dir(&work)
                 .output()
                 .expect("cannot run the C binary");
-            let c_dump = String::from_utf8_lossy(&out.stdout).into_owned();
+            let c_dump = normalize(String::from_utf8_lossy(&out.stdout).into_owned());
             if c_dump != expected {
                 failures.push(format!(
                     "{name}: the dump of the C binary differs from the expectation"

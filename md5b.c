@@ -35,6 +35,7 @@ documentation and/or software.
 #include "sys.h"
 #include "iphdr.h"
 #include "protoco2.h"
+#define PROTOTYPES 1
 #include "md5b.h"
 #include "tools.h"
 #include "server.h"

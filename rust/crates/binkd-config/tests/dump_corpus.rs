@@ -16,6 +16,11 @@ fn corpus_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../tests/golden/config")
 }
 
+/// Normalizes the line endings of a dump.
+fn normalize(text: String) -> String {
+    text.replace("\r\n", "\n")
+}
+
 /// Returns the difference of two dumps, line by line.
 fn diff(file: &Path, got: &str, want: &str) -> String {
     let mut report = format!("{}: FAIL\n", file.display());
@@ -47,7 +52,8 @@ fn dump_corpus() {
     let mut failures = Vec::new();
     for file in &files {
         let name = file.file_name().unwrap().to_string_lossy().into_owned();
-        let expected = fs::read_to_string(file.with_extension("expect")).unwrap_or_default();
+        let expected =
+            normalize(fs::read_to_string(file.with_extension("expect")).unwrap_or_default());
 
         // The dump of the port.
         let mut parser = Parser::new();
@@ -59,7 +65,7 @@ fn dump_corpus() {
                 continue;
             }
         };
-        let got = dump(&config);
+        let got = normalize(dump(&config));
         checks += 1;
         if got != expected {
             failures.push(diff(file, &got, &expected));
@@ -73,7 +79,7 @@ fn dump_corpus() {
                 .current_dir(&dir)
                 .output()
                 .expect("cannot run the C binary");
-            let c_dump = String::from_utf8_lossy(&out.stdout).into_owned();
+            let c_dump = normalize(String::from_utf8_lossy(&out.stdout).into_owned());
             if c_dump != expected {
                 failures.push(diff(file, &c_dump, &expected));
             }

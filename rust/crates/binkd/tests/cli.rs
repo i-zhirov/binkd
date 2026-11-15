@@ -23,6 +23,11 @@ fn c_binary() -> Option<PathBuf> {
     std::env::var("BINKD_C").ok().map(PathBuf::from)
 }
 
+/// Normalizes the line endings of the output of the C and Rust binaries.
+fn normalize(text: String) -> String {
+    text.replace("\r\n", "\n")
+}
+
 /// Runs a binary with the arguments in a directory, and answers the code, the
 /// standard output, and the standard error.
 fn run(program: &Path, args: &[&str], dir: &Path) -> (i32, String, String) {
@@ -33,8 +38,8 @@ fn run(program: &Path, args: &[&str], dir: &Path) -> (i32, String, String) {
         .expect("cannot run the binary");
     (
         out.status.code().unwrap_or(-1),
-        String::from_utf8_lossy(&out.stdout).into_owned(),
-        String::from_utf8_lossy(&out.stderr).into_owned(),
+        normalize(String::from_utf8_lossy(&out.stdout).into_owned()),
+        normalize(String::from_utf8_lossy(&out.stderr).into_owned()),
     )
 }
 
@@ -112,7 +117,7 @@ fn dump_with_d() {
     assert_eq!(code, 0);
     assert_eq!(
         out,
-        std::fs::read_to_string(dir.join("minimal.expect")).unwrap()
+        normalize(std::fs::read_to_string(dir.join("minimal.expect")).unwrap())
     );
     assert_eq!(err, "");
     if let Some(c) = c_binary() {
