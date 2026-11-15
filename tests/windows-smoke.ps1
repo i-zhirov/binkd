@@ -164,18 +164,25 @@ function Assert-LogNotContains {
 }
 
 New-Item -ItemType Directory -Path $outbound, $inbound -Force | Out-Null
+# The config format treats a backslash as an escape, so the Windows paths use
+# forward slashes, the form of the C sample configs.
+function ConvertTo-ConfigPath {
+    param([string]$Path)
+    return $Path.Replace('\', '/')
+}
+
 $configText = @"
-domain fidonet $outbound 2
+domain fidonet $(ConvertTo-ConfigPath $outbound) 2
 address 2:5047/100@fidonet
 sysname "Binkd smoke test"
 sysop "CI"
 location "CI"
 nodeinfo "115200,TCP,BINKP"
-inbound $inbound
-log $log
+inbound $(ConvertTo-ConfigPath $inbound)
+log $(ConvertTo-ConfigPath $log)
 loglevel 8
 conlog 8
-pid-file $pidFile
+pid-file $(ConvertTo-ConfigPath $pidFile)
 "@
 Set-Content -LiteralPath $config -Value $configText -Encoding Ascii
 
