@@ -135,9 +135,11 @@ mod tests {
 
     #[test]
     fn the_free_space_of_a_missing_directory() {
-        let dir =
-            std::env::temp_dir().join(format!("binkd-free-space-missing-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        assert_eq!(free_space(&dir), u64::MAX);
+        // A missing directory of an existing volume answers the volume on
+        // Windows, so the error path needs a missing drive.
+        assert_eq!(
+            free_space(Path::new("Z:/binkd-free-space-missing")),
+            u64::MAX
+        );
     }
 }
