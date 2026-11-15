@@ -1479,6 +1479,7 @@ mod tests {
     }
 
     fn base(dir: &str) -> String {
+        let dir = dir.replace('\\', "/");
         format!(
             "sysname test\nsysop test\nlocation test\nnodeinfo test\n\
              domain fidonet {dir} 2\naddress 2:5047/13@fidonet\ninbound {dir}\n"
@@ -1520,7 +1521,7 @@ mod tests {
     #[test]
     fn minimal_config() {
         let dir = std::env::temp_dir();
-        let dir = dir.to_string_lossy();
+        let dir = dir.to_string_lossy().replace('\\', "/");
         let path = write_case("minimal", &base(&dir));
         let config = parse(&path).unwrap();
         assert_eq!(config.sysname, "test");
@@ -1586,7 +1587,7 @@ mod tests {
     #[test]
     fn missing_required_value() {
         let dir = std::env::temp_dir();
-        let dir = dir.to_string_lossy();
+        let dir = dir.to_string_lossy().replace('\\', "/");
         let path = write_case(
             "missing",
             &format!("domain fidonet {dir} 2\naddress 2:5047/13@fidonet\n"),
@@ -1599,8 +1600,9 @@ mod tests {
     #[test]
     fn include_file() {
         let dir = std::env::temp_dir();
-        let dir = dir.to_string_lossy();
+        let dir = dir.to_string_lossy().replace('\\', "/");
         let included = write_case("included", "sysname from-include\n");
+        let included = included.replace('\\', "/");
         let text = format!(
             "include {included}\nsysop test\nlocation test\nnodeinfo test\n\
              domain fidonet {dir} 2\naddress 2:5047/13@fidonet\ninbound {dir}\n"
