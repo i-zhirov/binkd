@@ -367,10 +367,10 @@ fn stop_service(service: &ServiceHandle) -> Result<(), Error> {
     let mut status = SERVICE_STATUS::default();
     let ok = unsafe { ControlService(service.0, SERVICE_CONTROL_STOP, &mut status) };
     if ok == 0 {
-        let code = unsafe { GetLastError() };
-        if code != ERROR_SERVICE_NOT_ACTIVE {
-            return Err(Error::Windows(code));
-        }
+        // The C code of `stop_service()` reports success when `ControlService()`
+        // fails, and the caller observes the state. The control pipe of the
+        // service can break while the service stops, the error 109.
+        return Ok(());
     }
     wait(service, SERVICE_STOP_PENDING, SERVICE_STOPPED)
 }
