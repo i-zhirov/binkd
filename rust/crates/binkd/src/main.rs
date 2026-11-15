@@ -143,7 +143,9 @@ fn run_service_daemon(context: binkd_win::service::ServiceContext) -> i32 {
         let event = match event {
             binkd_win::service::Event::Stop => daemon::Event::Exit(0),
         };
-        let _ = sender.blocking_send(event);
+        // The control handler can run on the thread of the runtime, so it
+        // must not block. A full channel holds a stop of the daemon already.
+        let _ = sender.try_send(event);
     });
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
