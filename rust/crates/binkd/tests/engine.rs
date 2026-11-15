@@ -26,6 +26,11 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
+/// Returns a path for a config line, with the separators of the config format.
+fn path_text(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
+}
+
 /// Writes a config and parses it.
 fn config(dir: &Path, aka: &str, port: u16, node: Option<&str>) -> Config {
     let outbound = dir.join("outb");
@@ -51,9 +56,9 @@ fn config(dir: &Path, aka: &str, port: u16, node: Option<&str>) -> Config {
          conlog 6\n\
          timeout 2s\n\
          {listen}{node}",
-        outbound.display(),
-        inbound.display(),
-        dir.join("binkd.log").display()
+        path_text(&outbound),
+        path_text(&inbound),
+        path_text(&dir.join("binkd.log"))
     );
     let path = dir.join("binkd.conf");
     fs::write(&path, text).unwrap();
