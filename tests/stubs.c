@@ -13,6 +13,8 @@
  *  the config, the network, and the process managers.
  */
 
+#include <limits.h>
+
 #include "sys.h"
 #include "tools.h"
 #include "readcfg.h"
@@ -29,13 +31,14 @@ int mypid = 0;
 int ext_rand = 0;
 
 /*
- * common.h: the free space of a directory. The tests run without the
- * `minfree` check, so the stub never runs.
+ * common.h: the free space of a directory. The tests assume enough space
+ * for the `minfree` cases, and the C code uses `ULONG_MAX` for a failed
+ * query.
  */
 unsigned long getfree (char *path)
 {
   (void) path;
-  return 0;
+  return ULONG_MAX;
 }
 
 /*

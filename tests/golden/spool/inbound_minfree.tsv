@@ -1,0 +1,16 @@
+# crate: binkd-spool
+# case: inbound_minfree
+#
+# `inb_fopen()` checks a non-negative `minfree` against the free space.
+config	domain	fidonet	outb	2
+config	aka	2:5047/13@fidonet
+config	scalar	minfree	10
+config	scalar	minfree_nonsecure	10
+setup	dir	outb
+setup	dir	in
+setup	session	nonsecure	in
+setup	session	aka	2:5047/13@fidonet
+setup	session	nfa	1
+op	inb_fopen	13b70064.pkt	1	1000000000
+---
+inb_fopen	13b70064.pkt	1

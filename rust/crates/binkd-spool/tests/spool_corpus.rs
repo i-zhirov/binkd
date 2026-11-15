@@ -482,7 +482,12 @@ impl Runner {
                     time: args[3].parse().unwrap_or(0),
                     start: 0,
                 };
-                let free = binkd_spool::inbound::FreeSpace::default();
+                // The C runner reads the real free space; the test supplies
+                // enough for the non-negative `minfree` cases.
+                let free = binkd_spool::inbound::FreeSpace {
+                    inbound: u64::MAX,
+                    temp_inbound: u64::MAX,
+                };
                 let mut rnd = || 0u32;
                 let ok = self
                     .session

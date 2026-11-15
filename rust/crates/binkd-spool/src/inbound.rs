@@ -61,6 +61,17 @@ pub struct FreeSpace {
     pub temp_inbound: u64,
 }
 
+/// Returns the free space of a directory in kilobytes.
+///
+/// The platform layer of the binary supplies the provider; the port keeps
+/// the policy in this crate.
+pub type FreeSpaceFn = fn(&Path) -> u64;
+
+/// Answers enough space, the C value of a failed `getfree()`.
+pub fn assume_enough(_: &Path) -> u64 {
+    u64::MAX
+}
+
 /// The result of `find_tmp_name()`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum TmpName {
@@ -729,6 +740,7 @@ impl Inbound {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     #[test]
     fn postfix_names() {
@@ -764,5 +776,137 @@ mod tests {
         let mut pos = name.len() - 4;
         assert!(next_inb_filename(&mut name, &mut pos, RenameStyle::Body));
         assert_eq!(name, b"fil0.pkt");
+    }
+
+    fn case(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("binkd-inbound-{}-{name}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn inbound(dir: &Path) -> Inbound {
+        Inbound {
+            dir: dir.to_string_lossy().into_owned(),
+            secure: true,
+            fa: Vec::new(),
+            nfa: 0,
+            skip_all_flag: false,
+        }
+    }
+
+    fn file() -> TFile {
+        TFile {
+            netname: "13b70064.pkt".to_string(),
+            size: 1,
+            time: 1_000_000_000,
+            start: 0,
+        }
+    }
+
+    #[test]
+    fn the_minfree_rejects_a_small_disk() {
+        let dir = case("minfree-reject");
+        let inbound = inbound(&dir);
+        let mut config = SpoolConfig::new();
+        config.minfree = 11;
+        let free = FreeSpace {
+            inbound: 10,
+            temp_inbound: 10,
+        };
+        let mut rnd = || 0x1234_5678u32;
+        assert!(inbound
+            .inb_fopen(&file(), &config, free, 1_000_000_000, &mut rnd)
+            .is_none());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_minfree_allows_a_large_disk() {
+        let dir = case("minfree-allow");
+        let inbound = inbound(&dir);
+        let mut config = SpoolConfig::new();
+        config.minfree = 11;
+        let free = FreeSpace {
+            inbound: 12,
+            temp_inbound: 12,
+        };
+        let mut rnd = || 0x1234_5678u32;
+        assert!(inbound
+            .inb_fopen(&file(), &config, free, 1_000_000_000, &mut rnd)
+            .is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_minfree_nonsecure_holds_its_rule() {
+        let dir = case("minfree-nonsecure");
+        let inbound = Inbound {
+            secure: false,
+            ..inbound(&dir)
+        };
+        let mut config = SpoolConfig::new();
+        config.minfree = 0;
+        config.minfree_nonsecure = 11;
+        let mut n = 0u32;
+        let mut rnd = || {
+            n += 1;
+            0x1234_5678u32 + n
+        };
+        let small = FreeSpace {
+            inbound: 11,
+            temp_inbound: 11,
+        };
+        assert!(inbound
+            .inb_fopen(&file(), &config, small, 1_000_000_000, &mut rnd)
+            .is_none());
+        let large = FreeSpace {
+            inbound: 12,
+            temp_inbound: 12,
+        };
+        assert!(inbound
+            .inb_fopen(&file(), &config, large, 1_000_000_000, &mut rnd)
+            .is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_temp_inbound_takes_the_minimum() {
+        let dir = case("temp-inbound");
+        let temp = dir.join("tmp");
+        fs::create_dir_all(&temp).unwrap();
+        let temp = temp.to_string_lossy().into_owned();
+        let inbound = Inbound {
+            dir: temp.clone(),
+            ..inbound(&dir)
+        };
+        let mut config = SpoolConfig::new();
+        config.minfree = 10;
+        config.temp_inbound = temp;
+        let mut n = 0u32;
+        let mut rnd = || {
+            n += 1;
+            0x1234_5678u32 + n
+        };
+        let small = FreeSpace {
+            inbound: 100,
+            temp_inbound: 5,
+        };
+        assert!(inbound
+            .inb_fopen(&file(), &config, small, 1_000_000_000, &mut rnd)
+            .is_none());
+        let large = FreeSpace {
+            inbound: 100,
+            temp_inbound: 100,
+        };
+        assert!(inbound
+            .inb_fopen(&file(), &config, large, 1_000_000_000, &mut rnd)
+            .is_some());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_assumed_space_is_unlimited() {
+        assert_eq!(assume_enough(Path::new(".")), u64::MAX);
     }
 }
