@@ -1,0 +1,170 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test the workspace
+        run: cd rust && cargo test --workspace
+      - name: Lint the workspace
+        run: cd rust && cargo clippy --workspace --all-targets -- -D warnings
+      - name: Check the format
+        run: cd rust && cargo fmt --check
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+      - name: Check the minimum supported Rust version
+        run: cd rust && cargo +1.85.0 check --workspace
+
+  c:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Test the C reference
+        run: make -C tests
+
+  perl:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install the Perl headers
+        run: sudo apt-get update && sudo apt-get install -y libperl-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test the Perl hooks of the crate
+        run: cd rust/crates/binkd-perl && cargo test -- --test-threads=1
+      - name: Build the C oracle
+        run: |
+          cp mkfls/unix/* .
+          chmod +x mkinstalldirs
+          ./configure --with-perl
+          make
+      - name: Test the hooks with the C oracle
+        env:
+          BINKD_C_PERL: ${{ github.workspace }}/binkd
+        run: |
+          cd rust
+          cargo test -p binkd --features perl -- --test-threads=1
+
+  interop:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the C compression headers
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
+      - name: Build the C reference
+        run: |
+          cp mkfls/unix/* .
+          chmod +x mkinstalldirs
+          ./configure
+          make
+      - name: Run the C and Rust interop suite
+        env:
+          BINKD_C: ${{ github.workspace }}/binkd
+        run: |
+          cd rust
+          cargo test -p binkd-proto --test interop
+          cargo test -p binkd-net --test interop
+          cargo test -p binkd-proto --test record
+          cargo test -p binkd-config --test dump_corpus
+          cargo test -p binkd-config --test reload_corpus
+          cargo test -p binkd --test cli
+          cargo test -p binkd --test daemon
+      - name: Run the binary interop suite
+        env:
+          BINKD_C: ${{ github.workspace }}/binkd
+        run: cd rust && cargo test -p binkd --test interop_binary
+
+  interop-proxy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the C compression headers
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
+      - name: Build the C reference with the proxy
+        run: |
+          cp mkfls/unix/* .
+          chmod +x mkinstalldirs
+          ./configure --with-proxy --with-ntlm
+          make
+      - name: Run the proxy interop suite
+        env:
+          BINKD_C_PROXY: ${{ github.workspace }}/binkd
+        run: cd rust && cargo test -p binkd-net --test proxy_interop
+
+  interop-bwlim:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the C compression headers
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
+      - name: Build the C reference with the rate limit
+        run: |
+          cp mkfls/unix/* .
+          chmod +x mkinstalldirs
+          ./configure --with-bwlim
+          make
+      - name: Run the rate limit interop test
+        env:
+          BINKD_C_BWLIM: ${{ github.workspace }}/binkd
+        run: |
+          cd rust
+          cargo test -p binkd-proto --test interop rust_client_to_c_server_rate_limited
+
+  interop-v10:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the C compression headers
+        run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
+      - name: Build the C reference of protocol 1.0
+        run: |
+          cp mkfls/unix/* .
+          chmod +x mkinstalldirs
+          ./configure
+          make CFLAGS='-O2 -DPRTCLVER="1.0"'
+      - name: Run the protocol 1.0 interop tests
+        env:
+          BINKD_C_V10: ${{ github.workspace }}/binkd
+        run: |
+          cd rust
+          cargo test -p binkd-proto --test interop c_client_claims_freq_to_rust_server
+          cargo test -p binkd-proto --test interop c_client_skips_the_request_of_rust_server
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test the workspace
+        run: cd rust && cargo test --workspace
+      - name: Lint the workspace
+        run: cd rust && cargo clippy --workspace --all-targets -- -D warnings
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check the service mode
+        run: cd rust && cargo check -p binkd-win -p binkd
+      - name: Lint the service mode
+        run: cd rust && cargo clippy -p binkd-win -p binkd --all-targets -- -D warnings
+      - name: Test the workspace
+        run: cd rust && cargo test --workspace
+      - name: Build the release binary
+        run: cd rust && cargo build --release -p binkd
+      - name: Run the Windows service smoke test
+        run: pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1

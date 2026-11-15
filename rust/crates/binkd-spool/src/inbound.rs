@@ -193,6 +193,16 @@ fn parse_u64(s: &[u8]) -> u64 {
     text.parse().unwrap_or(0)
 }
 
+/// The names of a complete inbound file before the rename, the port of the
+/// `tmp_name` and `real_name` values of `inb_done()`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InboundDone {
+    /// The partial file, the port of `$tmpfile`.
+    pub tmp: String,
+    /// The real name, the port of `$file`.
+    pub real: String,
+}
+
 impl Inbound {
     /// Returns the directory that holds the partial files.
     fn partial_dir<'a>(&'a self, config: &'a SpoolConfig) -> &'a str {
@@ -438,18 +448,20 @@ impl Inbound {
         }
     }
 
-    /// Renames a complete file to its real name.
+    /// Finds the partial file and the real name before the rename, the first
+    /// part of `inb_done()`.
     ///
-    /// The port of `inb_done()`. Returns the real name, or `None` when the
-    /// rename failed. The caller runs the events and the counters.
-    pub fn inb_done(
-        &mut self,
+    /// The hook of `after_recv()` runs between this call and
+    /// [`Inbound::inb_done_prepared`], the port of the `perl_after_recv()`
+    /// call of `inb_done()`.
+    pub fn inb_prepare(
+        &self,
         file: &TFile,
-        config: &mut SpoolConfig,
+        config: &SpoolConfig,
         now: i64,
         rnd: &mut dyn FnMut() -> u32,
-    ) -> Option<String> {
-        let tmp_name = match self.find_tmp_name(Some(file), config, now, rnd) {
+    ) -> Option<InboundDone> {
+        let tmp = match self.find_tmp_name(Some(file), config, now, rnd) {
             TmpName::Found(path) => path,
             _ => return None,
         };
@@ -458,7 +470,33 @@ impl Inbound {
         let mut base = strdequote(netname.as_bytes());
         makeinboundcase(&mut base, config.inboundcase);
         strwipe(&mut base);
-        let mut real_name = format!("{}/{}", self.dir, String::from_utf8_lossy(&base));
+        let real = format!("{}/{}", self.dir, String::from_utf8_lossy(&base));
+        Some(InboundDone { tmp, real })
+    }
+
+    /// Removes the partial file of a file that the hook took over, the port of
+    /// the `sdelete()` calls of `inb_done()`.
+    pub fn inb_discard(&self, done: &InboundDone) {
+        remove_hr(&done.tmp);
+    }
+
+    /// Renames a prepared complete file to its real name.
+    ///
+    /// The port of the second part of `inb_done()`. Returns the real name, or
+    /// `None` when the rename failed. The caller runs the events and the
+    /// counters.
+    pub fn inb_done_prepared(
+        &mut self,
+        done: InboundDone,
+        file: &TFile,
+        config: &mut SpoolConfig,
+        now: i64,
+    ) -> Option<String> {
+        let InboundDone {
+            tmp: tmp_name,
+            real: mut real_name,
+        } = done;
+        let netname = file.netname.clone();
 
         if mask_test(&netname, &config.overwrite).is_some()
             && !ispkt(netname.as_bytes())
@@ -552,6 +590,21 @@ impl Inbound {
         let _ = fs::remove_file(format!("{base}.hr"));
 
         Some(real_name)
+    }
+
+    /// Renames a complete file to its real name.
+    ///
+    /// The port of `inb_done()`. Returns the real name, or `None` when the
+    /// rename failed. The caller runs the events and the counters.
+    pub fn inb_done(
+        &mut self,
+        file: &TFile,
+        config: &mut SpoolConfig,
+        now: i64,
+        rnd: &mut dyn FnMut() -> u32,
+    ) -> Option<String> {
+        let done = self.inb_prepare(file, config, now, rnd)?;
+        self.inb_done_prepared(done, file, config, now)
     }
 
     /// Returns true when the packet header holds one of our addresses.

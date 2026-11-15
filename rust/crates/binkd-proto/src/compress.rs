@@ -83,6 +83,11 @@ impl Methods {
         self.0 |= method.code();
     }
 
+    /// Returns the bit mask of the methods, the port of `z_cansend`.
+    pub fn bits(self) -> u32 {
+        self.0
+    }
+
     /// Reports whether the set holds the method.
     pub fn contains(self, method: Method) -> bool {
         self.0 & method.code() != 0

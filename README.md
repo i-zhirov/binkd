@@ -6,39 +6,55 @@ FTN-based (Fido Technology Network) networks.
 
 ## Compiling
 
-The Rust port of the mailer, the workspace of `rust/`, targets UNIX and Windows.
-OS/2, DOS, and Amiga are out of scope for the port: the C code keeps the three
-systems and the reference of the port, the decision of
-`doc/decisions/legacy-platforms.md`. The C code builds the three from the same
-sources, and the port holds no support of them.
+The Rust workspace in `rust/` is the default build. The C code stays in the
+tree as the reference and the build of OS/2, DOS, Amiga, and Windows 9x/Me,
+the decision of `doc/decisions/legacy-platforms.md`.
+
+### Rust (default)
+
+Build the binary:
+
+`cd rust && cargo build --release -p binkd`
+
+The binary is `rust/target/release/binkd`.
+
+The Windows port supports Windows NT and later, including the service mode,
+the decision of `doc/decisions/windows-support.md`. The tray icon is not
+supported, and Windows 9x/Me is out of scope.
+
+### C reference
+
+The C code is the reference and the oracle of the tests. It also builds the
+legacy platforms.
 
 non-UNIX:
 
-1. Find in mkfls/ a subdirectory for your system/compiler, copy all files 
+1. Find in mkfls/ a subdirectory for your system/compiler, copy all files
    to the root of the sources.
 2. Run make (nmake, wmake or gmake, name of make's binary is rely with C
    compiler).
 
 UNIXes:
 
-1.) Clone the repo: 
+1. Clone the repo:
 
 `$ git clone https://github.com/pgul/binkd`
 
-2.) Change into the new binkd source directory:
+2. Change into the new binkd source directory:
 
 `$ cd binkd`
 
-3.) Copy all files from mkfls/unix/ to the root of binkd sources:
+3. Copy all files from mkfls/unix/ to the root of binkd sources:
 
 `cp mkfls/unix/* .`
 
-2.) Run configure and make:
+4. Run configure and make:
 
 `$ ./configure`
 `$ make`
 
-3.) When finished, the following instructions will be displayed offering various options for you:
+5. When finished, the following instructions will be displayed offering various
+   options for you:
 
 ```
  Binkd is successfully compiled.
@@ -58,8 +74,31 @@ UNIXes:
 
 ## Installation
 
-1. Edit sample binkd.cfg.
-2. Run binkd.
+1. Copy the sample config: `binkd.conf` on UNIX or `binkd.cfg` on Windows.
+2. Edit the config.
+3. Run the binary with the config as the last argument:
+   `rust/target/release/binkd binkd.conf` for the Rust default, or
+   `./binkd binkd.conf` for the C reference build.
+
+On Windows, install and control the service with the same binary:
+
+```
+binkd -t install binkd.conf
+binkd -t start|stop|restart|status|uninstall
+```
+
+`-S name` sets the service name. The service mode holds the `nt/service.c`
+behavior of the C code.
+
+## Port status
+
+- The Rust binary is the default on UNIX and Windows NT and later.
+- The Windows service mode is implemented; the tray icon is not supported.
+- OS/2, DOS, Amiga, and Windows 9x/Me are C-only platforms. The C code is the
+  reference and the oracle of the tests.
+
+The records are in `doc/decisions/`: `legacy-platforms.md` and
+`windows-support.md`.
 
 ## More info
 

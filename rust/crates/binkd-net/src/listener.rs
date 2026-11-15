@@ -7,8 +7,9 @@ use std::sync::Arc;
 use binkd_config::model::Config;
 use binkd_ftn::addr::FtnAddr;
 use binkd_log::{DateTime, Log, CONNECTION, ERROR, INFO, TRACE};
-use binkd_proto::{run_with, ReceivedFile, Role, SendFile};
+use binkd_proto::{run_with_hooks, ReceivedFile, Role, SendFile};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::task::JoinHandle;
 
 use crate::session::{session_config, SessionOptions};
 
@@ -89,6 +90,18 @@ pub async fn bind(
 /// The `files` closure gives the outgoing files of a peer, the port of the scan
 /// of the queue of `protocol()`, and `receive` runs for every file that a
 /// session receives.
+/// Aborts the accept tasks when the listener ends, the port of the socket
+/// close of `do_server()`.
+struct AbortOnDrop(Vec<JoinHandle<()>>);
+
+impl Drop for AbortOnDrop {
+    fn drop(&mut self) {
+        for task in &self.0 {
+            task.abort();
+        }
+    }
+}
+
 pub async fn listen(
     config: Config,
     log: Arc<Log>,
@@ -105,11 +118,12 @@ pub async fn listen(
     // connections to one loop.
     let (sender, mut accepted) =
         tokio::sync::mpsc::channel::<(TcpStream, std::net::SocketAddr)>(16);
+    let mut acceptors = Vec::new();
     for listener in listeners {
         let sender = sender.clone();
         let log = Arc::clone(&log);
         let now = Arc::clone(&now);
-        tokio::spawn(async move {
+        acceptors.push(tokio::spawn(async move {
             loop {
                 match listener.accept().await {
                     Ok((stream, addr)) => {
@@ -129,8 +143,9 @@ pub async fn listen(
                     }
                 }
             }
-        });
+        }));
     }
+    let _acceptors = AbortOnDrop(acceptors);
     let receive = Arc::new(receive);
     let files = Arc::new(files);
     while let Some((stream, addr)) = accepted.recv().await {
@@ -139,6 +154,7 @@ pub async fn listen(
         let count = sessions.fetch_add(1, Ordering::SeqCst) + 1;
         log.message(TRACE, &format!("started server #{count}"), &now());
         let mut settings = session_config(&config, None, options.crypt, options.trace);
+        settings.no_md5 = options.no_md5;
         settings.max_servers = config.max_servers;
         settings.servers = count;
         let files = Arc::clone(&files);
@@ -148,17 +164,31 @@ pub async fn listen(
         let now = Arc::clone(&now);
         let config = config.clone();
         let server_log = Arc::clone(&log);
+        let local = stream.local_addr().ok();
+        let info = binkd_proto::SessionInfo {
+            peer_host: addr.ip().to_string(),
+            peer_ip: addr.ip().to_string(),
+            our_ip: local.map(|addr| addr.ip().to_string()).unwrap_or_default(),
+            our_port: local.map(|addr| addr.port() as i32).unwrap_or(0),
+            traffic_mail: 0,
+            traffic_file: 0,
+        };
+        // The hooks of this session, the port of `perl_init_clone()` of
+        // `server.c`.
+        let hooks = options.hooks.as_ref().and_then(|factory| factory());
         tokio::spawn(async move {
             // The SRIF events of the session, the port of the calls of
             // `protocol.c` to `srif.c`.
             let mut srif = crate::srif::Events::new(&config, addr, server_log, now());
-            let result = run_with(
+            let result = run_with_hooks(
                 stream,
                 Role::Server,
                 &settings,
                 &mut |peer| files(peer),
                 &mut |file| receive(file),
                 &mut srif,
+                info,
+                hooks,
                 options.timeout,
             )
             .await;

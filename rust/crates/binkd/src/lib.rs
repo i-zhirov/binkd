@@ -4,14 +4,16 @@
 //!
 //! The library form is the product and the binary is a thin wrapper. The
 //! caller of the library creates one value per instance, and no function of the
-//! library ends the process. The port of this slice holds the command line,
-//! the paths that end before the daemon, and the daemon startup with the
-//! signals and the pid file: the managers, the config reload of the running
-//! daemon, and the external program start arrive with the next slices.
+//! library ends the process or installs a signal handler. The crate holds the
+//! command line, the startup order of the daemon, the managers of `server.c`
+//! and of `client.c` through `Engine`, the config reload, the external program
+//! start, and the Windows service values.
 
 pub mod cli;
 pub mod daemon;
 pub mod engine;
+#[cfg(feature = "perl")]
+mod perl;
 pub mod pipe;
 pub mod platform;
 pub mod start;

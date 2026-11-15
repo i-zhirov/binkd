@@ -10,7 +10,7 @@ use binkd_proto::{Methods, Protocol, SessionConfig, SkipRule, ZRule};
 
 /// The settings of one session that a manager passes, the port of the parts of
 /// `STATE` that `do_server()` and `do_client()` set from the config.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone)]
 pub struct SessionOptions {
     /// The time that a session waits for the peer, the port of `nettimeout`.
     pub timeout: Duration,
@@ -20,6 +20,10 @@ pub struct SessionOptions {
     /// The session records its frames, the port of the frame log of the C code at
     /// the loglevel 10.
     pub trace: bool,
+    /// The source of the hooks of a session, or `None`.
+    pub hooks: Option<binkd_proto::Factory>,
+    /// Do not use CRAM-MD5, the port of `no_MD5` and of the `-m` switch.
+    pub no_md5: bool,
 }
 
 impl SessionOptions {
@@ -29,7 +33,15 @@ impl SessionOptions {
             timeout,
             crypt,
             trace,
+            hooks: None,
+            no_md5: false,
         }
+    }
+
+    /// Sets the source of the hooks of a session.
+    pub fn with_hooks(mut self, hooks: binkd_proto::Factory) -> SessionOptions {
+        self.hooks = Some(hooks);
+        self
     }
 }
 
@@ -59,17 +71,18 @@ pub fn session_config(
     crypt: bool,
     trace: bool,
 ) -> SessionConfig {
-    let (password, nr, nd, listed, skip) = match node {
+    let (password, nr, nd, listed, skip, md_flag) = match node {
         Some(node) => (
             node.pwd.clone(),
             node.wants_nr(),
             node.wants_nd(),
             true,
             node_skip(config, node),
+            node.md_flag,
         ),
         // The C code holds no password for a session that the peer called
         // until it reads the password of the node from the address.
-        None => (String::new(), false, false, false, Vec::new()),
+        None => (String::new(), false, false, false, Vec::new(), 0),
     };
     SessionConfig {
         sysname: config.sysname.clone(),
@@ -86,6 +99,8 @@ pub fn session_config(
         zrules: config.zrules.iter().map(zrule).collect(),
         methods: Methods::all(),
         crypt,
+        no_md5: false,
+        md_flag,
         nr,
         nd,
         domains: config.spool.domains.clone(),

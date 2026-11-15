@@ -4,12 +4,14 @@
 //! exchange the banner, the password, and one file in each direction.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
 use binkd_proto::{
-    run, run_with, Method, Methods, Protocol, Report, Role, SendFile, SessionConfig, Srif, ZRule,
+    run, run_with, Error, Method, Methods, Protocol, Report, Role, SendFile, SessionConfig, Srif,
+    ZRule,
 };
 
 /// The settings of the spool of a test.
@@ -61,6 +63,8 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         }],
         methods,
         crypt: true,
+        no_md5: false,
+        md_flag: 0,
         nr: false,
         nd: false,
         domains: binkd_ftn::domain::DomainTable::new(Vec::new()),
@@ -139,10 +143,7 @@ async fn the_rate_limit_of_a_file() {
     let _ = server.expect("the server failed");
     assert_eq!(report.files_sent, 1);
     // The file arrived in full, and the limit held the transfer.
-    assert_eq!(
-        std::fs::read(server_dir.join("13b70064.pkt")).unwrap(),
-        content
-    );
+    assert_eq!(std::fs::read(server_dir.join("rate.pkt")).unwrap(), content);
     assert!(elapsed.as_millis() >= 500, "{elapsed:?}");
 }
 
@@ -1049,4 +1050,1387 @@ async fn the_srif_events_of_a_session() {
     assert_eq!(received.len(), 1, "{received:?}");
     assert_eq!(received[0].netname, "13b70064.pkt");
     assert_eq!(*finished.lock().unwrap(), 1);
+}
+
+/// The hooks of the test of the message queue: `on_handshake` queues a `M_NUL`
+/// with the sink that the session supplies, the port of `msg_send2()`.
+#[derive(Default)]
+struct QueuingHooks {
+    sink: Mutex<Option<binkd_proto::MessageSink>>,
+}
+
+impl binkd_proto::Hooks for QueuingHooks {
+    fn set_message_sink(&self, sink: Option<binkd_proto::MessageSink>) {
+        if let Ok(mut slot) = self.sink.lock() {
+            *slot = sink;
+        }
+    }
+
+    fn on_handshake(&self, _vars: &mut binkd_proto::Handshake) -> Option<String> {
+        if let Ok(slot) = self.sink.lock() {
+            if let Some(sink) = slot.as_ref() {
+                sink(0, "OPT HOOK");
+            }
+        }
+        None
+    }
+}
+
+#[tokio::test]
+async fn a_hook_message_reaches_the_peer() {
+    let client_dir = temp_dir("sink-client");
+    let server_dir = temp_dir("sink-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    server_config.trace = true;
+    let hooks = Arc::new(QueuingHooks::default());
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    let server = server.unwrap();
+    let names: Vec<&str> = server.frames.iter().map(|f| f.name.as_str()).collect();
+    assert!(names.contains(&"NUL OPT"), "{names:?}");
+}
+
+/// The hooks of the test of the session values.
+#[derive(Default)]
+struct ValueHooks {
+    values: Mutex<Option<binkd_proto::SessionVars>>,
+}
+
+impl binkd_proto::Hooks for ValueHooks {
+    fn after_handshake(&self, vars: &binkd_proto::SessionVars) -> Option<String> {
+        if let Ok(mut slot) = self.values.lock() {
+            *slot = Some(vars.clone());
+        }
+        None
+    }
+}
+
+#[tokio::test]
+async fn the_no_md5_option_disables_the_challenge() {
+    let client_dir = temp_dir("no-md5-client");
+    let server_dir = temp_dir("no-md5-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    server_config.no_md5 = true;
+    let hooks = Arc::new(ValueHooks::default());
+    let values = Arc::clone(&hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    assert!(server.is_ok(), "{server:?}");
+    let values = values
+        .values
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the handshake hook saw no values");
+    assert_eq!(values.opt.md, 0);
+}
+
+#[tokio::test]
+async fn the_node_that_requires_md5_fails_without_a_challenge() {
+    let client_dir = temp_dir("must-md5-client");
+    let server_dir = temp_dir("must-md5-server");
+    let mut client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    client_config.md_flag = binkd_ftn::node::MD_ON;
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    server_config.no_md5 = true;
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let (client, _server) = tokio::join!(client, server);
+    assert!(matches!(client, Err(Error::Md5Required)), "{client:?}");
+}
+
+#[tokio::test]
+async fn the_session_values_reach_the_hook() {
+    let client_dir = temp_dir("values-client");
+    let server_dir = temp_dir("values-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config_with(&server_dir, "2:5047/100@fidonet", "secret", Methods::all());
+    let sysname = server_config.sysname.clone();
+    let sysop = server_config.sysop.clone();
+    let location = server_config.location.clone();
+    let hooks = Arc::new(ValueHooks::default());
+    let values = Arc::clone(&hooks);
+    let info = binkd_proto::SessionInfo {
+        peer_host: "peer.example".to_string(),
+        peer_ip: "192.0.2.1".to_string(),
+        our_ip: "198.51.100.2".to_string(),
+        our_port: 24554,
+        traffic_mail: 100,
+        traffic_file: 200,
+    };
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            info,
+            Some(hooks),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    assert!(server.is_ok(), "{server:?}");
+    let values = values
+        .values
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the hook saw no values");
+    assert!(values.start > 0, "{values:?}");
+    assert_eq!(values.host, "peer.example");
+    assert_eq!(values.ip, "192.0.2.1");
+    assert_eq!(values.our_ip, "198.51.100.2");
+    assert_eq!(values.our_port, 24554);
+    assert_eq!(values.sysname, sysname);
+    assert_eq!(values.sysop, sysop);
+    assert_eq!(values.location, location);
+    assert_eq!(values.opt.gz, 3);
+    assert_eq!(values.opt.md, 1);
+    assert_eq!(values.opt.crypt, 1);
+    assert_eq!(values.opt.nd, 0);
+    assert_eq!(values.opt.nr, 0);
+    assert_eq!(values.traffic_mail, 100);
+    assert_eq!(values.traffic_file, 200);
+    assert_eq!(values.z_send, 0);
+    assert_eq!(values.z_recv, 0);
+}
+
+/// The hooks of the test of the traffic of the queue.
+#[derive(Default)]
+struct AfterSentHooks {
+    values: Mutex<Option<binkd_proto::SessionVars>>,
+    before: Mutex<Option<binkd_proto::SessionVars>>,
+}
+
+impl binkd_proto::Hooks for AfterSentHooks {
+    fn before_send(
+        &self,
+        vars: &binkd_proto::SessionVars,
+        _file: &mut binkd_proto::FileVars,
+    ) -> i32 {
+        if let Ok(mut slot) = self.before.lock() {
+            if slot.is_none() {
+                *slot = Some(vars.clone());
+            }
+        }
+        0
+    }
+
+    fn after_sent(
+        &self,
+        vars: &binkd_proto::SessionVars,
+        _file: &mut binkd_proto::SentVars,
+    ) -> i32 {
+        if let Ok(mut slot) = self.values.lock() {
+            *slot = Some(vars.clone());
+        }
+        0
+    }
+}
+
+#[tokio::test]
+async fn the_traffic_of_the_files_reaches_the_hook() {
+    let client_dir = temp_dir("traffic-client");
+    let server_dir = temp_dir("traffic-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let packet = vec![b'p'; 100];
+    let file = vec![b'f'; 200];
+    let packet_path = client_dir.join("13b70064.pkt");
+    let file_path = client_dir.join("13b70064.cut");
+    std::fs::write(&packet_path, &packet).unwrap();
+    std::fs::write(&file_path, &file).unwrap();
+    let packet_file = packet_path.display().to_string();
+    let file_file = file_path.display().to_string();
+    let sends = vec![
+        SendFile {
+            netname: "13b70064.pkt".to_string(),
+            path: Some(packet_path),
+            size: packet.len() as u64,
+            time: 1_000_000_000,
+        },
+        SendFile {
+            netname: "13b70064.cut".to_string(),
+            path: Some(file_path),
+            size: file.len() as u64,
+            time: 1_000_000_000,
+        },
+    ];
+    let hooks = Arc::new(AfterSentHooks::default());
+    let values = Arc::clone(&hooks);
+    let before = Arc::clone(&hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| sends.clone(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    assert!(server.is_ok(), "{server:?}");
+    let values = values
+        .values
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the hook saw no values");
+    assert_eq!(values.traffic_mail, 100);
+    assert_eq!(values.traffic_file, 200);
+    // The C code frees the queue of the session when it sent every file, so
+    // the hook of a sent file holds no queue. The hook before the send holds
+    // the queue, the port of `setup_queue()` of `perl_before_send()`.
+    assert!(values.queue.is_empty(), "{values:?}");
+    let before = before
+        .before
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the send hook ran no queue");
+    assert_eq!(before.queue.len(), 2);
+    assert_eq!(before.queue[0].file, packet_file);
+    assert_eq!(before.queue[0].size, 100);
+    assert_eq!(before.queue[0].time, 1_000_000_000);
+    assert_eq!(before.queue[0].sent, 1);
+    assert_eq!(before.queue[0].flvr, 'f');
+    assert_eq!(before.queue[0].action, '\0');
+    assert_eq!(before.queue[0].type_, 'm');
+    assert_eq!(
+        before.queue[0].addr.format(false),
+        address("2:5047/100@fidonet").format(false)
+    );
+    assert_eq!(before.queue[1].file, file_file);
+    assert_eq!(before.queue[1].size, 200);
+    assert_eq!(before.queue[1].type_, '\0');
+}
+
+/// The hooks of the test of the queue rebuild: the script changes `@queue`
+/// in `before_send()`, the port of `refresh_queue()` of `perlhooks.c`.
+struct RebuildHooks {
+    file: PathBuf,
+    size: u64,
+    time: i64,
+    added: AtomicBool,
+    queue: Mutex<Option<Vec<binkd_proto::QueueFile>>>,
+}
+
+impl binkd_proto::Hooks for RebuildHooks {
+    fn before_send(
+        &self,
+        vars: &binkd_proto::SessionVars,
+        _file: &mut binkd_proto::FileVars,
+    ) -> i32 {
+        // The session writes the queue into `@queue` before the hook, so the
+        // script starts from the current queue.
+        let mut queue = vars.queue.clone();
+        if !self.added.swap(true, Ordering::SeqCst) {
+            queue.push(binkd_proto::QueueFile {
+                file: self.file.display().to_string(),
+                size: self.size,
+                time: self.time,
+                sent: 0,
+                flvr: 'f',
+                action: '\0',
+                type_: '\0',
+                addr: address("2:5047/100@fidonet"),
+            });
+        }
+        if let Ok(mut slot) = self.queue.lock() {
+            *slot = Some(queue);
+        }
+        0
+    }
+
+    fn refresh_queue(&self, _fallback: &FtnAddr) -> Option<Vec<binkd_proto::QueueFile>> {
+        self.queue.lock().ok().and_then(|slot| slot.clone())
+    }
+}
+
+#[tokio::test]
+async fn the_hook_rebuilds_the_session_files() {
+    let client_dir = temp_dir("rebuild-client");
+    let server_dir = temp_dir("rebuild-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let first = vec![b'f'; 100];
+    let second = vec![b's'; 200];
+    let first_path = client_dir.join("13b70064.pkt");
+    let second_path = client_dir.join("13b70065.pkt");
+    std::fs::write(&first_path, &first).unwrap();
+    std::fs::write(&second_path, &second).unwrap();
+    let sends = vec![SendFile {
+        netname: "13b70064.pkt".to_string(),
+        path: Some(first_path),
+        size: first.len() as u64,
+        time: 1_000_000_000,
+    }];
+    let hooks = Arc::new(RebuildHooks {
+        file: second_path,
+        size: second.len() as u64,
+        time: 1_000_000_001,
+        added: AtomicBool::new(false),
+        queue: Mutex::new(None),
+    });
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| sends.clone(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    let client = client.unwrap();
+    let server = server.unwrap();
+    // The script added the second file to the queue, so the session sent it.
+    assert_eq!(client.files_sent, 2);
+    assert_eq!(server.received.len(), 2, "{:?}", server.received);
+    let mut got_first = false;
+    let mut got_second = false;
+    for file in &server.received {
+        let content = std::fs::read(&file.path).unwrap();
+        if content == first {
+            got_first = true;
+        }
+        if content == second {
+            got_second = true;
+        }
+    }
+    assert!(got_first, "{:?}", server.received);
+    assert!(got_second, "{:?}", server.received);
+}
+
+/// The hooks of the test of the order of `after_recv()`: the hook sees the
+/// partial file and the real name before the rename, the port of the call of
+/// `perl_after_recv()` of `inb_done()`.
+struct AfterRecvOrderHooks {
+    tmp: Mutex<Option<String>>,
+    file: Mutex<Option<String>>,
+    tmp_there: AtomicBool,
+    file_there: AtomicBool,
+    target: String,
+}
+
+impl binkd_proto::Hooks for AfterRecvOrderHooks {
+    fn after_recv(
+        &self,
+        _vars: &binkd_proto::SessionVars,
+        file: &mut binkd_proto::ReceivedVars,
+    ) -> i32 {
+        if let Ok(mut slot) = self.tmp.lock() {
+            *slot = Some(file.tmp.clone());
+        }
+        if let Ok(mut slot) = self.file.lock() {
+            *slot = Some(file.file.clone());
+        }
+        self.tmp_there
+            .store(std::path::Path::new(&file.tmp).exists(), Ordering::SeqCst);
+        self.file_there
+            .store(std::path::Path::new(&file.file).exists(), Ordering::SeqCst);
+        file.file = self.target.clone();
+        0
+    }
+}
+
+#[tokio::test]
+async fn the_hook_of_after_recv_runs_before_the_rename() {
+    let client_dir = temp_dir("after-recv-order-client");
+    let server_dir = temp_dir("after-recv-order-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let packet = vec![b'p'; 100];
+    let expected = packet.clone();
+    let size = packet.len() as u64;
+    let path = client_dir.join("13b70064.pkt");
+    std::fs::write(&path, &packet).unwrap();
+    let target = server_dir.join("hooked.pkt").display().to_string();
+    let hooks = Arc::new(AfterRecvOrderHooks {
+        tmp: Mutex::new(None),
+        file: Mutex::new(None),
+        tmp_there: AtomicBool::new(false),
+        file_there: AtomicBool::new(false),
+        target: target.clone(),
+    });
+    let values = Arc::clone(&hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &[SendFile {
+                netname: "13b70064.pkt".to_string(),
+                path: Some(path),
+                size,
+                time: 1_000_000_000,
+            }],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    let server = server.unwrap();
+    // The hook saw the partial file, which exists, and the real name, which
+    // does not exist before the rename, the C order of `inb_done()`.
+    let tmp = values.tmp.lock().unwrap().clone().expect("no tmp");
+    let file = values.file.lock().unwrap().clone().expect("no file");
+    assert!(tmp.ends_with(".dt"), "{tmp}");
+    assert!(values.tmp_there.load(Ordering::SeqCst), "{tmp}");
+    assert!(!values.file_there.load(Ordering::SeqCst), "{file}");
+    assert_ne!(tmp, file);
+    // The hook changed the real name, and the session renamed the file there.
+    assert_eq!(server.received.len(), 1, "{:?}", server.received);
+    assert_eq!(server.received[0].path, std::path::PathBuf::from(&target));
+    assert_eq!(std::fs::read(&target).unwrap(), expected);
+    assert!(!server_dir.join("13b70064.pkt").exists());
+}
+
+/// The hooks of the test of the deletion in `after_recv()`: the first hook adds
+/// an entry that the session does not send, the second hook deletes it, the
+/// port of `refresh_queue()` of `perlhooks.c`.
+struct AfterRecvRemoveHooks {
+    received: AtomicUsize,
+    queue: Mutex<Option<Vec<binkd_proto::QueueFile>>>,
+    before_second: Mutex<Option<binkd_proto::SessionVars>>,
+    after_session: Mutex<Option<binkd_proto::SessionVars>>,
+}
+
+impl binkd_proto::Hooks for AfterRecvRemoveHooks {
+    fn before_recv(&self, vars: &binkd_proto::SessionVars, _file: &binkd_proto::FileVars) -> i32 {
+        // The second file sees the queue that the first `after_recv()` left.
+        if self.received.load(Ordering::SeqCst) == 1 {
+            if let Ok(mut slot) = self.before_second.lock() {
+                *slot = Some(vars.clone());
+            }
+        }
+        0
+    }
+
+    fn after_recv(
+        &self,
+        _vars: &binkd_proto::SessionVars,
+        _file: &mut binkd_proto::ReceivedVars,
+    ) -> i32 {
+        let n = self.received.fetch_add(1, Ordering::SeqCst);
+        let queue = if n == 0 {
+            // The entry is marked sent, so the session sends no file, and the
+            // queue stays for the second hook.
+            vec![binkd_proto::QueueFile {
+                file: "/tmp/never.cut".to_string(),
+                size: 10,
+                time: 1,
+                sent: 1,
+                flvr: 'f',
+                action: '\0',
+                type_: '\0',
+                addr: address("2:5047/100@fidonet"),
+            }]
+        } else {
+            Vec::new()
+        };
+        if let Ok(mut slot) = self.queue.lock() {
+            *slot = Some(queue);
+        }
+        0
+    }
+
+    fn refresh_queue(&self, _fallback: &FtnAddr) -> Option<Vec<binkd_proto::QueueFile>> {
+        self.queue.lock().ok().and_then(|slot| slot.clone())
+    }
+
+    fn after_session(&self, vars: &binkd_proto::SessionVars, _ok: bool) {
+        if let Ok(mut slot) = self.after_session.lock() {
+            *slot = Some(vars.clone());
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_hook_removes_a_file_of_after_recv() {
+    let client_dir = temp_dir("after-recv-client");
+    let server_dir = temp_dir("after-recv-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let first = vec![b'1'; 100];
+    let second = vec![b'2'; 200];
+    let first_path = client_dir.join("13b70064.pkt");
+    let second_path = client_dir.join("13b70065.pkt");
+    std::fs::write(&first_path, &first).unwrap();
+    std::fs::write(&second_path, &second).unwrap();
+    let sends = vec![
+        SendFile {
+            netname: "13b70064.pkt".to_string(),
+            path: Some(first_path),
+            size: first.len() as u64,
+            time: 1_000_000_000,
+        },
+        SendFile {
+            netname: "13b70065.pkt".to_string(),
+            path: Some(second_path),
+            size: second.len() as u64,
+            time: 1_000_000_000,
+        },
+    ];
+    let hooks = Arc::new(AfterRecvRemoveHooks {
+        received: AtomicUsize::new(0),
+        queue: Mutex::new(None),
+        before_second: Mutex::new(None),
+        after_session: Mutex::new(None),
+    });
+    let values = Arc::clone(&hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &sends,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    let server = server.unwrap();
+    assert_eq!(server.received.len(), 2, "{:?}", server.received);
+    // The first `after_recv()` added the entry and the session refreshed the
+    // queue, so the second `before_recv()` sees it.
+    let before = values
+        .before_second
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the second before_recv saw no values");
+    assert_eq!(before.queue.len(), 1, "{before:?}");
+    assert_eq!(before.queue[0].file, "/tmp/never.cut");
+    // The second `after_recv()` deleted the entry and the session refreshed
+    // the queue, so the end of the session holds no queue.
+    let after = values
+        .after_session
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the session saw no values");
+    assert!(after.queue.is_empty(), "{after:?}");
+}
+
+/// The hooks of the test of the action of `after_sent()`: the script sets
+/// `$action` from the name of the file, the port of `perl_after_sent()`.
+struct ActionHooks;
+
+impl binkd_proto::Hooks for ActionHooks {
+    fn after_sent(
+        &self,
+        _vars: &binkd_proto::SessionVars,
+        file: &mut binkd_proto::SentVars,
+    ) -> i32 {
+        file.action = if file.name.contains("delete") {
+            'd'
+        } else if file.name.contains("truncate") {
+            't'
+        } else if file.name.contains("kill") {
+            's'
+        } else {
+            '\0'
+        };
+        1
+    }
+}
+
+#[tokio::test]
+async fn the_action_of_after_sent_changes_the_spool() {
+    let client_dir = temp_dir("action-client");
+    let server_dir = temp_dir("action-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let delete = vec![b'd'; 100];
+    let truncate = vec![b't'; 200];
+    let kill = vec![b'k'; 300];
+    let delete_path = client_dir.join("delete.pkt");
+    let truncate_path = client_dir.join("truncate.pkt");
+    let kill_path = client_dir.join("kill.pkt");
+    std::fs::write(&delete_path, &delete).unwrap();
+    std::fs::write(&truncate_path, &truncate).unwrap();
+    std::fs::write(&kill_path, &kill).unwrap();
+    let sends = vec![
+        SendFile {
+            netname: "delete.pkt".to_string(),
+            path: Some(delete_path.clone()),
+            size: delete.len() as u64,
+            time: 1_000_000_000,
+        },
+        SendFile {
+            netname: "truncate.pkt".to_string(),
+            path: Some(truncate_path.clone()),
+            size: truncate.len() as u64,
+            time: 1_000_000_000,
+        },
+        SendFile {
+            netname: "kill.pkt".to_string(),
+            path: Some(kill_path.clone()),
+            size: kill.len() as u64,
+            time: 1_000_000_000,
+        },
+    ];
+    let hooks = Arc::new(ActionHooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| sends.clone(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    let client = client.unwrap();
+    let server = server.unwrap();
+    assert_eq!(client.files_sent, 3);
+    assert_eq!(server.received.len(), 3, "{:?}", server.received);
+    // `d` removes the file at once.
+    assert!(
+        !delete_path.exists(),
+        "{} still exists",
+        delete_path.display()
+    );
+    // `t` truncates the file.
+    assert_eq!(std::fs::metadata(&truncate_path).unwrap().len(), 0);
+    // `s` removes the file at the end of a successful session.
+    assert!(!kill_path.exists(), "{} still exists", kill_path.display());
+}
+
+/// The hooks of the test of the answerer side of `on_handshake()`: the hook
+/// runs after the `ADR` of the caller, so it sees the caller's address.
+#[derive(Default)]
+struct AnswererHandshakeHooks {
+    he: Mutex<Option<Vec<FtnAddr>>>,
+    traffic: Mutex<Option<(u64, u64)>>,
+}
+
+impl binkd_proto::Hooks for AnswererHandshakeHooks {
+    fn on_handshake(&self, vars: &mut binkd_proto::Handshake) -> Option<String> {
+        if let Ok(mut slot) = self.he.lock() {
+            *slot = Some(vars.he.clone());
+        }
+        if let Ok(mut slot) = self.traffic.lock() {
+            *slot = Some((vars.traffic_mail, vars.traffic_file));
+        }
+        vars.me = Some(vec![address("2:5047/200@fidonet")]);
+        vars.password = Some("hook-secret".to_string());
+        None
+    }
+}
+
+#[tokio::test]
+async fn the_answerer_runs_on_handshake_after_the_adr() {
+    let client_dir = temp_dir("answerer-hook-client");
+    let server_dir = temp_dir("answerer-hook-server");
+    // The client sends the password that the hook expects. The server config
+    // holds another password, so the hook must set the one the check uses.
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "hook-secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let hooks = Arc::new(AnswererHandshakeHooks::default());
+    let values = Arc::clone(&hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    let client = client.unwrap();
+    let _ = server.unwrap();
+    // The hook ran after the `ADR` of the caller, so it saw the caller's
+    // address, the C order of `ADR()`.
+    let he = values
+        .he
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the hook saw no addresses");
+    assert_eq!(he.len(), 1, "{he:?}");
+    assert_eq!(he[0].format(false), "2:5047/13@fidonet");
+    // The hook replaced our address and the password, and the session used
+    // both.
+    assert!(
+        client
+            .peer_addresses
+            .iter()
+            .any(|fa| fa.format(false) == "2:5047/200@fidonet"),
+        "{:?}",
+        client.peer_addresses
+    );
+    // The answerer scanned the queue for the caller before the hook, the port
+    // of `q_scan_addrs()` of `perl_on_handshake()`.
+    let traffic = values
+        .traffic
+        .lock()
+        .unwrap()
+        .expect("the hook saw no traffic");
+    assert_eq!(traffic, (0, 0));
+}
+
+/// The hooks of the test of the two parts of `msg_send2()`: the C code splits
+/// some messages and the hook reads `$s1` and `$s2`.
+#[derive(Default)]
+struct SendSplitHooks {
+    calls: Mutex<Vec<(binkd_proto::Command, String, String)>>,
+}
+
+impl binkd_proto::Hooks for SendSplitHooks {
+    fn on_send(
+        &self,
+        _vars: &binkd_proto::SessionVars,
+        command: binkd_proto::Command,
+        s1: &str,
+        s2: &str,
+    ) {
+        if let Ok(mut calls) = self.calls.lock() {
+            calls.push((command, s1.to_string(), s2.to_string()));
+        }
+    }
+}
+
+#[tokio::test]
+async fn the_hook_sees_the_two_parts_of_the_message() {
+    let client_dir = temp_dir("send-split-client");
+    let server_dir = temp_dir("send-split-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let sysname = client_config.sysname.clone();
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let hooks = Arc::new(SendSplitHooks::default());
+    let values = Arc::clone(&hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    assert!(server.is_ok(), "{server:?}");
+    let calls = values.calls.lock().unwrap();
+    assert!(
+        calls
+            .iter()
+            .any(|(command, s1, s2)| *command == binkd_proto::Command::Nul
+                && s1 == "SYS "
+                && s2 == &sysname),
+        "{calls:?}"
+    );
+    assert!(
+        calls
+            .iter()
+            .any(|(command, s1, s2)| *command == binkd_proto::Command::Nul
+                && s1 == "OPT"
+                && s2.starts_with(" EXTCMD")),
+        "{calls:?}"
+    );
+}
+
+/// The hooks of the test of the queue of `before_recv()`: the C code does not
+/// refresh the queue after the hook, so a change of `@queue` has no effect.
+struct BeforeRecvHooks {
+    pending: AtomicBool,
+    refreshed: AtomicBool,
+}
+
+impl binkd_proto::Hooks for BeforeRecvHooks {
+    fn before_recv(&self, _vars: &binkd_proto::SessionVars, _file: &binkd_proto::FileVars) -> i32 {
+        self.pending.store(true, Ordering::SeqCst);
+        0
+    }
+
+    fn after_recv(
+        &self,
+        _vars: &binkd_proto::SessionVars,
+        _file: &mut binkd_proto::ReceivedVars,
+    ) -> i32 {
+        self.pending.store(false, Ordering::SeqCst);
+        0
+    }
+
+    fn refresh_queue(&self, _fallback: &FtnAddr) -> Option<Vec<binkd_proto::QueueFile>> {
+        // The C `perl_before_recv()` does not call `refresh_queue()`, so a
+        // refresh while the hook runs is a difference of the port.
+        if self.pending.load(Ordering::SeqCst) {
+            self.refreshed.store(true, Ordering::SeqCst);
+        }
+        Some(Vec::new())
+    }
+}
+
+#[tokio::test]
+async fn the_session_does_not_refresh_the_queue_of_before_recv() {
+    let client_dir = temp_dir("before-recv-client");
+    let server_dir = temp_dir("before-recv-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let content = vec![b'r'; 100];
+    let path = client_dir.join("13b70064.cut");
+    std::fs::write(&path, &content).unwrap();
+    let sends = vec![SendFile {
+        netname: "13b70064.cut".to_string(),
+        path: Some(path),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+    let hooks = Arc::new(BeforeRecvHooks {
+        pending: AtomicBool::new(false),
+        refreshed: AtomicBool::new(false),
+    });
+    let values = Arc::clone(&hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &sends,
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    let server = server.unwrap();
+    // The session refreshed the queue only after the hook, the port of the C
+    // code, so the change of the hook had no effect.
+    assert!(
+        !values.refreshed.load(Ordering::SeqCst),
+        "the session refreshed the queue of before_recv"
+    );
+    assert_eq!(server.received.len(), 1, "{:?}", server.received);
+    assert_eq!(std::fs::read(&server.received[0].path).unwrap(), content);
+}
+
+/// The hooks of the test of the queue of `after_sent()`: the C code does not
+/// refresh the queue after the hook, so a change of `@queue` has no effect.
+struct AfterSentQueueHooks {
+    pending: AtomicBool,
+    refreshed: AtomicBool,
+    sent: AtomicBool,
+}
+
+impl binkd_proto::Hooks for AfterSentQueueHooks {
+    fn after_sent(
+        &self,
+        _vars: &binkd_proto::SessionVars,
+        _file: &mut binkd_proto::SentVars,
+    ) -> i32 {
+        self.pending.store(true, Ordering::SeqCst);
+        self.sent.store(true, Ordering::SeqCst);
+        0
+    }
+
+    fn refresh_queue(&self, _fallback: &FtnAddr) -> Option<Vec<binkd_proto::QueueFile>> {
+        // The C `perl_after_sent()` does not call `refresh_queue()`, so a
+        // refresh after the hook is a difference of the port.
+        if self.pending.load(Ordering::SeqCst) {
+            self.refreshed.store(true, Ordering::SeqCst);
+        }
+        Some(Vec::new())
+    }
+}
+
+#[tokio::test]
+async fn the_session_does_not_refresh_the_queue_of_after_sent() {
+    let client_dir = temp_dir("after-sent-client");
+    let server_dir = temp_dir("after-sent-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let content = vec![b's'; 100];
+    let path = client_dir.join("13b70064.pkt");
+    std::fs::write(&path, &content).unwrap();
+    let sends = vec![SendFile {
+        netname: "13b70064.pkt".to_string(),
+        path: Some(path),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+    let hooks = Arc::new(AfterSentQueueHooks {
+        pending: AtomicBool::new(false),
+        refreshed: AtomicBool::new(false),
+        sent: AtomicBool::new(false),
+    });
+    let values = Arc::clone(&hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| sends.clone(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    let client = client.unwrap();
+    let _ = server.unwrap();
+    assert!(values.sent.load(Ordering::SeqCst));
+    assert!(
+        !values.refreshed.load(Ordering::SeqCst),
+        "the session refreshed the queue of after_sent"
+    );
+    assert_eq!(client.files_sent, 1);
+}
+
+/// The hooks of the test of the removal from the queue: the script deletes
+/// the other entry of `@queue` in `before_send()`, the port of
+/// `refresh_queue()` of `perlhooks.c`.
+struct RemoveHooks {
+    removed: AtomicBool,
+    queue: Mutex<Option<Vec<binkd_proto::QueueFile>>>,
+}
+
+impl binkd_proto::Hooks for RemoveHooks {
+    fn before_send(
+        &self,
+        vars: &binkd_proto::SessionVars,
+        file: &mut binkd_proto::FileVars,
+    ) -> i32 {
+        let mut queue = vars.queue.clone();
+        if !self.removed.swap(true, Ordering::SeqCst) {
+            // The script keeps the file in transfer and deletes every other
+            // entry of the queue.
+            queue.retain(|entry| entry.file == file.path);
+        }
+        if let Ok(mut slot) = self.queue.lock() {
+            *slot = Some(queue);
+        }
+        0
+    }
+
+    fn refresh_queue(&self, _fallback: &FtnAddr) -> Option<Vec<binkd_proto::QueueFile>> {
+        self.queue.lock().ok().and_then(|slot| slot.clone())
+    }
+}
+
+#[tokio::test]
+async fn the_hook_removes_a_file_from_the_session() {
+    let client_dir = temp_dir("remove-client");
+    let server_dir = temp_dir("remove-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    let keep = vec![b'k'; 100];
+    let removed = vec![b'x'; 200];
+    let keep_path = client_dir.join("13b70064.pkt");
+    let removed_path = client_dir.join("13b70065.pkt");
+    std::fs::write(&keep_path, &keep).unwrap();
+    std::fs::write(&removed_path, &removed).unwrap();
+    let sends = vec![
+        SendFile {
+            netname: "13b70064.pkt".to_string(),
+            path: Some(keep_path),
+            size: keep.len() as u64,
+            time: 1_000_000_000,
+        },
+        SendFile {
+            netname: "13b70065.pkt".to_string(),
+            path: Some(removed_path),
+            size: removed.len() as u64,
+            time: 1_000_000_000,
+        },
+    ];
+    let hooks = Arc::new(RemoveHooks {
+        removed: AtomicBool::new(false),
+        queue: Mutex::new(None),
+    });
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| sends.clone(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(hooks),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(5),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    let client = client.unwrap();
+    let server = server.unwrap();
+    // The script deleted the second entry, so the session sent one file only.
+    assert_eq!(client.files_sent, 1);
+    assert_eq!(server.received.len(), 1, "{:?}", server.received);
+    let received = std::fs::read(&server.received[0].path).unwrap();
+    assert_eq!(received, keep);
+    assert_ne!(received, removed);
+}
+
+/// The hooks of the test of the compression counters.
+#[derive(Default)]
+struct CompressionHooks {
+    sent: Mutex<Option<binkd_proto::SessionVars>>,
+    received: Mutex<Option<binkd_proto::SessionVars>>,
+}
+
+impl binkd_proto::Hooks for CompressionHooks {
+    fn after_sent(
+        &self,
+        vars: &binkd_proto::SessionVars,
+        _file: &mut binkd_proto::SentVars,
+    ) -> i32 {
+        if let Ok(mut slot) = self.sent.lock() {
+            *slot = Some(vars.clone());
+        }
+        0
+    }
+
+    fn after_recv(
+        &self,
+        vars: &binkd_proto::SessionVars,
+        _file: &mut binkd_proto::ReceivedVars,
+    ) -> i32 {
+        if let Ok(mut slot) = self.received.lock() {
+            *slot = Some(vars.clone());
+        }
+        0
+    }
+}
+
+#[tokio::test]
+async fn the_compression_counters_reach_the_hooks() {
+    let client_dir = temp_dir("compression-client");
+    let server_dir = temp_dir("compression-server");
+    let client_config = config_with(&client_dir, "2:5047/13@fidonet", "secret", Methods::all());
+    let server_config = config_with(&server_dir, "2:5047/100@fidonet", "secret", Methods::all());
+    let content = vec![b'z'; 5000];
+    let path = client_dir.join("13b70064.pkt");
+    std::fs::write(&path, &content).unwrap();
+    let sends = vec![SendFile {
+        netname: "13b70064.pkt".to_string(),
+        path: Some(path),
+        size: content.len() as u64,
+        time: 1_000_000_000,
+    }];
+    let client_hooks = Arc::new(CompressionHooks::default());
+    let server_hooks = Arc::new(CompressionHooks::default());
+    let client_values = Arc::clone(&client_hooks);
+    let server_values = Arc::clone(&server_hooks);
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+    let client = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &mut |_| sends.clone(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(client_hooks),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let server = async move {
+        let mut srif = binkd_proto::NoSrif;
+        binkd_proto::run_with_hooks(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &mut |_| Vec::new(),
+            &mut |_| Ok(()),
+            &mut srif,
+            binkd_proto::SessionInfo::default(),
+            Some(server_hooks),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    assert!(server.is_ok(), "{server:?}");
+    let sent = client_values
+        .sent
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the send hook saw no values");
+    let received = server_values
+        .received
+        .lock()
+        .unwrap()
+        .clone()
+        .expect("the recv hook saw no values");
+    assert!(sent.z_send > 0, "{sent:?}");
+    assert_eq!(sent.z_send, received.z_recv);
 }

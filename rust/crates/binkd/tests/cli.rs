@@ -67,7 +67,7 @@ fn version_shape(line: &str) -> Option<(String, String, String)> {
 fn usage_with_h() {
     let (code, out, _err) = run_port(&["-h"], &corpus_dir());
     assert_eq!(code, 1);
-    assert_eq!(out, binkd::cli::USAGE);
+    assert_eq!(out, binkd::cli::usage());
     if let Some(c) = c_binary() {
         let (c_code, c_out, _err) = run(&c, &["-h"], &corpus_dir());
         assert_eq!(c_code, code);
@@ -141,7 +141,7 @@ fn check_with_n() {
 fn usage_without_arguments() {
     let (code, out, _err) = run_port(&[], &corpus_dir());
     assert_eq!(code, 1);
-    assert_eq!(out, binkd::cli::USAGE);
+    assert_eq!(out, binkd::cli::usage());
     if let Some(c) = c_binary() {
         let (c_code, c_out, _err) = run(&c, &[], &corpus_dir());
         assert_eq!(c_code, code);

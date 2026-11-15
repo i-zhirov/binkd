@@ -1,4 +1,9 @@
-//! The FFI of the Perl hooks of binkd, the port of `perlhooks.c`.
+//! The Perl hooks of binkd, the port of `perlhooks.c`.
+//!
+//! The crate holds a Rust port of the hooks and a minimal C shim of the Perl C
+//! API. The shim holds the macros of the stack of Perl, the lifecycle of the
+//! interpreter, and the XS functions that call the Rust logic. The hook logic
+//! follows `perlhooks.c` function by function.
 //!
 //! The C code links the hooks only with `./configure --with-perl`, whose default
 //! is no, and no test of the C tree names a hook. The crate is optional: the
@@ -7,12 +12,16 @@
 //! exception of the lint `unsafe_code`, the decision of
 //! `doc/decisions/perl-hooks.md`.
 //!
-//! The port follows the C `perlhooks.c` function by function, and the behaviour of
-//! every hook is pinned by the cases of `crates/binkd/tests/perl.rs` against the
-//! oracle of `--with-perl`.
+//! The behaviour of every hook is pinned by the cases of
+//! `crates/binkd/tests/perl.rs` against the oracle of `--with-perl`.
+
+mod xs;
 
 pub mod bridge;
 pub mod ffi;
 pub mod hooks;
 
-pub use hooks::Hooks;
+pub use hooks::{
+    Call, CallError, File, Handshake, Hooks, LogHook, LogSink, MessageSink, Opt, Options,
+    QueueFile, Received, Sent, SessionVars,
+};

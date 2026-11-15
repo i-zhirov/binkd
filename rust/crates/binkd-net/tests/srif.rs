@@ -7,6 +7,8 @@
 //! the external program of the test, the port of an external FREQ processor, and the
 //! caller receives the file that the program answered.
 
+#![cfg(unix)]
+
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;

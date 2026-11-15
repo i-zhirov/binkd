@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use binkd_ftn::addr::FtnAddr;
 use binkd_ftn::domain::FtnDomain;
-use binkd_ftn::node::{NodeSpec, AF_UNSPEC, USE_OLD};
+use binkd_ftn::node::{NodeSpec, AF_UNSPEC, HC_USE_OLD, MD_USE_OLD, USE_OLD};
 use binkd_ftn::text::{last_slash, InbCase};
 use binkd_ftn::token::{getwordx2, GWX_HASH, GWX_SUBST};
 use binkd_spool::config::{addrtype, RenameStyle};
@@ -906,8 +906,8 @@ impl<'a> Parser<'a> {
         let mut i = 0usize;
         let mut nr_flag = USE_OLD;
         let mut nd_flag = USE_OLD;
-        let mut hc_flag = USE_OLD;
-        let mut md_flag = USE_OLD;
+        let mut hc_flag = HC_USE_OLD;
+        let mut md_flag = MD_USE_OLD;
         let mut np_flag = USE_OLD;
         let mut bw_send = binkd_ftn::node::BW_DEF;
         let mut bw_recv = binkd_ftn::node::BW_DEF;

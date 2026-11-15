@@ -15,4 +15,4 @@ pub mod log;
 pub use binlog::{write, BinLogConfig, SessionStat};
 pub use level::{level_char, Level};
 pub use level::{CONNECTION, DEBUG, DEBUG2, DEBUG3, ERROR, FATAL, INFO, PROTOCOL, START, TRACE};
-pub use log::{file_line, DateTime, Log, Outcome};
+pub use log::{file_line, DateTime, Hook, Log, Outcome};

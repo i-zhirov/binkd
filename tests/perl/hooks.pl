@@ -13,6 +13,12 @@ sub on_log {
 
 sub on_start {
   mark("start");
+  mark("config " . $config{sysname});
+  return 1;
+}
+
+sub on_exit {
+  mark("on_exit");
   return 1;
 }
 
@@ -23,11 +29,13 @@ sub on_call {
 
 sub on_error {
   mark("error");
+  mark("error where=$where");
   return 1;
 }
 
 sub on_handshake {
   mark("on_handshake");
+  mark("on_handshake he=" . join(",", @he));
   return "";
 }
 
@@ -48,6 +56,7 @@ sub before_recv {
 
 sub after_recv {
   mark("after_recv");
+  mark("after_recv tmpfile=$tmpfile file=$file");
   return 1;
 }
 
@@ -61,11 +70,15 @@ sub before_send {
 
 sub after_sent {
   mark("after_sent");
+  # The port of `$action` of `perl_after_sent()` of `perlhooks.c`: a nonzero
+  # return reads the value back, and the code removes the file of the spool.
+  $action = "d";
   return 1;
 }
 
 sub on_send {
   mark("on_send");
+  mark("on_send $type|$s1|$s2");
   return 1;
 }
 

@@ -388,6 +388,8 @@ mod tests {
             zrules: Vec::new(),
             methods: crate::Methods::none(),
             crypt: false,
+            no_md5: false,
+            md_flag: 0,
             nr: false,
             nd: false,
             domains: binkd_ftn::domain::DomainTable::new(Vec::new()),

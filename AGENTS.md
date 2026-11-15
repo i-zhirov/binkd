@@ -21,9 +21,10 @@
 
 binkd is a Fidonet mailer. It transfers FTN mail and files between
 FTN systems over TCP/IP with the binkp protocol. FTN node operators run
-it as a daemon next to their BSO spool. The repository holds the C
-implementation and a Rust workspace that replaces it module by module. The
-Rust crates are also a library for embedding in other programs.
+it as a daemon next to their BSO spool. The Rust workspace in `rust/` is the
+default implementation on UNIX and Windows. The C code stays in the tree as the
+reference and the build of OS/2, DOS, Amiga, and Windows 9x/Me. The Rust
+crates are also a library for embedding in other programs.
 
 ## Technical Context
 
@@ -31,24 +32,28 @@ Rust crates are also a library for embedding in other programs.
   reference implementation. Rust edition 2021 with a minimum supported Rust
   version of 1.85 (`rust-version` in `rust/Cargo.toml`).
 - **Primary Dependencies**: C: zlib, bzip2, and Perl (all optional),
-  pthreads, libresolv, and libutil. Rust: none, only `std`.
+  pthreads, libresolv, and libutil. Rust: `std` for the pure crates, `tokio`
+  for the session and the daemon, and `flate2` and `bzip2` for the
+  compression. The optional `binkd-perl` crate holds the Perl C shim. The
+  `binkd-win` crate holds the Windows service FFI and `windows-sys`.
 - **Storage**: The local file system. The BSO spool directories, the
   `.flo`, `.try`, `.hld`, and `.bsy` files, the inbound directory, the
   binary session logs, and the config file. No database.
 - **Testing**: A custom C harness (`tests/harness.h`) with the golden
   corpus in `tests/golden/`. The corpus is the shared oracle of the C and
   Rust implementations. Rust uses the built-in `#[test]` harness.
-- **Target Platform**: UNIX (Linux, macOS, BSD) and Windows. The C code
-  also targets OS/2, DOS, and Amiga.
+- **Target Platform**: UNIX (Linux, macOS, BSD) and Windows NT and later. The
+  Rust port supports the Windows service mode; the tray icon is not supported.
+  The C code also targets OS/2, DOS, Amiga, and Windows 9x/Me.
 - **Project Type**: Other. A long-running network daemon with a library
   workspace. The C code is a flat program; the Rust workspace is a
   library workspace with a thin binary.
 - **Performance Goals**: N/A, not documented. The code limits the transfer
   rate with the `limit-rate` directive.
 - **Constraints**: The Rust code MUST keep full functional equivalence with
-  the C code and MUST read the same config files. The C code is the oracle
-  until the cutover. The Rust port MUST NOT reproduce undefined behavior
-  (see [Architecture](#architecture)). `binkd-ftn` MUST stay pure.
+  the C code and MUST read the same config files. The C code is the reference
+  and the oracle of the tests. The Rust port MUST NOT reproduce undefined
+  behavior (see [Architecture](#architecture)). `binkd-ftn` MUST stay pure.
 - **Scale/Scope**: One binkd instance per FTN node. Up to `maxservers` and
   `maxclients` concurrent sessions, 100 each by default. The config has
   about 100 keywords.
@@ -57,6 +62,7 @@ Rust crates are also a library for embedding in other programs.
 
 ```text
 binkd/
+├── .github/workflows/ci.yml    # CI: Rust, C, interop, MSRV, Perl, OSes
 ├── AGENTS.md                   # this file
 ├── README.md                   # what binkd is, build and install
 ├── task.md                     # the Rust rewrite task statement
@@ -74,10 +80,11 @@ binkd/
 ├── perlhooks.c                 # C Perl hook bridge
 ├── unix/, nt/, os2/, dos/, amiga/  # C platform layers
 ├── mkfls/                      # per-platform makefiles and configure
-├── doc/                        # protocol, config, and rewrite documents
-├── tests/                      # C tests and the shared golden corpus
+├── doc/                        # protocol, config, rewrite, decisions
+├── tests/                      # C tests, corpus, Windows smoke test
 │   ├── README.md               # how to run the tests, corpus format
 │   ├── golden/                 # corpus cases (C and Rust read them)
+│   ├── windows-smoke.ps1       # Windows service smoke test
 │   ├── test_corpus.c           # the C runner of the corpus
 │   └── test_crypt.c, test_md5.c # C invariant tests
 └── rust/                       # the Cargo workspace of the rewrite
@@ -91,6 +98,8 @@ binkd/
         ├── binkd-net/          # listen sockets and outgoing calls
         ├── binkd-srif/         # the SRIF interface and its event engine
         ├── binkd-corpus/       # test-only corpus reader
+        ├── binkd-perl/         # optional Perl hooks (excluded)
+        ├── binkd-win/          # Windows service FFI (Windows only)
         └── binkd/              # the binary: CLI, daemon, signals
 ```
 
@@ -99,30 +108,48 @@ The other C files at the root are the remaining modules of the mailer.
 
 ## Build And Test Commands
 
-Prerequisites and install steps are in `README.md`.
+Prerequisites and install steps are in `README.md`. The Rust build is the
+default. The C build is the reference and the oracle of the tests.
 
-- **Build (C)**:
-    - `cp mkfls/unix/* .`
-    - `chmod +x mkinstalldirs`
-    - `./configure`
-    - `make`
-- **Test (C)**: `make -C tests`
-- **Test (C) with AddressSanitizer**:
-  `make -C tests CFLAGS="-O0 -g -fsanitize=address -fno-omit-frame-pointer"`
-- **Build (Rust)**: `cd rust && cargo build --workspace`
-- **Run (Rust)**: `cd rust && cargo run -p binkd -- -v` (the port of the C
-  binary; the daemon is not built yet, so only the paths that read the config
-  run)
+- **Build (Rust, default)**: `cd rust && cargo build --workspace`
 - **Test (Rust)**: `cd rust && cargo test --workspace`
+- **Test the Perl hooks** (needs the Perl C shim):
+  `cd rust/crates/binkd-perl && cargo test -- --test-threads=1`
+- **Test the Perl hooks of the binary**:
+  `cd rust && cargo test -p binkd --features perl -- --test-threads=1`
+- **Check the Windows service** (needs the target):
+  `cd rust && cargo check -p binkd-win -p binkd --target x86_64-pc-windows-gnu`
+- **Test the Windows service** (needs Windows, an administrator prompt, and
+  the release binary): `cd rust && cargo build --release -p binkd`, then
+  `cd ..` and
+  `pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1`.
+- **Test the C and Rust interop** (needs the C binary): build the C
+  reference, set `BINKD_C`, and run the tests that `tests/README.md` names.
+  The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10`
+  run the plain, proxy, rate limit, and protocol 1.0 matrices.
 - **Check the minimum supported Rust version** (needs the 1.85 toolchain):
   `cd rust && cargo +1.85 check --workspace`
 - **Lint (Rust)**: `cd rust && cargo clippy --workspace --all-targets`
 - **Format check (Rust)**: `cd rust && cargo fmt --check`
 - **Format fix (Rust)**: `cd rust && cargo fmt`
-- **Run**: `./binkd binkd.conf`
-- **Check the config**: `./binkd -n binkd.conf`
-- **Dump the parsed config**: `./binkd -d binkd.conf`
-- **Dump the version and the compile flags**: `./binkd -vv`
+- **Build (C reference)**:
+    - `cp mkfls/unix/* .`
+    - `chmod +x mkinstalldirs`
+    - `./configure`
+    - `make`
+- **Build the C oracle with Perl** (the `BINKD_C_PERL` cases): use the C
+  reference steps with `./configure --with-perl`, then set `BINKD_C_PERL` to
+  the path of the built `binkd`.
+- **Test (C)**: `make -C tests`
+- **Test (C) with AddressSanitizer**:
+  `make -C tests CFLAGS="-O0 -g -fsanitize=address -fno-omit-frame-pointer"`
+- **Run (Rust)**: `./rust/target/debug/binkd binkd.conf`
+- **Version (Rust)**: `./rust/target/debug/binkd -v`
+- **Check the config (Rust)**: `./rust/target/debug/binkd -n binkd.conf`
+- **Dump the parsed config (Rust)**: `./rust/target/debug/binkd -d binkd.conf`
+- **Dump the version and the compile flags (Rust)**:
+  `./rust/target/debug/binkd -vv`
+- **Run (C reference)**: `./binkd binkd.conf`
 
 ## Contribution Instructions
 
@@ -149,8 +176,9 @@ Prerequisites and install steps are in `README.md`.
 - You MUST NOT edit `HISTORY`, the `PATCHLEVEL` value in `Config.h`, or
   `mkfls/unix/binkd.spec`. The release process updates them.
 
-- You MUST NOT add an external Rust dependency without a reason. The Rust
-  workspace has no external dependencies today.
+- You MUST NOT add an external Rust dependency without a reason. The
+  dependencies are the ones of [Dependency Management](#dependency-management);
+  add one only with a reason and an exact version.
 
 - You MUST NOT use a Rust language feature that is newer than the minimum
   supported Rust version. `rust-version` in `rust/Cargo.toml` states it; the
@@ -252,8 +280,8 @@ binkd-corpus (test-only corpus reader)
 Each layer calls the layer below it. No layer calls a layer above it.
 `binkd-ftn` is a leaf: it depends on `std` only. Today the workspace has
 `binkd-ftn`, `binkd-spool`, `binkd-config`, `binkd-proto`, `binkd-log`,
-`binkd-net`, `binkd-srif`, `binkd-corpus`, and `binkd`; the other crates arrive
-in the later phases of `doc/rust-rewrite-plan.md`.
+`binkd-net`, `binkd-srif`, `binkd-corpus`, `binkd-win`, and `binkd`; the
+optional `binkd-perl` is excluded from the workspace.
 
 The layers of the C code, for reference:
 
@@ -291,11 +319,14 @@ fixes them):
 - **Rust style**: the rustfmt defaults. Run `cd rust && cargo fmt`.
 - **Static analysis**: `cd rust && cargo clippy --workspace --all-targets`
   with the workspace lints in `rust/Cargo.toml`: `unsafe_code = "forbid"`
-  and clippy `all = "warn"`. Do not weaken a workspace lint. One exception:
+  and clippy `all = "warn"`. Do not weaken a workspace lint. The exceptions:
   `binkd-perl`, the crate of the FFI of the Perl hooks, holds
-  `unsafe_code = "allow"`, the decision of `doc/decisions/perl-hooks.md`. The
-  crate is optional and the default build holds it not; a build that wants the
-  hooks names the feature `perl` of the `binkd` crate.
+  `unsafe_code = "allow"`, the decision of `doc/decisions/perl-hooks.md`; the
+  crate is optional and the default build holds it not, and a build that wants
+  the hooks names the feature `perl` of the `binkd` crate. The `binkd-win`
+  crate holds the second exception for the FFI of the Windows
+  service, the decision of `doc/decisions/windows-support.md`; the crate is a
+  target-specific dependency of `binkd` and compiles on Windows only.
 - **Doc comments**: every public item of a Rust crate has a `///` comment
   and every module a `//!` comment. State the C function that the port
   follows, for example "the port of `getw.c`".
@@ -325,6 +356,19 @@ fixes them):
   corpus supplies the values.
 - All tests MUST pass before a change is complete: `make -C tests` and
   `cd rust && cargo test --workspace`.
+- The C and Rust interop suite runs the C binary against the Rust session in
+  both roles, and the Rust session against itself. The binary-level test
+  `crates/binkd/tests/interop_binary.rs` starts the real C and Rust binaries
+  in both roles and runs the C server with the C client. The CI jobs
+  `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10` build the C
+  reference and set the `BINKD_C*` variables. The tests and the build commands
+  are in `tests/README.md`.
+- The Windows service smoke test is the script `tests/windows-smoke.ps1`.
+  The Windows job of CI runs it after the release build. The script installs a
+  temporary service, checks the service states, the process, the busy and pid
+  files, and the log, and removes the service and the temporary directory.
+- The CI runs the workspace suite on Linux, macOS, and Windows. The Unix-only
+  signal and shell cases carry `#[cfg(unix)]`.
 - Run the C tests with AddressSanitizer when the change touches memory
   handling: `make -C tests CFLAGS="-O0 -g -fsanitize=address"`.
 - The corpus cases are text files in the repository, not generated data.
@@ -337,8 +381,10 @@ fixes them):
   that each crate needs; `binkd` adds the `signal` feature for the handlers of
   the daemon, which `std` cannot install. `binkd-proto` depends on `flate2` with
   the pure Rust backend (`=1.1.10`, `rust_backend`) and on `bzip2` (`=0.6.1`).
-  Every other crate uses `std` only. Add a dependency only with an exact
-  version.
+  Every other crate uses `std` only. The `binkd-win` crate depends on
+  `windows-sys` (`=0.61.2`) with the features of the service control manager;
+  it is a target-specific dependency of `binkd` and the UNIX build does not
+  compile it. Add a dependency only with an exact version.
 - **Prefer vanilla solutions.** Use `std` when it solves the problem. The
   Rust port of a C module uses `std` only, apart from the async runtime of
   the session and of the daemon.

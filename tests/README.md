@@ -44,6 +44,121 @@ cargo test --workspace
 The Rust tests read the same corpus. A difference in one case fails the
 test with the file name and the line number.
 
+## Run the Windows service smoke test
+
+The script `windows-smoke.ps1` needs Windows, an administrator PowerShell, and
+the release binary. It installs a temporary service and checks install,
+status, stop, start, restart, uninstall, the process, the busy and pid files,
+and the log. It removes the service and the temporary directory at the end.
+
+```
+cd rust
+cargo build --release -p binkd
+cd ..
+pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1
+```
+
+The `windows` job of `.github/workflows/ci.yml` runs the script.
+
+## Run the Perl tests
+
+The hooks of Perl need the optional crate `binkd-perl` and the interpreter
+of the system:
+
+```
+cd rust
+cargo test -p binkd --features perl --test perl
+cd crates/binkd-perl
+cargo test
+```
+
+The script `tests/perl/hooks.pl` holds every hook. The hook writes its name to
+the file of the environment `BINKD_PERL_MARK`, so a case holds the hooks that
+ran. The port cases of `crates/binkd/tests/perl.rs` hold the call hooks, the
+session hooks end to end, and the reload hooks. The cases of the C oracle run
+when the environment names the binary `BINKD_C_PERL` of
+`./configure --with-perl`.
+
+The cases of `crates/binkd-perl/tests/hooks.rs` call every hook and hold the
+marks, the return values, the abort text, the new file names, the action, and
+the rate limit. The case `two_sessions_do_not_share_the_variables` holds the
+per-session clones with two threads, and the cases
+`concurrent_calls_do_not_race_on_the_master` and
+`two_clones_call_the_log_hook_on_two_threads` hold the log hook on two
+threads. The unit test `the_hook_runs_on_two_threads` of `binkd-log` holds the
+log without Perl. The port case
+`the_port_of_the_perl_clones_of_two_sessions` holds the clones of two sessions
+of the daemon. The cases `a_hook_message_reaches_the_peer`,
+`the_session_values_reach_the_hook`,
+`the_traffic_of_the_files_reaches_the_hook`, and
+`the_compression_counters_reach_the_hooks` of
+`crates/binkd-proto/tests/session.rs` hold the sink of `msg_send()`, the session
+values, the traffic, and the compression counters. The cases
+`the_session_variables_reach_the_script`,
+`the_traffic_and_compression_variables_reach_the_script`,
+`the_session_queue_reaches_the_script`,
+`the_script_rebuilds_the_session_queue`,
+`the_script_removes_an_entry_from_the_session_queue`,
+`the_script_removes_an_entry_of_after_recv`,
+`the_script_deletes_an_entry_of_before_recv`, and
+`the_script_deletes_an_entry_of_after_sent` of
+`crates/binkd-perl/tests/hooks.rs` hold `$start`, `$host`, `$ip`, `$sysname`,
+`%opt`, `$traf_mail`, `$traf_file`, `$z_send`, `$z_recv`, and `@queue` in the
+script, the values that the script writes back into `@queue`, the deletion of
+an entry in `before_send()` and `after_recv()`, and the deletion in
+`before_recv()` and `after_sent()` that the C code does not apply. The cases
+`the_hook_rebuilds_the_session_files`,
+`the_hook_removes_a_file_from_the_session`, and
+`the_hook_removes_a_file_of_after_recv` of
+`crates/binkd-proto/tests/session.rs` hold the files that the session rebuilds
+and drops from the queue. The case
+`the_session_does_not_refresh_the_queue_of_before_recv` holds the C rule that
+`before_recv()` does not refresh the queue, and
+`the_session_does_not_refresh_the_queue_of_after_sent` holds the same rule for
+`after_sent()`. The port cases
+`the_port_of_the_rebuilt_session_queue`,
+`the_port_of_the_removed_file_of_the_session_queue`,
+`the_port_of_the_removed_file_of_after_recv`,
+`the_port_of_the_queue_of_before_recv`, and
+`the_port_of_the_queue_of_after_sent` of `crates/binkd/tests/perl.rs` hold the
+script of the daemon that adds a file to the queue, the scripts that remove one
+in `before_send()` and `after_recv()`, and the scripts that delete `@queue` in
+`before_recv()` and `after_sent()` while the file still arrives.
+The case `the_port_of_the_reload_of_the_script` of
+`crates/binkd/tests/perl.rs` holds the reload of the script beside the new
+config: the new script answers `config_loaded()`, a session uses it, the old
+script is not called again, and `on_start()` runs only for the script of the
+start. The case `the_hook_of_after_recv_runs_before_the_rename` of
+`crates/binkd-proto/tests/session.rs` holds the order of `after_recv()`: the
+hook sees the partial file and the real name before the rename and may change
+the name. The case `the_after_recv_values_reach_the_script` of
+`crates/binkd-perl/tests/hooks.rs` holds `$tmpfile` and `$file`. The case
+`the_where_of_the_error_follows_the_c_code` of
+`crates/binkd-net/src/caller.rs` holds the `$where` map of `on_error()`, and
+the oracle and port cases of the call hold `error where=1`. The case
+`the_on_log_hook_runs_on_the_master` of `crates/binkd/tests/perl.rs` holds the
+decision that `on_log()` runs on the master interpreter. The case
+`the_answerer_runs_on_handshake_after_the_adr` of
+`crates/binkd-proto/tests/session.rs` holds the order of `on_handshake()` for
+the answerer: the hook sees the caller's `@he`, and the answers replace our
+address and the password. The oracle and port session cases hold `@he` with the
+shared script. The case `the_action_of_after_sent_changes_the_spool` of
+`crates/binkd-proto/tests/session.rs` holds `$action` of `after_sent()`:
+`d` removes the file, `t` truncates it, and `s` removes it at the end of a
+successful session. The oracle and port session cases hold `d` with the shared
+script. The case `the_hook_sees_the_two_parts_of_the_message` of
+`crates/binkd-proto/tests/session.rs` holds the `s1`/`s2` split of
+`on_send()`. The oracle and port cases of the session hold the split with the
+shared script. The cases `the_config_variables_reach_the_script` and
+`the_config_variables_reach_a_session_clone` of
+`crates/binkd-perl/tests/config.rs` hold `%config`, `%domain`, `@addr`,
+`@listen`, `@ftrans`, `@overwrite`, `@skip`, `%share`, and `%node`, the main
+interpreter and a session clone. The case
+`the_oracle_of_the_perl_hook_of_the_start` and the port case
+`the_port_of_the_perl_hooks_of_the_session` hold `$config{sysname}`.
+The cases of `crates/binkd-perl/tests/xs.rs` hold the XS helpers `Log`,
+`aeq`, `arm`, `msg_send`, and `binkd_warn`.
+
 ## The golden corpus
 
 A corpus file is a text file with a `# crate:` header and the cases. The
@@ -201,39 +316,78 @@ grep "Reloading configuration" <log>
 
 ## The interop tests
 
-The Rust test `crates/binkd-proto/tests/interop.rs` runs the C binary and the
-Rust session against each other over the loopback address. Set `BINKD_C` to the
-path of the C binary:
+The interop tests run the C binary and the Rust code against each other over
+the loopback address, in both roles. They are the back-to-back suite of the
+plan. Build the plain C reference with zlib and bzip2 first:
+
+```sh
+cp mkfls/unix/* .
+chmod +x mkinstalldirs
+./configure
+make
+```
+
+Set `BINKD_C` to the path of the binary and run every test that starts the C
+process:
 
 ```sh
 cd rust
-BINKD_C=/path/to/binkd cargo test -p binkd-proto --test interop
+BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop
+BINKD_C=$PWD/../binkd cargo test -p binkd-net --test interop
+BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test record
+BINKD_C=$PWD/../binkd cargo test -p binkd-config --test dump_corpus
+BINKD_C=$PWD/../binkd cargo test -p binkd-config --test reload_corpus
+BINKD_C=$PWD/../binkd cargo test -p binkd --test cli
+BINKD_C=$PWD/../binkd cargo test -p binkd --test daemon
 ```
 
-Without `BINKD_C` the tests report that they are skipped.
+Without `BINKD_C` the tests report that they are skipped. Only the C tests of
+the `binkd-proto` file need the C binary; the Rust side is the library, not the
+Rust binary. The cases of `crates/binkd/tests/engine.rs` hold the two roles of
+the Rust library against each other.
 
-The Rust test `crates/binkd-net/tests/proxy_interop.rs` runs the same matrix for
-the network layer, and it runs the caller of the port and the C client through a
-proxy server of the test. Set `BINKD_C_PROXY` to the path of a C binary that the
+The binary-level test `crates/binkd/tests/interop_binary.rs` starts the real
+C and Rust binaries. It runs the C server with the Rust client, the Rust
+server with the C client, and the C server with the C client:
+
+```sh
+cd rust
+BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary
+```
+
+The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10`
+build the C reference and run the variants below. The `interop` job also runs
+the binary-level test.
+
+The Rust test `crates/binkd-net/tests/proxy_interop.rs` runs the proxy matrix
+for the network layer. Set `BINKD_C_PROXY` to the path of a C binary that the
 `configure` script built with `--with-proxy` and `--with-ntlm`:
 
 ```sh
+cp mkfls/unix/* .
+chmod +x mkinstalldirs
+./configure --with-proxy --with-ntlm
+make
 cd rust
-BINKD_C=/path/to/binkd \
-BINKD_C_PROXY=/path/to/binkd-proxy \
-    cargo test -p binkd-net --test proxy_interop
+BINKD_C_PROXY=$PWD/../binkd cargo test -p binkd-net --test proxy_interop
 ```
 
-Without `BINKD_C_PROXY` the tests report that they are skipped. The corpus tests
-need the plain build of the C binary, so keep the two builds apart.
+Without `BINKD_C_PROXY` the tests report that they are skipped. The corpus
+tests need the plain build of the C binary, so keep the two builds apart.
 
 The Rust test `crates/binkd-proto/tests/interop.rs` runs a transfer of the port
 against the C server with the rate limit. Set `BINKD_C_BWLIM` to the path of a C
 binary that the `configure` script built with `--with-bwlim`:
 
 ```sh
+cp mkfls/unix/* .
+chmod +x mkinstalldirs
+./configure --with-bwlim
+make
 cd rust
-BINKD_C_BWLIM=/path/to/binkd-bwlim cargo test -p binkd-proto --test interop
+BINKD_C_BWLIM=$PWD/../binkd \
+    cargo test -p binkd-proto --test interop \
+    rust_client_to_c_server_rate_limited
 ```
 
 Without `BINKD_C_BWLIM` the test reports that it is skipped.
@@ -274,7 +428,7 @@ The matrix of `doc/rust-rewrite-plan.md`:
 | --- | --- | --- |
 | Rust | C | plain, zlib, bzip2, and CRYPT |
 | C | Rust | plain, zlib, bzip2, and CRYPT |
-| C | C | the C test suite of the C project |
+| C | C | the binary baseline |
 | Rust | Rust | `crates/binkd-proto/tests/session.rs` |
 
 The compression of a file has no corpus case: the bytes of a zlib or bzip2

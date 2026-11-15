@@ -36,6 +36,24 @@ the Free Software Foundation. See COPYING.
 Report bugs to 2:463/68 or binkd-bugs@happy.kiev.ua.
 ";
 
+/// Returns the usage text of the run, the port of `usage()` of `binkd.c`.
+///
+/// The Windows build adds the switches of the service mode. The port holds no
+/// tray switch.
+pub fn usage() -> String {
+    #[cfg(not(windows))]
+    {
+        USAGE.to_string()
+    }
+    #[cfg(windows)]
+    {
+        let mut text = USAGE.to_string();
+        text.push_str("  -t cmd   (start|stop|restart|status|install|uninstall) service\n");
+        text.push_str("  -S name  set the Windows service name\n");
+        text
+    }
+}
+
 /// Returns the arguments of the command line, the port of `print_args()` of
 /// `tools.c`.
 ///
@@ -90,6 +108,16 @@ pub struct Options {
     pub daemon: bool,
     /// The `-n` switch: run no client and no server.
     pub no: bool,
+    /// The `-t` switch of Windows: the service command.
+    #[cfg(windows)]
+    pub service: Option<binkd_win::command::Command>,
+    /// The `-S` switch of Windows: the display name of the service.
+    #[cfg(windows)]
+    pub service_name: Option<String>,
+    /// The display name of the service that the service control manager
+    /// started, the port of `service_name` of `nt/service.c`.
+    #[cfg(windows)]
+    pub service_display: Option<String>,
     /// The first argument that is no switch, the config file.
     pub config: Option<String>,
     /// The arguments after the config file, the port of the
@@ -123,6 +151,9 @@ pub enum Error {
     /// A GNU style option that is no `--help`, the port of the
     /// `Log (0, ...)` of the `'-'` case of `parseargs()`.
     UnknownLong(String),
+    /// The `-t` switch of Windows holds an unknown service command.
+    #[cfg(windows)]
+    ServiceCommand(String),
 }
 
 impl fmt::Display for Error {
@@ -132,6 +163,8 @@ impl fmt::Display for Error {
             Error::UnknownSwitch(c) => write!(f, "unknown switch: {c}"),
             Error::MissingArgument(c) => write!(f, "the switch {c} misses its argument"),
             Error::UnknownLong(arg) => write!(f, "unknown command line switch: {arg}"),
+            #[cfg(windows)]
+            Error::ServiceCommand(value) => write!(f, "unknown service command: {value}"),
         }
     }
 }
@@ -197,6 +230,17 @@ pub fn parse(args: &[String]) -> Result<Options, Error> {
                 'd' => options.dump += 1,
                 'D' => options.daemon = true,
                 'n' => options.no = true,
+                #[cfg(windows)]
+                't' => {
+                    let value = argument(&switches, &mut i, args, &mut index, c)?;
+                    let command = binkd_win::command::Command::parse(&value)
+                        .ok_or(Error::ServiceCommand(value))?;
+                    options.service = Some(command);
+                }
+                #[cfg(windows)]
+                'S' => {
+                    options.service_name = Some(argument(&switches, &mut i, args, &mut index, c)?);
+                }
                 'h' => return Err(Error::Usage),
                 // The C code falls through from `default` to the `-n` case,
                 // so a `-?` of the system sets the `no_flag`.
@@ -351,6 +395,30 @@ mod tests {
         // The port of the fallthrough of the `default` case to `case 'n'`.
         let options = parse(&args(&["binkd", "-?"])).unwrap();
         assert!(options.no);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_service_switches_parse() {
+        let options = parse(&args(&[
+            "binkd",
+            "-t",
+            "install",
+            "-S",
+            "Binkd mailer",
+            "binkd.conf",
+        ]))
+        .unwrap();
+        assert_eq!(options.service, Some(binkd_win::command::Command::Install));
+        assert_eq!(options.service_name.as_deref(), Some("Binkd mailer"));
+        assert_eq!(options.config.as_deref(), Some("binkd.conf"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_unknown_service_command_is_an_error() {
+        let error = parse(&args(&["binkd", "-t", "other"])).unwrap_err();
+        assert_eq!(error, Error::ServiceCommand("other".to_string()));
     }
 
     #[test]

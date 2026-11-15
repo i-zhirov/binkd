@@ -45,8 +45,9 @@ impl Engine {
     /// Binds the listeners of the config, the port of the socket build of
     /// `do_server()` of `server.c`.
     ///
-    /// A caller that holds the sockets runs the sessions itself, the port of the
-    /// `accept()` of the C code.
+    /// `serve()` binds its own listeners, so this method is for a caller that
+    /// needs the sockets or checks the bind. The caller that runs the sessions
+    /// uses `serve()` or `binkd_net::listen()`.
     pub async fn bind(&self) -> Result<Vec<tokio::net::TcpListener>, binkd_net::ListenError> {
         bind(&self.config, &self.log, &platform::now).await
     }
@@ -59,7 +60,8 @@ impl Engine {
     /// other code, the port of `branch (clientmgr, 0, 0)`.
     pub async fn serve(self) -> Result<(), binkd_net::ListenError> {
         let timeout = std::time::Duration::from_secs(self.config.nettimeout.max(1) as u64);
-        let options = SessionOptions::new(timeout, !self.options.no_crypt, false);
+        let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
+        options.no_md5 = self.options.no_md5;
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let files = {
             let spool = Arc::clone(&spool);
@@ -86,9 +88,10 @@ impl Engine {
     ///
     /// The C code runs the manager of the client for every node of the queue;
     /// the caller of the port names the node and holds the report.
-    pub async fn poll(&mut self, _fa: &FtnAddr) -> Option<Result<Report, binkd_net::CallError>> {
+    pub async fn poll(&mut self, fa: &FtnAddr) -> Option<Result<Report, binkd_net::CallError>> {
         let timeout = std::time::Duration::from_secs(self.config.nettimeout.max(1) as u64);
-        let options = SessionOptions::new(timeout, !self.options.no_crypt, false);
+        let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
+        options.no_md5 = self.options.no_md5;
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let files = {
             let spool = Arc::clone(&spool);
@@ -98,7 +101,14 @@ impl Engine {
         };
         let mut caller = Caller::new();
         caller
-            .call_next(&mut self.config, &self.log, &platform::now, options, &files)
+            .call_node(
+                fa,
+                &mut self.config,
+                &self.log,
+                &platform::now,
+                options,
+                &files,
+            )
             .await
     }
 

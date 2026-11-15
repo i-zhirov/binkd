@@ -10,6 +10,7 @@ use std::future::poll_fn;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::sync::{Arc, Mutex};
 use std::task::Poll;
 
 use binkd_ftn::addr::FtnAddr;
@@ -18,6 +19,9 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use crate::bw;
 use crate::compress::{self, Compressor, Decompressor, Method, Methods, ZRule, BLOCK_SIZE};
 use crate::frame::{self, Command, Frame};
+use crate::hooks::{
+    FileVars, Handshake, Hooks, MessageSink, Opt, QueueFile, ReceivedVars, SentVars, SessionVars,
+};
 use binkd_spool::inbound::{FreeSpace, TFile};
 
 /// The role of the session.
@@ -27,6 +31,24 @@ pub enum Role {
     Client,
     /// The peer called us.
     Server,
+}
+
+/// The addresses and the start of a session, the port of the parts of `STATE`
+/// that `setup_session()` reads for the hooks.
+#[derive(Clone, Debug, Default)]
+pub struct SessionInfo {
+    /// The name of the peer, the port of `state->peer_name`.
+    pub peer_host: String,
+    /// The address of the peer, the port of `state->ipaddr`.
+    pub peer_ip: String,
+    /// Our address, the port of `state->our_ip`.
+    pub our_ip: String,
+    /// Our port, the port of `state->our_port`.
+    pub our_port: i32,
+    /// The mail traffic of the queue, the port of `$traf_mail`.
+    pub traffic_mail: u64,
+    /// The file traffic of the queue, the port of `$traf_file`.
+    pub traffic_file: u64,
 }
 
 /// The settings of a session.
@@ -62,6 +84,10 @@ pub struct SessionConfig {
     /// Crypt the traffic of the session, the port of `no_crypt`. The session
     /// crypts only when both sides request it.
     pub crypt: bool,
+    /// Do not use CRAM-MD5, the port of `no_MD5` and of the `-m` switch.
+    pub no_md5: bool,
+    /// The CRAM-MD5 rule of the node, the port of `MD_flag` of `ftnnode.h`.
+    pub md_flag: i32,
     /// We ask for the NR mode, the port of `to->NR_flag == NR_ON` and of
     /// `WANT_NR` of `protocol.c`. The `-nr` and `-nd` options of the node
     /// set it.
@@ -367,6 +393,8 @@ pub enum Error {
     Protocol(String),
     /// The password is wrong.
     BadPassword,
+    /// The node requires CRAM-MD5 and the peer did not offer it.
+    Md5Required,
     /// The peer did not answer.
     Timeout,
 }
@@ -379,6 +407,7 @@ impl fmt::Display for Error {
             Error::Busy(e) => write!(f, "the peer is busy: {e}"),
             Error::Protocol(e) => write!(f, "the protocol failed: {e}"),
             Error::BadPassword => write!(f, "the password is wrong"),
+            Error::Md5Required => write!(f, "CRAM-MD5 is not supported by the peer"),
             Error::Timeout => write!(f, "the peer did not answer"),
         }
     }
@@ -430,7 +459,40 @@ pub async fn run_with<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let mut session = Session::new(stream, role, config);
+    run_with_hooks(
+        stream,
+        role,
+        config,
+        files,
+        receive,
+        srif,
+        SessionInfo::default(),
+        None,
+        timeout,
+    )
+    .await
+}
+
+/// Runs a binkp session with the hooks of a script, the port of the
+/// `perl_on_*` calls of `protocol.c`.
+// The port of the C call holds the arguments of `protocol()`, so it follows the
+// C signature.
+#[allow(clippy::too_many_arguments)]
+pub async fn run_with_hooks<S>(
+    stream: S,
+    role: Role,
+    config: &SessionConfig,
+    files: &mut (dyn FnMut(&[FtnAddr]) -> Vec<SendFile> + Send),
+    receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
+    srif: &mut (dyn Srif + Send),
+    info: SessionInfo,
+    hooks: Option<Arc<dyn Hooks>>,
+    timeout: std::time::Duration,
+) -> Result<Report, Error>
+where
+    S: AsyncRead + AsyncWrite + Unpin,
+{
+    let mut session = Session::new(stream, role, config, info, hooks);
     let result = async {
         session.handshake(srif, timeout).await?;
         // The port of the `maxservers` check of `protocol()`: the C code
@@ -445,14 +507,35 @@ where
         }
         // The port of the part of `ADR()` that reads the `-bw` of the nodes.
         session.setup_session_limits();
-        let files = files(&session.report.peer_addresses);
-        session.send_files(&files, srif, timeout).await?;
+        // The port of `complete_login()`: the C code scans the queue of the
+        // session when the prescan did not. A hook may hold a queue that the
+        // scan replaces only when the session holds none, the port of the
+        // `state->q == NULL` test of the C code.
+        if session.queue.is_empty() {
+            let files = files(&session.report.peer_addresses);
+            session.set_traffic(&files);
+            session.set_queue(&files);
+        }
+        session.send_files(srif, timeout).await?;
         session.receive_files(receive, srif, timeout).await
     }
     .await;
     // The port of the flush of the queue of `protocol()`: the C code sends
     // the queue of the session after the loop, so the frames of the session
     // leave the transport even when the loop ends with an error.
+    // The port of `process_killlist()` of `protocol()`: the action `s` removes
+    // the file at the end of a successful session only.
+    if result.is_ok() {
+        for path in &session.killlist {
+            let _ = fs::remove_file(path);
+        }
+    }
+    // The port of `perl_after_session()` of `deinit_protocol()`: the hook runs
+    // on the success and on the error of a session.
+    if let Some(hooks) = &session.hooks {
+        hooks.after_session(&session.session_vars(), result.is_ok());
+    }
+    let _ = session.flush_messages().await;
     let _ = session.flush().await;
     result?;
     // The port of `evt_set()`: the events that wait for the end of the session
@@ -523,20 +606,55 @@ struct Session<S> {
     /// The files that an exchange answered, the port of the queue of the session
     /// of the C code, `state->q`, which the send path sends.
     answered: Vec<String>,
-    /// The files that the prescan of the session found, the port of the queue of
-    /// the session of the C code, `state->q`, which `do_prescan()` builds and
-    /// the send path sends.
-    prescan_files: Vec<SendFile>,
     /// The bytes that wait for the write of the session, the port of the buffer
     /// of the C code, `state->obuf` and `state->oleft`.
     output: Vec<u8>,
+    /// The hooks of the script, or `None`, the port of `cfg->perl`.
+    hooks: Option<Arc<dyn Hooks>>,
+    /// The messages that a hook queued, the port of the queue of `msg_send2()`.
+    messages: Arc<Mutex<Vec<(u8, String)>>>,
+    /// The start of the session, the port of `state->start_time`.
+    start: i64,
+    /// The name of the peer, the port of `state->peer_name`.
+    peer_host: String,
+    /// The address of the peer, the port of `state->ipaddr`.
+    peer_ip: String,
+    /// Our address, the port of `state->our_ip`.
+    our_ip: String,
+    /// Our port, the port of `state->our_port`.
+    our_port: i32,
+    /// The name of the peer system, the port of `state->sysname`.
+    peer_sysname: String,
+    /// The sysop of the peer, the port of `state->sysop`.
+    peer_sysop: String,
+    /// The location of the peer, the port of `state->location`.
+    peer_location: String,
+    /// The mail traffic of the queue, the port of `state->q` and `q_get_sizes()`.
+    traffic_mail: u64,
+    /// The file traffic of the queue, the port of `state->q` and `q_get_sizes()`.
+    traffic_file: u64,
+    /// The compression method of the sent files, the port of `state->z_send`.
+    z_send: i32,
+    /// The compression method of the received files, the port of `state->z_recv`.
+    z_recv: i32,
+    /// The session queue, the port of `state->q` and `@queue`.
+    queue: Vec<QueueFile>,
+    /// The files that the action `s` removes at the end of a successful
+    /// session, the port of `state->killlist`.
+    killlist: Vec<PathBuf>,
 }
 
 impl<S> Session<S>
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    fn new(stream: S, role: Role, config: &SessionConfig) -> Session<S> {
+    fn new(
+        stream: S,
+        role: Role,
+        config: &SessionConfig,
+        info: SessionInfo,
+        hooks: Option<Arc<dyn Hooks>>,
+    ) -> Session<S> {
         // The port of `init_protocol()`: the inbound of the session.
         let inbound = binkd_spool::inbound::Inbound {
             dir: config.inbound.display().to_string(),
@@ -546,6 +664,18 @@ where
             nfa: config.addresses.len(),
             skip_all_flag: false,
         };
+        // The sink of `msg_send()`: the hook pushes a message and the session
+        // sends it after the hook, the port of the queue of `msg_send2()`.
+        let messages = Arc::new(Mutex::new(Vec::new()));
+        if let Some(hooks) = &hooks {
+            let queue = Arc::clone(&messages);
+            let sink: MessageSink = Arc::new(move |kind: u8, text: &str| {
+                if let Ok(mut queue) = queue.lock() {
+                    queue.push((kind, text.to_string()));
+                }
+            });
+            hooks.set_message_sink(Some(sink));
+        }
         Session {
             stream,
             role,
@@ -582,8 +712,61 @@ where
             pending: Vec::new(),
             pending_header: None,
             answered: Vec::new(),
-            prescan_files: Vec::new(),
             output: Vec::new(),
+            hooks,
+            messages,
+            start: now(),
+            peer_host: info.peer_host,
+            peer_ip: info.peer_ip,
+            our_ip: info.our_ip,
+            our_port: info.our_port,
+            peer_sysname: String::new(),
+            peer_sysop: String::new(),
+            peer_location: String::new(),
+            traffic_mail: info.traffic_mail,
+            traffic_file: info.traffic_file,
+            z_send: 0,
+            z_recv: 0,
+            queue: Vec::new(),
+            killlist: Vec::new(),
+        }
+    }
+
+    /// Returns the values of the session hooks, the port of `setup_session()`.
+    fn session_vars(&self) -> SessionVars {
+        SessionVars {
+            // The C code sets `$call` to `state->to == NULL`: the session
+            // answers a call.
+            call: self.role == Role::Server,
+            start: self.start,
+            host: self.peer_host.clone(),
+            ip: self.peer_ip.clone(),
+            our_ip: self.our_ip.clone(),
+            our_port: self.our_port,
+            secure: if self.secure() { 1 } else { 0 },
+            sysname: self.peer_sysname.clone(),
+            sysop: self.peer_sysop.clone(),
+            location: self.peer_location.clone(),
+            traffic_mail: self.traffic_mail,
+            traffic_file: self.traffic_file,
+            he: self.report.peer_addresses.clone(),
+            me: self.config.addresses.clone(),
+            bw_send: self.config.bw_send,
+            bw_recv: self.config.bw_recv,
+            bytes_rcvd: self.report.bytes_received,
+            bytes_sent: self.report.bytes_sent,
+            files_rcvd: self.report.files_received as u64,
+            files_sent: self.report.files_sent as u64,
+            z_send: self.z_send,
+            z_recv: self.z_recv,
+            queue: self.queue.clone(),
+            opt: Opt {
+                nd: self.nd.we as i32,
+                nr: self.nr.we as i32,
+                md: self.md5 as i32,
+                crypt: self.crypt.is_some() as i32,
+                gz: self.peer_methods.bits() as i32,
+            },
         }
     }
 
@@ -591,10 +774,33 @@ where
     ///
     /// The port of `msg_send2()`: the whole frame, the header included, is
     /// encrypted when the session crypts.
-    async fn send(&mut self, frame: Frame) -> Result<(), Error> {
+    async fn send_one(&mut self, frame: Frame) -> Result<(), Error> {
+        self.send_one_split(frame, None).await
+    }
+
+    /// Sends a frame and gives the hook the two parts of the message, the port
+    /// of `msg_send2()` with `s1` and `s2`.
+    ///
+    /// The C code builds some messages from two strings, and the hook reads
+    /// them apart in `$s1` and `$s2`. The wire holds the concatenation.
+    async fn send_one_split(
+        &mut self,
+        frame: Frame,
+        split: Option<(&str, &str)>,
+    ) -> Result<(), Error> {
         if matches!(frame, Frame::Command(..)) {
             // The port of `msg_send2()`: the batch counts the messages.
             self.msgs_in_batch += 1;
+        }
+        // The port of the `perl_on_send()` call of `msg_send2()`.
+        if let (Some(hooks), Frame::Command(command, argument)) = (&self.hooks, &frame) {
+            let vars = self.session_vars();
+            let text = String::from_utf8_lossy(argument);
+            let (s1, s2) = match split {
+                Some(parts) => parts,
+                None => (text.as_ref(), ""),
+            };
+            hooks.on_send(&vars, *command, s1, s2);
         }
         if self.config.trace {
             if let Some(name) = frame.log_name() {
@@ -620,6 +826,97 @@ where
         Ok(())
     }
 
+    /// Sets the traffic of the queue, the port of `q_get_sizes()`.
+    fn set_traffic(&mut self, files: &[SendFile]) {
+        let mut mail = 0u64;
+        let mut file = 0u64;
+        for entry in files {
+            if binkd_ftn::text::ispkt(entry.netname.as_bytes()) {
+                mail += entry.size;
+            } else {
+                file += entry.size;
+            }
+        }
+        self.traffic_mail = mail;
+        self.traffic_file = file;
+    }
+
+    /// Sets the session queue, the port of `setup_queue()`.
+    fn set_queue(&mut self, files: &[SendFile]) {
+        let addr = self
+            .report
+            .peer_addresses
+            .first()
+            .cloned()
+            .unwrap_or_default();
+        self.queue = files
+            .iter()
+            .map(|entry| QueueFile {
+                file: entry
+                    .path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|| entry.netname.clone()),
+                size: entry.size,
+                time: entry.time,
+                sent: 0,
+                flvr: 'f',
+                action: '\0',
+                type_: queue_type(&entry.netname),
+                addr: addr.clone(),
+            })
+            .collect();
+    }
+
+    /// Reads the queue that a hook changed, the port of `refresh_queue()` of
+    /// `perlhooks.c`.
+    ///
+    /// The hook answers `None` when it holds no queue, and the session keeps its
+    /// queue then. The address of the peer is the fallback of an entry without
+    /// an address, the port of `state->fa[0]`.
+    fn refresh_queue(&mut self) {
+        let Some(hooks) = self.hooks.clone() else {
+            return;
+        };
+        let fallback = self
+            .report
+            .peer_addresses
+            .first()
+            .cloned()
+            .unwrap_or_default();
+        if let Some(queue) = hooks.refresh_queue(&fallback) {
+            self.queue = queue;
+        }
+    }
+
+    /// Sends a frame and the messages that the hooks queued, the port of
+    /// `msg_send2()`.
+    async fn send(&mut self, frame: Frame) -> Result<(), Error> {
+        self.send_one(frame).await?;
+        self.flush_messages().await
+    }
+
+    /// Sends the messages that a hook queued, the port of the queue of
+    /// `msg_send2()`.
+    async fn flush_messages(&mut self) -> Result<(), Error> {
+        loop {
+            let messages = {
+                let Ok(mut queue) = self.messages.lock() else {
+                    return Ok(());
+                };
+                std::mem::take(&mut *queue)
+            };
+            if messages.is_empty() {
+                return Ok(());
+            }
+            for (kind, text) in messages {
+                if let Some(command) = Command::from_code(kind) {
+                    self.send_one(Frame::text(command, &text)).await?;
+                }
+            }
+        }
+    }
+
     /// Writes the bytes that wait, the port of the write branch of the
     /// `select()` of the loop of `protocol()`.
     async fn flush(&mut self) -> Result<(), Error> {
@@ -640,6 +937,15 @@ where
     /// Sends a command with a text argument.
     async fn send_text(&mut self, command: Command, text: &str) -> Result<(), Error> {
         self.send(Frame::text(command, text)).await
+    }
+
+    /// Sends a command with two parts, the port of `msg_send2()` with `s1` and
+    /// `s2`.
+    async fn send_text2(&mut self, command: Command, s1: &str, s2: &str) -> Result<(), Error> {
+        let text = format!("{s1}{s2}");
+        self.send_one_split(Frame::text(command, &text), Some((s1, s2)))
+            .await?;
+        self.flush_messages().await
     }
 
     /// Reads a frame.
@@ -681,6 +987,7 @@ where
             match self.try_read_frame().await {
                 Ok(Some(frame)) => {
                     self.handle_frame(frame, receive, srif, current).await?;
+                    self.flush_messages().await?;
                 }
                 Ok(None) => break,
                 Err(_) => break,
@@ -749,6 +1056,15 @@ where
         if matches!(frame, Frame::Command(..)) {
             self.msgs_in_batch += 1;
         }
+        // The port of the `perl_on_recv()` call of `recv_block()`: the hook
+        // sees the command byte and the argument.
+        if let (Some(hooks), Frame::Command(command, argument)) = (&self.hooks, &frame) {
+            let mut data = Vec::with_capacity(argument.len() + 1);
+            data.push(command.code());
+            data.extend_from_slice(argument);
+            let vars = self.session_vars();
+            hooks.on_recv(&vars, &data);
+        }
         if self.config.trace {
             if let Some(name) = frame.log_name() {
                 self.report.frames.push(FrameRecord { sent: false, name });
@@ -811,12 +1127,20 @@ where
                 break;
             }
         }
+        let hook = self.hooks.clone();
+        let vars = self.session_vars();
         let bw = if send {
             &mut self.bw_send
         } else {
             &mut self.bw_recv
         };
         bw.limit = bw::file_limit(rate, bw.abs, bw.rel);
+        // The port of the `perl_setup_rlimit()` call of `setup_rate_limit()`.
+        if let Some(hooks) = hook {
+            let mut limit = bw.limit as i64;
+            hooks.setup_rlimit(&vars, name, &mut limit);
+            bw.limit = limit.max(0) as u64;
+        }
         bw.start();
     }
 
@@ -832,7 +1156,8 @@ where
     ) -> Result<(), Error> {
         // The answerer sends the challenge of CRAM-MD5 as its first message,
         // the port of `banner()`.
-        if self.role == Role::Server && self.secure() {
+        if self.role == Role::Server && self.secure() && !self.config.no_md5 && !self.config.listed
+        {
             let challenge = binkd_ftn::cram::generate_challenge(b"");
             // The first byte of the challenge is its length.
             let digest = binkd_ftn::cram::to_string(&challenge[1..]);
@@ -843,17 +1168,13 @@ where
 
         // The banner of both sides.
         let sysname = self.config.sysname.clone();
-        self.send_text(Command::Nul, &format!("SYS {sysname}"))
-            .await?;
+        self.send_text2(Command::Nul, "SYS ", &sysname).await?;
         let sysop = self.config.sysop.clone();
-        self.send_text(Command::Nul, &format!("ZYZ {sysop}"))
-            .await?;
+        self.send_text2(Command::Nul, "ZYZ ", &sysop).await?;
         let location = self.config.location.clone();
-        self.send_text(Command::Nul, &format!("LOC {location}"))
-            .await?;
+        self.send_text2(Command::Nul, "LOC ", &location).await?;
         let nodeinfo = self.config.nodeinfo.clone();
-        self.send_text(Command::Nul, &format!("NDL {nodeinfo}"))
-            .await?;
+        self.send_text2(Command::Nul, "NDL ", &nodeinfo).await?;
         let version = self.config.version.clone();
         let protocol = self.config.protocol.name();
         self.send_text(Command::Nul, &format!("VER {version} binkp/{protocol}"))
@@ -864,13 +1185,14 @@ where
         if self.role == Role::Client {
             self.send_options().await?;
         }
-        let addresses: Vec<String> = self
-            .config
-            .addresses
-            .iter()
-            .map(|fa| fa.format(true))
-            .collect();
-        self.send_text(Command::Adr, &addresses.join(" ")).await?;
+        // The port of the `perl_on_handshake()` call of `banner()`: the
+        // caller runs the hook before its `ADR`. The answerer runs it in the
+        // `ADR` branch below, after the `ADR` of the caller, the port of
+        // `ADR()` of the C code.
+        if self.role == Role::Client {
+            self.on_handshake().await?;
+            self.send_adr().await?;
+        }
 
         // The port of the write branch of the `select()` of the loop of
         // `protocol()`: the C code writes the banner of the session in the
@@ -893,9 +1215,15 @@ where
                             self.prescan().await?;
                             self.send_password().await?
                         }
-                        // The answerer waits for the password of the caller,
-                        // the port of `PWD()`.
-                        Role::Server => {}
+                        // The answerer calls the hook after the `ADR` of
+                        // the caller, the port of `ADR()`, and it sends its
+                        // own `ADR` after the hook, the port of `delay_ADR`.
+                        Role::Server => {
+                            self.setup_handshake_traffic();
+                            self.on_handshake().await?;
+                            self.send_adr().await?;
+                            self.flush().await?;
+                        }
                     }
                 }
                 Frame::Command(Command::Pwd, argument) => {
@@ -940,6 +1268,12 @@ where
     /// The caller answers the challenge with the digest of CRAM-MD5. Without a
     /// challenge it sends the password.
     async fn send_password(&mut self) -> Result<(), Error> {
+        if self.challenge.is_none()
+            && self.config.md_flag == binkd_ftn::node::MD_ON
+            && !self.config.no_md5
+        {
+            return Err(Error::Md5Required);
+        }
         // The port of `ADR()`: a caller without a password sends `-`.
         let password = if self.config.password.is_empty() {
             "-".to_string()
@@ -978,7 +1312,7 @@ where
             false,
         );
         let (netsize, filessize) = queue.get_sizes();
-        self.send_text(Command::Nul, &format!("TRF {netsize} {filessize}"))
+        self.send_text2(Command::Nul, "TRF ", &format!("{netsize} {filessize}"))
             .await?;
         // The C code announces one claim per request file of the queue, the
         // port of `q_freq_num()` of `ftnq.c`.
@@ -987,11 +1321,16 @@ where
                 self.send_text(Command::Nul, "FREQ").await?;
             }
         }
-        self.prescan_files = queue
+        let files: Vec<SendFile> = queue
             .entries
             .iter()
             .map(|entry| queued_file(&entry.path.to_string_lossy()))
             .collect();
+        // The port of `do_prescan()`: the scan builds the queue of the session,
+        // the `state->q` that `setup_queue()` gives to the hooks and the send
+        // path sends.
+        self.set_traffic(&files);
+        self.set_queue(&files);
         Ok(())
     }
 
@@ -1050,12 +1389,92 @@ where
         if self.we_crypt && self.they_crypt && self.secure() && self.md5 && !self.any_password() {
             self.crypt = Some(Crypt::new(&self.config.password, self.role));
         }
+        // The port of the `perl_after_handshake()` call of
+        // `complete_login()`.
+        if let Some(hooks) = self.hooks.clone() {
+            let response = hooks.after_handshake(&self.session_vars());
+            // The port of `refresh_queue()` of `perl_after_handshake()`: the
+            // script may rebuild the queue of the session.
+            self.refresh_queue();
+            if let Some(response) = response {
+                let _ = self.send_text(Command::Err, &response).await;
+                return Err(Error::Peer(response));
+            }
+        }
+        self.flush_messages().await?;
         // The port of the write branch of the `select()` of the loop of
         // `protocol()`: the C code writes the options and the answer of the
         // login in the pass of the read, so the peer reads them before it
         // sends the frame of the session.
         self.flush().await?;
         Ok(())
+    }
+
+    /// Calls the hook of the handshake, the port of `perl_on_handshake()`.
+    ///
+    /// The hook may replace our addresses and the password of the session.
+    async fn on_handshake(&mut self) -> Result<(), Error> {
+        let Some(hooks) = self.hooks.clone() else {
+            return Ok(());
+        };
+        let mut vars = Handshake {
+            session: self.session_vars(),
+            he: self.report.peer_addresses.clone(),
+            me: None,
+            password: None,
+            traffic_mail: self.traffic_mail,
+            traffic_file: self.traffic_file,
+        };
+        if let Some(response) = hooks.on_handshake(&mut vars) {
+            let _ = self.send_text(Command::Err, &response).await;
+            return Err(Error::Peer(response));
+        }
+        if let Some(me) = vars.me {
+            self.config.addresses = me;
+        }
+        if let Some(password) = vars.password {
+            self.config.password = password;
+        }
+        self.flush_messages().await?;
+        Ok(())
+    }
+
+    /// Sends our `ADR`, the port of `send_ADR()` of `protocol.c`.
+    async fn send_adr(&mut self) -> Result<(), Error> {
+        let addresses: Vec<String> = self
+            .config
+            .addresses
+            .iter()
+            .map(|fa| fa.format(true))
+            .collect();
+        self.send_text(Command::Adr, &addresses.join(" ")).await
+    }
+
+    /// Sets the traffic of the queue of the answerer before the handshake
+    /// hook, the port of the `q_scan_addrs()` and `q_get_sizes()` calls of
+    /// `perl_on_handshake()`.
+    fn setup_handshake_traffic(&mut self) {
+        let Some(hooks) = &self.hooks else {
+            return;
+        };
+        if self.role != Role::Server
+            || !hooks.has_on_handshake()
+            || !self.can_send_files()
+            || !self.queue.is_empty()
+        {
+            return;
+        }
+        let mut queue = binkd_spool::queue::Queue::new();
+        queue.scan_addrs(
+            &self.report.peer_addresses,
+            false,
+            &mut self.config.spool,
+            now(),
+            false,
+        );
+        let (mail, file) = queue.get_sizes();
+        self.traffic_mail = mail;
+        self.traffic_file = file;
     }
 
     /// Sends the options of this side, the port of the `OPT` message of
@@ -1092,7 +1511,7 @@ where
         if self.we_crypt && (self.role == Role::Client || self.they_crypt) {
             options.push("CRYPT".to_string());
         }
-        self.send_text(Command::Nul, &format!("OPT {}", options.join(" ")))
+        self.send_text2(Command::Nul, "OPT", &format!(" {}", options.join(" ")))
             .await
     }
 
@@ -1153,7 +1572,11 @@ where
                         // The port of `NUL()`: the peer holds the
                         // asymmetric ND mode.
                         self.nd.can_nda = true;
-                    } else if option.starts_with(binkd_ftn::cram::PREFIX) {
+                    } else if !self.config.no_md5
+                        && self.role == Role::Client
+                        && self.config.md_flag >= 0
+                        && option.starts_with(binkd_ftn::cram::PREFIX)
+                    {
                         // The port of `MD_getChallenge()`: the first byte of
                         // the challenge is its length.
                         self.challenge = binkd_ftn::cram::parse(option);
@@ -1179,6 +1602,9 @@ where
             Some("VER") => {
                 self.peer_11 = text.contains("binkp/1.1");
             }
+            Some("SYS") => self.peer_sysname = words.collect::<Vec<_>>().join(" "),
+            Some("ZYZ") => self.peer_sysop = words.collect::<Vec<_>>().join(" "),
+            Some("LOC") => self.peer_location = words.collect::<Vec<_>>().join(" "),
             _ => {}
         }
     }
@@ -1200,24 +1626,49 @@ where
         given == self.config.password
     }
 
-    /// Sends the files and the end of the batch.
+    /// Sends the files of the session queue and the end of the batch.
+    ///
+    /// The port of the queue loop of `protocol()`: `select_next_file()` marks
+    /// the next unsent entry and `start_file_transfer()` sends it. A hook may
+    /// rebuild the queue during a send, so the loop reads the queue every pass.
     async fn send_files(
         &mut self,
-        files: &[SendFile],
         srif: &mut (dyn Srif + Send),
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
-        // The port of `complete_login()`: the C code scans the queue of the
-        // session when the prescan did not, and the send path sends the queue.
-        let files: Vec<SendFile> = if self.prescan_files.is_empty() {
-            files.to_vec()
-        } else {
-            std::mem::take(&mut self.prescan_files)
-        };
-        for file in &files {
-            self.send_queued(file, srif, timeout).await?;
-        }
+        self.send_queue(srif, timeout).await?;
         self.send_pending(srif, timeout).await?;
+        Ok(())
+    }
+
+    /// Sends the unsent files of the queue, the port of the queue loop of
+    /// `protocol()`.
+    async fn send_queue(
+        &mut self,
+        srif: &mut (dyn Srif + Send),
+        timeout: std::time::Duration,
+    ) -> Result<(), Error> {
+        // The C code sends no file of the queue after its own end of the
+        // batch, the port of the `!state.local_EOB` test of the loop.
+        if self.sent_eob {
+            return Ok(());
+        }
+        loop {
+            // The port of `select_next_file()`: the next file is the first
+            // entry that the session did not send.
+            let Some(index) = self.queue.iter().position(|entry| entry.sent == 0) else {
+                // The port of the `q_free()` of the loop: the session sent
+                // every file of the queue.
+                self.queue.clear();
+                break;
+            };
+            self.queue[index].sent = 1;
+            let entry = self.queue[index].clone();
+            let Some(file) = queue_file(&entry) else {
+                continue;
+            };
+            self.send_queued(&file, entry.action, srif, timeout).await?;
+        }
         Ok(())
     }
 
@@ -1228,7 +1679,7 @@ where
     ) -> Result<(), Error> {
         for path in std::mem::take(&mut self.answered) {
             let file = queued_file(&path);
-            self.send_queued(&file, srif, timeout).await?;
+            self.send_queued(&file, '\0', srif, timeout).await?;
         }
         if self.sent_eob || !self.sent_fls.is_empty() || self.get_file_balance > 0 {
             return Ok(());
@@ -1285,14 +1736,38 @@ where
                 }
                 if methods.contains(Method::Gz) && methods.contains(Method::Bz2) {
                     let _ = self
-                        .send_text(
+                        .send_text2(
                             Command::Err,
-                            &format!("Can't handle GZ and BZ2 at the same time for {netname}"),
+                            "Can't handle GZ and BZ2 at the same time for ",
+                            &netname,
                         )
                         .await;
                     return Err(Error::Protocol(format!(
                         "both GZ and BZ2 extras are specified for {netname}"
                     )));
+                }
+                // The port of the `perl_before_recv()` call of
+                // `start_file_recv()`.
+                if let Some(hooks) = self.hooks.clone() {
+                    let vars = self.session_vars();
+                    let info = FileVars {
+                        path: String::new(),
+                        name: netname.clone(),
+                        size,
+                        time,
+                        offset: offset.max(0) as u64,
+                    };
+                    let rc = hooks.before_recv(&vars, &info);
+                    self.flush_messages().await?;
+                    if rc > 0 {
+                        let _ = self
+                            .send_text(
+                                if rc == 2 { Command::Got } else { Command::Skip },
+                                &format!("{netname} {size} {time}"),
+                            )
+                            .await;
+                        return Ok(());
+                    }
                 }
                 // The port of `skip_test()` of `start_file_recv()`: a
                 // rule of the `skip` directive declines the file.
@@ -1458,7 +1933,7 @@ where
             }
             Frame::Command(Command::Got, argument) => {
                 // The port of `GOT()`: the peer acknowledged a file.
-                self.got_file(&argument)?;
+                self.got_file(&argument).await?;
             }
             Frame::Command(Command::Get, argument) => {
                 self.get_file(&argument).await?;
@@ -1518,6 +1993,7 @@ where
     async fn send_queued(
         &mut self,
         file: &SendFile,
+        action: char,
         srif: &mut (dyn Srif + Send),
         timeout: std::time::Duration,
     ) -> Result<(), Error> {
@@ -1525,13 +2001,45 @@ where
         // wire, the port of `netname_()` of `prothlp.c`.
         let mut rnd = rnd();
         let wire = binkd_ftn::text::netname(file.netname.as_bytes(), &mut rnd);
-        let file = SendFile {
+        let mut file = SendFile {
             netname: String::from_utf8_lossy(&wire).into_owned(),
             ..file.clone()
         };
-        let file = &file;
-        let method = self.send_method(file);
-        self.send_file(file, method).await?;
+        // The port of the `perl_before_send()` call of
+        // `start_file_transfer()`.
+        if let Some(hooks) = self.hooks.clone() {
+            let vars = self.session_vars();
+            let mut info = FileVars {
+                path: file
+                    .path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_default(),
+                name: file.netname.clone(),
+                size: file.size,
+                time: file.time,
+                offset: 0,
+            };
+            let abort = hooks.before_send(&vars, &mut info) > 0;
+            self.flush_messages().await?;
+            // The port of `refresh_queue()` of `perl_before_send()`: the
+            // script may rebuild the queue of the session.
+            self.refresh_queue();
+            if abort {
+                // The port of the removal of `start_file_transfer()`: the C
+                // code removes the file of the spool when the hook aborts it.
+                if let Some(path) = &file.path {
+                    let _ = fs::remove_file(path);
+                }
+                return Ok(());
+            }
+            file.netname = info.name;
+        }
+        let method = self.send_method(&file);
+        if let Some(method) = method {
+            self.z_send |= method.code() as i32;
+        }
+        self.send_file(&file, method).await?;
         // The port of `current_file_was_sent()`: the peer may ask for
         // the file with `M_GET` or decline it with `M_SKIP`, and it
         // acknowledges it with `M_GOT`.
@@ -1542,6 +2050,8 @@ where
             path: file.path.clone(),
             method,
             fa: self.report.peer_addresses.first().cloned(),
+            start: now(),
+            action,
         });
         if self.nd.we {
             // The port of the `waiting_for_GOT` wait of
@@ -1718,11 +2228,52 @@ where
         receive: &mut (dyn FnMut(&ReceivedFile) -> std::io::Result<()> + Send),
         srif: &mut (dyn Srif + Send),
     ) -> Result<(), Error> {
-        // The port of `inb_done()`: the partial file takes its true name.
+        // The port of the first part of `inb_done()`: the partial file and the
+        // real name, before the rename.
         let mut rnd = random();
-        let name = self
-            .inbound
-            .inb_done(&complete.tfile, &mut self.config.spool, now(), &mut rnd);
+        let Some(mut done) =
+            self.inbound
+                .inb_prepare(&complete.tfile, &self.config.spool, now(), &mut rnd)
+        else {
+            return Err(Error::Protocol(format!(
+                "cannot save {}",
+                complete.tfile.netname
+            )));
+        };
+        if let Some(method) = complete.method {
+            self.z_recv |= method.code() as i32;
+        }
+        // The port of the `perl_after_recv()` call of `inb_done()`: the hook
+        // runs before the rename, so `$tmpfile` names the partial file and
+        // `$file` the real name that the hook may change.
+        if let Some(hooks) = self.hooks.clone() {
+            let vars = self.session_vars();
+            let mut info = ReceivedVars {
+                name: complete.tfile.netname.clone(),
+                size: complete.tfile.size,
+                time: complete.tfile.time,
+                tmp: done.tmp.clone(),
+                file: done.real.clone(),
+            };
+            let rc = hooks.after_recv(&vars, &mut info);
+            // The port of `refresh_queue()` of `perl_after_recv()`: the script
+            // may rebuild the queue of the session.
+            self.refresh_queue();
+            if rc != 0 || info.file.is_empty() {
+                // The port of the `rc == 2` path of `inb_done()`: the script
+                // took the file over, so the partial file goes.
+                self.inbound.inb_discard(&done);
+                self.flush_messages().await?;
+                return Ok(());
+            }
+            done.real = info.file;
+            self.flush_messages().await?;
+        }
+        // The port of the rest of `inb_done()`: the prepared file takes its
+        // real name, the one that the hook may have changed.
+        let name =
+            self.inbound
+                .inb_done_prepared(done, &complete.tfile, &mut self.config.spool, now());
         let Some(name) = name else {
             return Err(Error::Protocol(format!(
                 "cannot save {}",
@@ -1752,7 +2303,7 @@ where
     /// The port removes the file from the queue of the sent files and saves
     /// the answer of the peer as the link status of the ND mode. A request of
     /// the NR mode clears the status.
-    fn got_file(&mut self, argument: &[u8]) -> Result<(), Error> {
+    async fn got_file(&mut self, argument: &[u8]) -> Result<(), Error> {
         let (netname, size, time) = parse_sent_args(argument)?;
         let mut address = None;
         let mut sent = None;
@@ -1763,6 +2314,38 @@ where
                 break;
             }
         }
+        // The port of the `perl_after_sent()` call of `GOT()`, and the
+        // action of the file, the port of `remove_from_spool()` of the C
+        // code: the action removes, truncates, or holds the file for the end
+        // of the session.
+        let hook = self.hooks.clone();
+        let vars = self.session_vars();
+        let mut performed: Option<(Option<PathBuf>, char)> = None;
+        if let Some(index) = self
+            .sent_fls
+            .iter()
+            .position(|file| file.matches(&netname, size, time))
+        {
+            let file = &mut self.sent_fls[index];
+            let mut info = SentVars {
+                path: file
+                    .path
+                    .as_ref()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_default(),
+                name: file.netname.clone(),
+                size: file.size,
+                time: file.time,
+                start: file.start,
+                action: file.action,
+            };
+            if let Some(hooks) = hook {
+                hooks.after_sent(&vars, &mut info);
+                file.action = info.action;
+            }
+            performed = Some((file.path.clone(), file.action));
+        }
+        self.flush_messages().await?;
         // The port of `GOT()`: the acknowledgement of the peer counts the
         // file, so a file that the peer declined holds no count.
         if let Some(sent) = sent {
@@ -1771,6 +2354,9 @@ where
         }
         self.sent_fls
             .retain(|file| !file.matches(&netname, size, time));
+        if let Some((Some(path), action)) = performed {
+            self.perform_action(&path, action);
+        }
         if let Some(fa) = address {
             if self.off_req_sent || !self.nd.we {
                 let _ = binkd_spool::status::set_status(&self.config.domains, &fa, "");
@@ -1779,6 +2365,24 @@ where
             }
         }
         Ok(())
+    }
+
+    /// Applies the action of a sent file, the port of `perform_action()` of
+    /// `protocol.c`.
+    ///
+    /// `d` removes the file, `t` truncates it, and `s` holds it for the end of
+    /// a successful session.
+    fn perform_action(&mut self, path: &Path, action: char) {
+        match action {
+            'd' => {
+                let _ = fs::remove_file(path);
+            }
+            't' => {
+                let _ = fs::OpenOptions::new().write(true).truncate(true).open(path);
+            }
+            's' => self.killlist.push(path.to_path_buf()),
+            _ => {}
+        }
     }
 
     /// Reads the frames of the peer until it acknowledges the files that we
@@ -1791,7 +2395,7 @@ where
         while !self.sent_fls.is_empty() {
             let frame = self.read(timeout).await?;
             match frame {
-                Frame::Command(Command::Got, argument) => self.got_file(&argument)?,
+                Frame::Command(Command::Got, argument) => self.got_file(&argument).await?,
                 Frame::Command(Command::Get, argument) => self.get_file(&argument).await?,
                 Frame::Command(Command::Skip, argument) => self.skip_file(&argument)?,
                 Frame::Command(Command::Nul, argument) => self.handle_nul(&argument, srif),
@@ -1807,6 +2411,7 @@ where
                 }
                 _ => {}
             }
+            self.flush_messages().await?;
         }
         Ok(())
     }
@@ -1891,6 +2496,8 @@ where
             path: file.path.clone(),
             method,
             fa: file.fa.clone(),
+            start: now(),
+            action: file.action,
         });
         self.off_req_sent = false;
         Ok(())
@@ -1905,9 +2512,12 @@ where
     ) -> Result<(), Error> {
         let mut current: Option<Incoming> = None;
         loop {
-            // The send path of the C code: the files that an exchange
-            // answered, and our own end of the batch when the session has
-            // nothing more to send.
+            // The send path of the C code: the queue of the session, the files
+            // that an exchange answered, and our own end of the batch when the
+            // session has nothing more to send. A hook of a received file may
+            // rebuild the queue, the port of `refresh_queue()` of
+            // `perl_after_recv()`.
+            self.send_queue(srif, timeout).await?;
             self.send_pending(srif, timeout).await?;
             // The C code ends the batch when the peer sent its end, our own
             // end went out, every file that we sent is acknowledged, every
@@ -1944,6 +2554,7 @@ where
                         Ok(frame) => {
                             self.handle_frame(frame, receive, srif, &mut current)
                                 .await?;
+                            self.flush_messages().await?;
                             continue;
                         }
                         Err(_) => return Ok(()),
@@ -1965,6 +2576,7 @@ where
             };
             self.handle_frame(frame, receive, srif, &mut current)
                 .await?;
+            self.flush_messages().await?;
         }
         // The port answers the frames that the read ahead holds before it
         // returns, the port of the read of the loop of `protocol()`: the C
@@ -2044,6 +2656,15 @@ fn rnd() -> impl FnMut() -> u32 {
     }
 }
 
+/// Returns the type of a queue entry, the port of `q->type`.
+fn queue_type(netname: &str) -> char {
+    if binkd_ftn::text::ispkt(netname.as_bytes()) {
+        'm'
+    } else {
+        '\0'
+    }
+}
+
 /// Returns the next random number, the port of `getrand()`.
 fn random() -> impl FnMut() -> u32 {
     let mut state = now() as u32 ^ std::process::id();
@@ -2081,6 +2702,10 @@ struct SentFile {
     method: Option<Method>,
     /// The address of the receiver, for the link status of the ND mode.
     fa: Option<FtnAddr>,
+    /// The start time of the send, the port of `start`.
+    start: i64,
+    /// The action of the send, the port of `action`.
+    action: char,
 }
 
 impl SentFile {
@@ -2153,6 +2778,22 @@ fn queued_file(path: &str) -> SendFile {
             .map(|d| d.as_secs() as i64)
             .unwrap_or(0),
     }
+}
+
+/// Builds a session file from a queue entry, the port of the `q->path`,
+/// `q->size`, and `q->time` reads of `start_file_transfer()`.
+///
+/// The queue entry names the path of the file and the values that the script
+/// set, so the port reuses [`queued_file()`] for the name of the file and then
+/// holds the size and the time of the entry.
+fn queue_file(entry: &QueueFile) -> Option<SendFile> {
+    if entry.file.is_empty() {
+        return None;
+    }
+    let mut file = queued_file(&entry.file);
+    file.size = entry.size;
+    file.time = entry.time;
+    Some(file)
 }
 
 fn parse_file_args(argument: &[u8]) -> Result<(String, u64, i64, i64, Vec<String>), Error> {

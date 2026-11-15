@@ -43,6 +43,7 @@ pub enum Event {
 /// The C code installs the handlers and the handlers set the flags that the main
 /// loop reads. The port takes the streams of the runtime, and the caller installs
 /// them, so the library holds no global state.
+#[cfg(unix)]
 pub struct Signals {
     /// The `SIGHUP` stream, the port of `signal (SIGHUP, sighandler)`.
     hangup: tokio::signal::unix::Signal,
@@ -52,6 +53,7 @@ pub struct Signals {
     terminate: tokio::signal::unix::Signal,
 }
 
+#[cfg(unix)]
 impl Signals {
     /// Installs the handlers and returns the streams, the port of
     /// `set_break_handlers()` of `breaksig.c` and of the `signal()` calls of
@@ -82,6 +84,70 @@ impl Signals {
     }
 }
 
+/// The signals of the daemon of Windows, the port of `nt/breaksig.c`.
+///
+/// The console of a program that runs from the prompt holds the control
+/// events. The service mode gives the events of the service control manager
+/// through a channel, the port of the `CTRL_SERVICESTOP_EVENT` of `nt/breaksig.c`.
+#[cfg(windows)]
+pub struct Signals {
+    /// The console `CTRL_C_EVENT`.
+    ctrl_c: Option<tokio::signal::windows::CtrlC>,
+    /// The console `CTRL_BREAK_EVENT`.
+    ctrl_break: Option<tokio::signal::windows::CtrlBreak>,
+    /// The console `CTRL_CLOSE_EVENT`.
+    ctrl_close: Option<tokio::signal::windows::CtrlClose>,
+    /// The events of the service control manager.
+    service: Option<tokio::sync::mpsc::Receiver<Event>>,
+}
+
+#[cfg(windows)]
+impl Signals {
+    /// Installs the console handlers, the port of `set_break_handlers()` of
+    /// `nt/breaksig.c`.
+    pub fn install() -> std::io::Result<Signals> {
+        use tokio::signal::windows::{ctrl_break, ctrl_c, ctrl_close};
+        Ok(Signals {
+            ctrl_c: Some(ctrl_c()?),
+            ctrl_break: Some(ctrl_break()?),
+            ctrl_close: Some(ctrl_close()?),
+            service: None,
+        })
+    }
+
+    /// Builds the signals of the service mode, the port of the control handler
+    /// of `ServiceCtrl()` of `nt/service.c`.
+    pub fn service(receiver: tokio::sync::mpsc::Receiver<Event>) -> Signals {
+        Signals {
+            ctrl_c: None,
+            ctrl_break: None,
+            ctrl_close: None,
+            service: Some(receiver),
+        }
+    }
+
+    /// Waits for the next signal or service event.
+    pub async fn next(&mut self) -> Event {
+        if let Some(service) = &mut self.service {
+            return service.recv().await.unwrap_or(Event::Exit(0));
+        }
+        let Some(ctrl_c) = self.ctrl_c.as_mut() else {
+            return Event::Exit(0);
+        };
+        let Some(ctrl_break) = self.ctrl_break.as_mut() else {
+            return Event::Exit(0);
+        };
+        let Some(ctrl_close) = self.ctrl_close.as_mut() else {
+            return Event::Exit(0);
+        };
+        tokio::select! {
+            _ = ctrl_c.recv() => Event::Exit(2),
+            _ = ctrl_break.recv() => Event::Exit(2),
+            _ = ctrl_close.recv() => Event::Exit(15),
+        }
+    }
+}
+
 /// The daemon of binkd, the port of the state of the process of `main()` of
 /// `binkd.c`.
 pub struct Daemon {
@@ -95,6 +161,11 @@ pub struct Daemon {
     busy: BusyList,
     /// The log of the process.
     log: Arc<Log>,
+    /// The source of the hooks of a session, or `None`.
+    hooks: Option<binkd_proto::Factory>,
+    /// The Perl hooks of the running daemon, or `None`.
+    #[cfg(feature = "perl")]
+    perl: Option<crate::perl::Runtime>,
 }
 
 impl Daemon {
@@ -105,22 +176,48 @@ impl Daemon {
     /// random numbers. The port of this slice holds the line and the list.
     pub fn new(config: Config, options: &Options, log: Arc<Log>, args: &[String]) -> Daemon {
         // The port of `print_args()` and of `Log (4, "BEGIN, ...")` of `main()`.
-        log.message(
-            START,
-            &format!(
-                "BEGIN, {}/{}/{}{}",
+        // The C code prints the arguments after the program name, the port of
+        // `print_args(tmp, sizeof(tmp), argv + 1)`.
+        let printed = cli::print_args(args.get(1..).unwrap_or(&[]));
+        #[cfg(windows)]
+        let begin = match options.service_display.as_deref() {
+            Some(name) => format!(
+                "BEGIN service '{name}', {}/{}/{}{}",
                 version::NAME,
                 version::VERSION,
                 platform::system(),
-                cli::print_args(args)
+                printed
             ),
-            &platform::now(),
+            None => format!(
+                "BEGIN standalone, {}/{}/{}{}",
+                version::NAME,
+                version::VERSION,
+                platform::system(),
+                printed
+            ),
+        };
+        #[cfg(not(windows))]
+        let begin = format!(
+            "BEGIN, {}/{}/{}{}",
+            version::NAME,
+            version::VERSION,
+            platform::system(),
+            printed
         );
+        log.message(START, &begin, &platform::now());
         // The port of `bsy_init()` of `bsy.c`: the C code starts an empty list
         // and fills it from the scan of the spool.
         let busy = BusyList::new();
         let mut reloader = Reloader::new(config.clone());
         reloader.set_check_on_change(options.check_on_change);
+        // The C code of `perl_init()` accepts the `perl-*` keywords only in a
+        // build of `--with-perl`, the port of the `WITH_PERL` of `readcfg.c`.
+        #[cfg(feature = "perl")]
+        {
+            let mut features = binkd_config::Features::unix_default();
+            features.perl = true;
+            reloader.set_features(features);
+        }
         if let Ok(dir) = std::env::current_dir() {
             reloader.set_base_dir(&dir);
         }
@@ -130,7 +227,28 @@ impl Daemon {
             reloader,
             busy,
             log,
+            hooks: None,
+            #[cfg(feature = "perl")]
+            perl: None,
         }
+    }
+
+    /// Sets the source of the hooks of the sessions.
+    pub fn set_hook_factory(&mut self, hooks: Option<binkd_proto::Factory>) {
+        self.hooks = hooks;
+    }
+
+    /// Sets the Perl hooks, the port of the `perl_init()` block of `main()`.
+    #[cfg(feature = "perl")]
+    pub(crate) fn set_perl(&mut self, runtime: crate::perl::Runtime) {
+        let master = Arc::clone(&runtime.master);
+        self.reloader
+            .set_need_reload(Some(Box::new(move |files, need| match master.lock() {
+                Ok(hooks) => hooks.need_reload(files, need),
+                Err(_) => 0,
+            })));
+        self.hooks = Some(runtime.factory.clone());
+        self.perl = Some(runtime);
     }
 
     /// Writes the pid file, the port of the pid file block of `main()` of
@@ -210,7 +328,7 @@ impl Daemon {
         // The port of the `select()` timeout of `do_server()`: the C code
         // checks the config files on every pass of `CHECKCFG_INTERVAL`, the
         // port of `rescan_delay`.
-        let delay = Duration::from_secs(self.config.rescan_delay.max(1) as u64);
+        let mut delay = Duration::from_secs(self.config.rescan_delay.max(1) as u64);
         let mut ticker = tokio::time::interval(delay);
         ticker.tick().await;
         loop {
@@ -223,10 +341,25 @@ impl Daemon {
                     // The port of the timeout branch of `do_server()`: the
                     // check reloads only when a config file changed.
                     if self.reload_check() {
+                        // The C code closes the listen sockets and the next
+                        // pass of the managers reads the new config.
                         if let Some(task) = listener.take() {
                             task.abort();
+                            let _ = task.await;
                         }
+                        // The accept tasks close their sockets on the abort;
+                        // give them a moment before the bind of the new
+                        // listener.
+                        tokio::time::sleep(Duration::from_millis(20)).await;
                         listener = self.spawn_listener();
+                        if let Some(task) = clients.take() {
+                            task.abort();
+                            let _ = task.await;
+                        }
+                        clients = self.spawn_client(Arc::clone(&stop));
+                        delay = Duration::from_secs(self.config.rescan_delay.max(1) as u64);
+                        ticker = tokio::time::interval(delay);
+                        ticker.tick().await;
                     }
                 }
                 Some(Event::Exit(number)) => {
@@ -244,11 +377,25 @@ impl Daemon {
                     if self.reload() {
                         // The port of the socket close of `do_server()`:
                         // the caller of `listen()` stops the task and starts
-                        // a new one with the new config.
+                        // a new one with the new config. The client manager
+                        // restarts too, so it holds the new config and hooks.
                         if let Some(task) = listener.take() {
                             task.abort();
+                            let _ = task.await;
                         }
+                        // The accept tasks close their sockets on the abort;
+                        // give them a moment before the bind of the new
+                        // listener.
+                        tokio::time::sleep(Duration::from_millis(20)).await;
                         listener = self.spawn_listener();
+                        if let Some(task) = clients.take() {
+                            task.abort();
+                            let _ = task.await;
+                        }
+                        clients = self.spawn_client(Arc::clone(&stop));
+                        delay = Duration::from_secs(self.config.rescan_delay.max(1) as u64);
+                        ticker = tokio::time::interval(delay);
+                        ticker.tick().await;
                     }
                 }
             }
@@ -280,7 +427,40 @@ impl Daemon {
             .and_then(|addr| addr.parse().ok())
             .unwrap_or_else(|| "0.0.0.0:0".parse().unwrap());
         let timeout = self.session_options().timeout;
-        let settings = binkd_net::session_config(&self.config, None, !self.options.no_crypt, false);
+        // The port of the `-f` switch: the node of the protected session.
+        // The C code parses the address with the domains of the config and
+        // looks the node up in the node table.
+        let remote_node =
+            self.options.remote_node.as_deref().and_then(|text| {
+                match FtnAddr::parse(text, &self.config.spool.domains) {
+                    Some(fa) => {
+                        self.log.message(
+                            INFO,
+                            &format!("Session with {}", fa.format(false)),
+                            &platform::now(),
+                        );
+                        Some(fa)
+                    }
+                    None => {
+                        self.log.message(
+                            ERROR,
+                            &format!("`{text}' cannot be parsed as a Fido-style address"),
+                            &platform::now(),
+                        );
+                        None
+                    }
+                }
+            });
+        let node = remote_node.as_ref().and_then(|fa| {
+            self.config
+                .spool
+                .nodes
+                .get(fa, platform::now().epoch)
+                .cloned()
+        });
+        let mut settings =
+            binkd_net::session_config(&self.config, node.as_ref(), !self.options.no_crypt, false);
+        settings.no_md5 = self.options.no_md5;
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let mut files = {
             let spool = Arc::clone(&spool);
@@ -351,7 +531,12 @@ impl Daemon {
     /// in `protocol()` of `protocol.c`.
     fn session_options(&self) -> SessionOptions {
         let timeout = Duration::from_secs(self.config.nettimeout.max(1) as u64);
-        SessionOptions::new(timeout, !self.options.no_crypt, false)
+        let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
+        options.no_md5 = self.options.no_md5;
+        match &self.hooks {
+            Some(hooks) => options.with_hooks(Arc::clone(hooks)),
+            None => options,
+        }
     }
 
     /// Runs one pass of the client manager, the port of `do_client()` of
@@ -421,7 +606,7 @@ impl Daemon {
                     }
                 };
                 let results = caller
-                    .call_all(&mut config, &log, &platform::now, options, &files)
+                    .call_all(&mut config, &log, &platform::now, options.clone(), &files)
                     .await;
                 for (fa, result) in results {
                     match result {
@@ -513,12 +698,65 @@ impl Daemon {
             ReloadOutcome::Reloaded(config) => {
                 self.log
                     .message(CONNECTION, "Reloading configuration...", &platform::now());
+                // The port of `perl_init(new_config, 0)` of `checkcfg()`: the
+                // new config loads its script before the log and the config
+                // change. A broken strict script keeps the old config.
+                #[cfg(feature = "perl")]
+                let loaded = {
+                    let script = config.perl_script.clone();
+                    if script.is_empty() {
+                        Some(None)
+                    } else {
+                        match crate::perl::load(&self.log, &script, (*config).clone()) {
+                            Some(runtime) => Some(Some(runtime)),
+                            None if config.perl_strict => {
+                                self.log.message(
+                                    ERROR,
+                                    &format!(
+                                        "error parsing Perl script {script}, using old config"
+                                    ),
+                                    &platform::now(),
+                                );
+                                return false;
+                            }
+                            None => {
+                                self.log.message(
+                                    ERROR,
+                                    &format!("cannot load Perl script {script}, hooks disabled"),
+                                    &platform::now(),
+                                );
+                                Some(None)
+                            }
+                        }
+                    }
+                };
                 self.log.init(
                     config.loglevel,
                     config.conlog,
                     &config.logpath,
                     config.nolog.clone(),
                 );
+                #[cfg(feature = "perl")]
+                {
+                    let runtime = loaded.flatten();
+                    if let Some(runtime) = runtime {
+                        // The port of `perl_config_loaded(new_config)` of
+                        // `checkcfg()`: the new script answers the hook.
+                        if let Ok(hooks) = runtime.master.lock() {
+                            hooks.config_loaded();
+                        }
+                        self.log.set_hook(Some(runtime.log_hook.clone()));
+                        self.set_perl(runtime);
+                    } else {
+                        // The new config holds no script or its script failed
+                        // without strict: the old hooks go, the port of the
+                        // config swap of `checkcfg()`.
+                        self.perl = None;
+                        self.hooks = None;
+                        self.reloader.set_need_reload(None);
+                        self.log.set_hook(None);
+                    }
+                }
                 self.config = *config;
                 true
             }
@@ -538,6 +776,13 @@ impl Daemon {
     pub fn stop(&mut self) {
         // The port of the `Log (7, "exitfunc()")` of `exitfunc()`.
         self.log.message(DEBUG, "exitfunc()", &platform::now());
+        // The port of the `perl_done(..., 1)` of `exitfunc()`.
+        #[cfg(feature = "perl")]
+        if let Some(perl) = &self.perl {
+            if let Ok(hooks) = perl.master.lock() {
+                hooks.on_exit();
+            }
+        }
         self.busy.remove_all(&self.config.spool);
         let path = &self.config.pid_file;
         if !path.is_empty() {

@@ -43,13 +43,30 @@ pub const SUBNAMES: [&str; 17] = [
     "config_loaded",
 ];
 
-/// The index of the hook of the log, the port of `PERL_ON_LOG`.
+/// The indices of the hooks, the port of the `perl_subs` enum of
+/// `perlhooks.c`.
+pub const ON_START: usize = 0;
+pub const ON_EXIT: usize = 1;
+pub const ON_CALL: usize = 2;
+pub const ON_ERROR: usize = 3;
+pub const ON_HANDSHAKE: usize = 4;
+pub const AFTER_HANDSHAKE: usize = 5;
+pub const AFTER_SESSION: usize = 6;
+pub const BEFORE_RECV: usize = 7;
+pub const AFTER_RECV: usize = 8;
+pub const BEFORE_SEND: usize = 9;
+pub const AFTER_SENT: usize = 10;
 pub const ON_LOG: usize = 11;
+pub const ON_SEND: usize = 12;
+pub const ON_RECV: usize = 13;
+pub const SETUP_RLIMIT: usize = 14;
+pub const NEED_RELOAD: usize = 15;
+pub const CONFIG_LOADED: usize = 16;
 
-/// The flags of a call of a sub, the port of `G_EVAL|G_SCALAR` of `perlhooks.c`.
-pub const G_EVAL: c_int = 0x80;
+/// The eval flag of a call of a sub, the port of `G_EVAL` of `perlhooks.c`.
+pub const G_EVAL: c_int = 0x8;
 /// The scalar context of a call of a sub, the port of `G_SCALAR`.
-pub const G_SCALAR: c_int = 0x01;
+pub const G_SCALAR: c_int = 0x2;
 
 /// The type of the name of a sub, the port of the argument of `perl_call_pv()`.
 pub type SubName = *const c_char;

@@ -6,7 +6,9 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, Stdio};
+#[cfg(unix)]
+use std::process::Child;
+use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -15,7 +17,9 @@ use binkd_ftn::addr::FtnAddr;
 use binkd_ftn::domain::{DomainTable, FtnDomain};
 use binkd_ftn::node::NodeSpec;
 use binkd_log::{DateTime, Log};
-use binkd_net::{listen, Caller, SessionOptions};
+#[cfg(unix)]
+use binkd_net::Caller;
+use binkd_net::{listen, SessionOptions};
 use binkd_proto::SendFile;
 
 /// Returns the path of the binary of the port.
@@ -106,6 +110,7 @@ fn write_poll_config(dir: &Path, port: u16) -> String {
 }
 
 /// Returns the time of the clock in seconds, the time of the files of the test.
+#[cfg(unix)]
 fn now_epoch() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -120,6 +125,7 @@ fn free_port() -> u16 {
 }
 
 /// Builds the config of the daemon of the test: the server of the session.
+#[cfg(unix)]
 fn write_server_config(dir: &Path, port: u16) -> String {
     let _ = fs::create_dir_all(dir.join("in"));
     let _ = fs::create_dir_all(dir.join("outb"));
@@ -174,6 +180,7 @@ fn client_config(dir: &Path, aka: &str, port: u16) -> Config {
 }
 
 /// Sends a signal to a process, the port of the `kill` utility.
+#[cfg(unix)]
 fn kill(signal: &str, pid: u32) -> bool {
     Command::new("kill")
         .arg(signal)
@@ -184,6 +191,7 @@ fn kill(signal: &str, pid: u32) -> bool {
 }
 
 /// Waits for the child and answers its code.
+#[cfg(unix)]
 fn wait_for(child: &mut Child, timeout: Duration) -> Option<i32> {
     let start = Instant::now();
     while start.elapsed() < timeout {
@@ -198,6 +206,7 @@ fn wait_for(child: &mut Child, timeout: Duration) -> Option<i32> {
 /// The listener of the daemon serves a session of the caller: each side sends
 /// its packet of the outbound and receives the packet of the peer, and the
 /// daemon writes the packet of the caller into its inbound.
+#[cfg(unix)]
 #[tokio::test]
 async fn the_listener_serves_a_session() {
     let dir = std::env::temp_dir().join(format!("binkd-serve-{}", std::process::id()));
@@ -416,6 +425,7 @@ async fn the_client_manager_polls_a_node() {
 
 /// The `-C` switch: the daemon checks the config files on every pass of the
 /// interval of the `select()` of `do_server()`, the port of `rescan-delay`.
+#[cfg(unix)]
 #[test]
 fn the_daemon_reloads_a_changed_config() {
     let dir = std::env::temp_dir().join(format!("binkd-reload-{}", std::process::id()));
@@ -471,6 +481,9 @@ async fn the_inetd_session_runs_on_the_pipe() {
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let config = write_config(&dir);
+    // The `-f` node of the protected session.
+    let text = fs::read_to_string(&config).unwrap();
+    fs::write(&config, format!("{text}node 2:5047/13@fidonet - secret\n")).unwrap();
     // The packet of the daemon for the caller.
     let daemon_packet = vec![b'i'; 400];
     fs::write(dir.join("outb").join("13b7000d.cut"), &daemon_packet).unwrap();
@@ -479,6 +492,8 @@ async fn the_inetd_session_runs_on_the_pipe() {
         .arg("-i")
         .arg("-a")
         .arg("127.0.0.1:12345")
+        .arg("-f")
+        .arg("2:5047/13@fidonet")
         .arg(&config)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -498,7 +513,17 @@ async fn the_inetd_session_runs_on_the_pipe() {
         minute: 46,
         second: 40,
     };
-    let client = client_config(&dir, "2:5047/13@fidonet", 0);
+    let mut client = client_config(&dir, "2:5047/13@fidonet", 0);
+    let server = FtnAddr::parse("2:5047/100@fidonet", &client.spool.domains).unwrap();
+    client.spool.nodes.add(
+        &server,
+        &NodeSpec {
+            pwd: Some("secret".to_string()),
+            ..NodeSpec::default()
+        },
+        now().epoch,
+    );
+    let server_node = client.spool.nodes.get(&server, now().epoch).cloned();
     // The packet of the caller: the outbound of the daemon holds no file of
     // the caller, so the two sides exchange one file each.
     let caller_dir =
@@ -513,7 +538,7 @@ async fn the_inetd_session_runs_on_the_pipe() {
         size: packet.len() as u64,
         time: now().epoch,
     }];
-    let settings = binkd_net::session_config(&client, None, true, false);
+    let settings = binkd_net::session_config(&client, server_node.as_ref(), true, false);
     let mut received: Vec<binkd_proto::ReceivedFile> = Vec::new();
     let result = binkd_proto::run(
         &mut pipe,
@@ -550,12 +575,22 @@ async fn the_inetd_session_runs_on_the_pipe() {
     // The daemon ends with the code 0 after the session, the port of the
     // `exit (0)` of the `-i` switch of `main()`.
     assert_eq!(child.wait().await.unwrap().code(), Some(0));
+    let mut daemon_err = String::new();
+    if let Some(mut stderr) = child.stderr.take() {
+        use tokio::io::AsyncReadExt;
+        let _ = stderr.read_to_string(&mut daemon_err).await;
+    }
+    assert!(
+        daemon_err.contains("Session with 2:5047/13"),
+        "{daemon_err}"
+    );
     let _ = fs::remove_dir_all(&dir);
     let _ = fs::remove_dir_all(&caller_dir);
 }
 
 /// The `-D` switch: the parent ends at once and the child runs the daemon,
 /// the port of `binkd_daemonize()` of `unix/daemonize.c`.
+#[cfg(unix)]
 #[test]
 fn the_daemonize_switch_detaches_the_process() {
     let dir = std::env::temp_dir().join(format!("binkd-detach-{}", std::process::id()));
@@ -623,6 +658,7 @@ fn the_begin_line_matches_the_oracle() {
     let _ = fs::remove_dir_all(&dir);
 }
 
+#[cfg(unix)]
 #[test]
 fn the_daemon_starts_and_the_signals_end_it() {
     let dir = std::env::temp_dir().join(format!("binkd-daemon-{}", std::process::id()));

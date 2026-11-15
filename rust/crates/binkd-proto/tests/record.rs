@@ -85,6 +85,8 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         zrules: Vec::new(),
         methods: binkd_proto::Methods::none(),
         crypt: false,
+        no_md5: false,
+        md_flag: 0,
         nr: false,
         nd: false,
         domains: binkd_ftn::domain::DomainTable::new(Vec::new()),

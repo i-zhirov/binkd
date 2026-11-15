@@ -223,13 +223,17 @@ The interop matrix runs two real programs on the loopback address.
 
 | Client | Server | Options |
 | --- | --- | --- |
-| C | C | baseline |
+| C | C | the binary baseline of `interop_binary.rs` |
 | Rust | C | plain, CRAM, CRYPT, GZ, BZ2, NR, ND |
 | C | Rust | plain, CRAM, CRYPT, GZ, BZ2, NR, ND |
 | Rust | Rust | plain, CRAM, CRYPT, GZ, BZ2, NR, ND |
 
 Each case uses a fixture spool. The test sends one packet in each
 direction and compares the spool directories after the session.
+
+The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10`
+build the C binary and set `BINKD_C`, `BINKD_C_PROXY`, `BINKD_C_BWLIM`, and
+`BINKD_C_V10`. The `rust` and `macos` jobs run the Rust-only direction.
 
 ### 4.1 Equivalence policy
 
@@ -333,27 +337,41 @@ arrive in the later phases.
 The library form is the main product. The binary is a thin wrapper.
 
 ```rust
-use binkd::{Config, Engine, FtnAddr, Role};
+use std::sync::Arc;
+use binkd::{cli::Options, Engine, FtnAddr};
+use binkd_log::Log;
 
-// Parse a config file.
-let cfg = Config::parse_file("binkd.conf")?;
+let cfg = binkd_config::parse("binkd.conf")?;
+let log = Arc::new(Log::new(
+    cfg.loglevel,
+    cfg.conlog,
+    &cfg.logpath,
+    cfg.nolog.clone(),
+));
 
-// Run a session over a transport that the caller supplies.
-let report = binkd::session::run(stream, Role::Client, &cfg).await?;
+// The client manager calls the node named by the caller.
+let mut client = Engine::new(cfg.clone(), Options::default(), Arc::clone(&log));
+let fa = FtnAddr::parse("2:5047/13@fidonet", &cfg.spool.domains)
+    .ok_or("the node address is invalid")?;
+client.poll(&fa).await;
 
-// Run the full engine: listener, queue scanner, and caller.
-let engine = Engine::new(cfg)?;
-engine.serve(listener).await?;
-engine.poll(&FtnAddr::parse("2:5047/13")?).await?;
+// The server manager listens on the listen entries of the config.
+let server = Engine::new(cfg, Options::default(), log);
+server.serve().await?;
 ```
+
+The lower-level crates are public as well: `binkd_net::listen`,
+`binkd_net::Caller`, and `binkd_proto::session::run` take the transport of the
+caller. The `Engine` is the high-level façade of both managers.
 
 Requirements for the library form:
 
 - No global mutable state. The caller creates one `Engine` per instance.
 - No process exit on error. Functions return `Result`.
 - No signal handlers in the library. The binary installs them.
-- Feature flags: `zlib`, `bzip2`, `crypt`, `cram`, `proxy`, `ntlm`,
-  `bwlimit`, `perl`, `srif`.
+- No feature flag for zlib, bzip2, crypt, CRAM-MD5, the proxy, NTLM, the rate
+  limit, or SRIF: the workspace always compiles them. The optional `perl`
+  feature of `binkd` adds the hook.
 
 ### 5.3 Concurrency model
 
@@ -995,26 +1013,29 @@ Exit criteria:
   of `crates/binkd-net/tests/srv.rs`, and the rate limit passes the tests of
   `crates/binkd-proto/tests/session.rs` and of `crates/binkd-proto/tests/interop.rs`)
 
-### Phase 6: binary and library
+### Phase 6: binary and library (done)
 
 Deliverables:
 
 - The `binkd` crate with the CLI, the startup order, the signals, the
-  pid file, the config reload, and the external program start. (the command
-  line, the version text, the platform values, and the paths that read the
-  config are done: `-h`, `-v`, `-vv`, `-d`, `-n`, the messages of the errors
-  of the command line, and the ends of the config; the startup order, the
-  signals, the pid file, the config reload, and the external program start
-  arrive with the next slices)
-- The public library API and an example. (done: `binkd::Engine` holds the port of
-  the managers of `server.c` and of `client.c` that a caller may embed, the caller
-  creates one engine per instance, and the functions answer a value and never end the
-  process; the example of `crates/binkd/examples/embed.rs` parses a config, creates
-  an engine, binds the listener, and calls a node, the port of the two managers of
-  `main()` without the process of the daemon)
+  pid file, the config reload, and the external program start. (done: the
+  command line, the version text, the platform values, the paths that read the
+  config, the startup order, the signals, the pid file, the config reload, and
+  the external program start; the cases of `crates/binkd/tests/cli.rs`,
+  `crates/binkd/tests/daemon.rs`, and `crates/binkd/tests/perl.rs` hold them)
+- The public library API and an example. (done: `binkd::Engine` holds the port
+  of the managers of `server.c` and of `client.c`; `serve()` runs the listener
+  and `poll()` calls the node named by the caller, one engine per instance, and
+  the functions answer a value and never end the process; the example of
+  `crates/binkd/examples/embed.rs` parses a config and runs the server or the
+  client, and the case of `crates/binkd/tests/engine.rs` holds both roles)
 - An integration test with the sample config. (done: the test of
   `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
+- The binary interop matrix: the C server with the Rust client, the Rust
+  server with the C client, and the C server with the C client. (done: the
+  cases of `crates/binkd/tests/interop_binary.rs` start the real binaries and
+  the `interop` job of CI runs them)
 - The external program start: the port of `run()` of `run.c` runs the command of
   the SRIF `exec` event of `srif.c` in the shell of the system, the port of the
   `system()` of the C code, and it holds the exit code in the log. The port of
@@ -1056,7 +1077,7 @@ Deliverables:
 - The listener manager: the daemon starts `binkd_net::listen()` for a run with
   the server role, the port of `do_server()` of `server.c`, and the loop of
   `servmgr()` rebuilds the listener on a reload. (done; the run of the port waits
-  for a signal, because the client manager arrives with the next slice)
+  for a signal)
 - A gap that the test of the listener found, and that the port holds now: the
   answerer of the port sent no file of its queue, though the scan of `files_of()`
   found the file of the peer, so the caller received nothing. The port of the session
@@ -1074,57 +1095,193 @@ Deliverables:
 - The daemon startup: the `BEGIN` line with the arguments, the busy list, the
   pid file, the streams of `SIGTERM`, `SIGINT`, and `SIGHUP`, the end of the
   daemon on a signal, the check of the config files on `SIGHUP`, and the cleanup
-  of `exitfunc()`. (done; the daemon of the slice waits for a signal, because
-  the listener and the caller arrive with the next slice. The port takes the
-  `signal` feature of `tokio` for the handlers, because `std` states no signal
-  of a process: the feature holds the small `signal-hook-registry` crate)
+  of `exitfunc()`. (done: the port takes the `signal` feature of `tokio` for the
+  handlers, because `std` states no signal of a process; the feature holds the
+  small `signal-hook-registry` crate)
+- The Windows service mode: the `-t` commands, the `-S` name, the service
+  control manager, the stop and restart control events, the cleanup, and the
+  `BEGIN service` line, the port of `nt/service.c` and of the `WIN32` blocks of
+  `binkd.c`. The tray icon is out of scope. (done: the `binkd-win` crate holds
+  the commands and the dispatcher, the `-t` and `-S` switches are in the binary,
+  and the cases of `crates/binkd-win/src/command.rs` and of
+  `crates/binkd/tests/cli.rs` hold the values; the Windows job runs the
+  [service smoke test](decisions/windows-support.md#windows-scm-smoke-test);
+  the decision is `doc/decisions/windows-support.md`)
 
 Exit criteria:
 
 - The Rust binary passes every level 4 scenario.
-- The example embeds a session in another program.
+- The example runs the server or the client of the engine in another program,
+  and `crates/binkd/tests/engine.rs` holds the two roles.
 - The command line options match `binkd.8`. (the options of the slice match the
   C code and `binkd.8`: the switches, the usage text, and the exit codes of
-  `-h`, `-v`, `-vv`, `-d`, `-n`, and of the errors of the command line)
+  `-h`, `-v`, `-vv`, `-d`, `-n`, and of the errors of the command line. The
+  Windows `-T` switch is a known difference of the record
+  `doc/decisions/windows-support.md`)
 
-### Phase 7: Perl hooks and legacy platforms
+### Phase 7: Perl hooks and legacy platforms (done)
 
-The `perlhooks.c` module is the largest risk. The plan weighs three
-options in a decision record:
+The `perlhooks.c` module is the largest risk. The record of
+`doc/decisions/perl-hooks.md` settles the port: `binkd-perl` holds a Rust port
+of `perlhooks.c` over a minimal C shim of the Perl C API. The port links no C
+module of binkd. A link of `perlhooks.c` would pull the C core, because the
+module reads `current_config`, the session state, and the C log.
 
-1. Link the C `perlhooks.c` into the Rust binary with the C ABI. This
-   option keeps the hooks and the hook API. It keeps one C module in the
-   tree.
-2. Port the hooks to a Rust Perl binding. This option gives one language
-   but adds a dependency and porting work.
-3. Drop the hooks behind a build flag. This option breaks the config
-   compatibility for the hook users.
+The crate alone holds the exception of the lint of `unsafe_code`, and the
+default build holds it not. The feature `perl` of the `binkd` crate enables it.
 
-The plan recommends option 1 for the first release, then option 2 when a
-maintainer asks for it. The record of `doc/decisions/perl-hooks.md` holds the
-recommendation and the exception of the lint of `unsafe_code` for one crate of the
-FFI, `binkd-perl`, which waits for the approval of the maintainer.
-
-The cases of the oracle of the hooks hold the port of the C `--with-perl` binary,
-`BINKD_C_PERL`, and the script `tests/perl/hooks.pl`: the config hooks
+The cases of the oracle of the hooks hold the port of the C `--with-perl`
+binary, `BINKD_C_PERL`, and the script `tests/perl/hooks.pl`: the config hooks
 `config_loaded` and `need_reload`, the log hook `on_log`, the start hook
 `on_start`, the call hooks `on_call` and `on_error`, and the session hooks
 `on_handshake`, `after_handshake`, `before_send`, `after_sent`, `on_send`,
 `on_recv`, and `after_session`. (done: the six cases of
 `crates/binkd/tests/perl.rs` pass with the oracle of `--with-perl`)
 
-Legacy platforms: OS/2, DOS, and Amiga. The plan keeps the C code for
-these platforms and marks them out of scope for the Rust port. A decision
-record must state this.
+The first hook is the hook of the log. `binkd-log` holds the trait `Hook` and
+the method `Log::set_hook()`, the port of the call of `perl_on_log()` in
+`vLog()`. `binkd-perl` holds the port of `perl_on_log()` and the adapter
+`LogHook`. The binary loads the script after the `BEGIN` line and installs the
+hook, the port of the block of `perl_init()` in `main()` of `binkd.c`. (done:
+the port changes the line of the `-n` switch in
+`crates/binkd/tests/perl.rs`)
 
-### Phase 8: cutover
+The XS helpers are done: `Log`, `aeq`, `arm`, `msg_send`, and `binkd_warn`.
+The shim registers them with `xs_init`, and it sets `binkd_warn` as the warn
+and die hook, the port of `perl_init()`. The helper `msg_send` holds a
+`MessageSink`; the session of `binkd-proto` supplies the queue of the binkp
+messages. (done: the cases of `crates/binkd-perl/tests/xs.rs` pass)
+
+The callback hooks are done. `binkd-perl` holds the hook methods and the typed
+values of the session, the call, the error, the files, and the rate limit.
+`binkd-proto` holds the trait `Hooks`, and the session calls it at the C call
+points through `run_with_hooks()`. `binkd-net` calls `on_call()` and
+`on_error()`; `binkd` calls `on_start()`, `on_exit()`, `config_loaded()`, and
+`need_reload()`. The adapter `ProtoHook` shares the interpreter with
+`LogHook`. (done: the cases of `crates/binkd-perl/tests/hooks.rs` and the port
+cases of `crates/binkd/tests/perl.rs` pass)
+
+The per-session clones are done: `Hooks::clone_for_session()` calls
+`perl_clone`, and `binkd_proto::Factory` gives one clone to every session. The
+log hook stays on the master interpreter. The port cases hold the separation
+of the values.
+
+The session queue of `msg_send()` is done: the session gives a `MessageSink` to
+its clone and sends the queued messages after the hook. The case
+`a_hook_message_reaches_the_peer` of `crates/binkd-proto/tests/session.rs`
+holds the path.
+
+The session values are done: `SessionInfo` carries the peer and our addresses,
+the session holds the start and the peer `SYS`, `ZYZ`, and `LOC`, and `%opt`
+holds the modes. The cases `the_session_variables_reach_the_script` and
+`the_session_values_reach_the_hook` hold the values.
+
+The traffic and compression values are done: the session holds the queue
+sizes and the compression methods of the files, and the hooks read
+`$traf_mail`, `$traf_file`, `$z_send`, and `$z_recv`. The cases
+`the_traffic_of_the_files_reaches_the_hook`,
+`the_compression_counters_reach_the_hooks`, and
+`the_traffic_and_compression_variables_reach_the_script` hold the values.
+
+`@queue` is done for reading and writing: the session builds a hash for every
+file of the session, and the port of `refresh_queue()` rebuilds the files of
+the session from the values that the script changes. `before_recv()` and
+`after_sent()` do not refresh the queue, as in the C code. The cases
+`the_session_queue_reaches_the_script`, `the_script_rebuilds_the_session_queue`,
+`the_script_removes_an_entry_from_the_session_queue`,
+`the_script_removes_an_entry_of_after_recv`,
+`the_hook_rebuilds_the_session_files`,
+`the_hook_removes_a_file_from_the_session`,
+`the_hook_removes_a_file_of_after_recv`,
+`the_session_does_not_refresh_the_queue_of_before_recv`,
+`the_script_deletes_an_entry_of_before_recv`,
+`the_session_does_not_refresh_the_queue_of_after_sent`,
+`the_script_deletes_an_entry_of_after_sent`,
+`the_port_of_the_rebuilt_session_queue`,
+`the_port_of_the_removed_file_of_the_session_queue`,
+`the_port_of_the_removed_file_of_after_recv`,
+`the_port_of_the_queue_of_before_recv`, and
+`the_port_of_the_queue_of_after_sent` hold the queue.
+
+The config variables of `perl_setup()` are done: `%config`, `%domain`,
+`@addr`, `@listen`, `@ftrans`, `@overwrite`, `@skip`, `%share`, and `%node` are
+set on the master before the script body and on every session clone. The cases
+`the_config_variables_reach_the_script` and
+`the_config_variables_reach_a_session_clone` of
+`crates/binkd-perl/tests/config.rs` hold them.
+
+The `s1`/`s2` split of `on_send()` is done: the messages that the C code
+builds from two strings reach the hook apart, and the wire holds their
+concatenation. The case `the_hook_sees_the_two_parts_of_the_message` of
+`crates/binkd-proto/tests/session.rs` holds the split, and the oracle and port
+session cases hold it with a script.
+
+The `action` of `after_sent()` is done: the port reads `$action` back and
+applies `d`, `t`, or `s` to the file of the spool, the port of
+`perform_action()` and of the kill list. The case
+`the_action_of_after_sent_changes_the_spool` of
+`crates/binkd-proto/tests/session.rs` holds the three actions, and the oracle
+and port session cases hold `d` with the shared script.
+
+The answerer side of `on_handshake()` is done: the caller runs the hook before
+its `ADR`, and the answerer runs it after the `ADR` of the caller, so `@he`
+holds the caller's addresses, and it sends its own `ADR` after the hook. The
+case `the_answerer_runs_on_handshake_after_the_adr` of
+`crates/binkd-proto/tests/session.rs` holds the order, and the oracle and port
+session cases hold `@he` with the shared script.
+
+The reload of the script is done. `Daemon::reload_check()` loads the script of
+the new config, calls its `config_loaded()`, and applies the new hooks to the
+listener and the client manager, the port of `perl_init(new_config, 0)` and of
+`perl_config_loaded()` of `checkcfg()`. It does not call `on_start()`, and an
+old script gets no second `config_loaded()`. A new config without a script
+drops the hooks. A strict build keeps the old config when the new script fails.
+The case `the_port_of_the_reload_of_the_script` of
+`crates/binkd/tests/perl.rs` holds the whole path.
+
+The last gaps of the hooks are closed. `after_recv()` runs before the rename,
+so `$tmpfile` names the partial file and `$file` the real name, and the hook
+may change the name. The `$where` of `on_error()` holds the `BAD_*` value of
+the call, the port of `enum bad_try_type` of `ftnq.h`. `on_log()` runs on the
+master interpreter by decision, because the log of the daemon is process wide
+and the log adapter serializes the calls. The cases
+`the_hook_of_after_recv_runs_before_the_rename` and
+`the_where_of_the_error_follows_the_c_code` hold the first two, and the case
+`the_on_log_hook_runs_on_the_master` holds the third. The Perl hooks slice has
+no remaining item of the plan.
+
+Legacy platforms: OS/2, DOS, and Amiga. The team accepted option 2 of the
+record `doc/decisions/legacy-platforms.md`: the Rust port does not support the
+three, and the C code stays as their reference and build. Windows 9x/Me is out
+of scope too, the record `doc/decisions/windows-support.md`.
+
+### Phase 8: cutover (in progress)
 
 Deliverables:
 
-- The Rust binary is the default build.
-- The C code moves to a separate directory or is removed.
-- The README, the man page, and the packaging files are updated.
-- CI runs both suites.
+- The Rust binary is the default build on UNIX and on Windows NT and later.
+- The C code stays in the tree as the reference and the build of OS/2, DOS, and
+  Amiga, the decision of `doc/decisions/legacy-platforms.md`. The cutover does
+  not remove it.
+- The README, the man page, and the packaging files state the Rust default and
+  the known differences: the Windows tray icon, Windows 9x/Me, and the C-only
+  legacy platforms.
+- CI runs both suites. The `interop` jobs run the C and Rust matrix; the
+  `macos` and `windows` jobs run the workspace suite; the Windows job runs the
+  service smoke test.
+
+The cutover has started:
+
+- `README.md` names the Rust build as the default and the C build as the
+  reference.
+- `doc/decisions/legacy-platforms.md` and
+  `doc/decisions/windows-support.md` are accepted.
+- `.github/workflows/ci.yml` runs the Rust suite, the C suite, the C and Rust
+  interop jobs, the MSRV check, the Perl hooks with the C oracle, the macOS
+  workspace suite, and the Windows service smoke test.
+
+The Windows service mode is implemented. The man page and the packaging files
+follow the release process.
 
 Exit criteria:
 
@@ -1136,8 +1293,11 @@ Exit criteria:
 Each decision gets a record in `doc/decisions/` when the team makes it.
 The list below holds the decisions that the plan needs before phase 4.
 
-1. Perl hooks: keep the C module, port the hooks, or drop the hooks.
-2. Legacy platforms: keep the C code, or stop support.
+1. Perl hooks: settled in `doc/decisions/perl-hooks.md`. The port follows
+   `perlhooks.c` in Rust over a minimal C shim of the Perl C API.
+2. Legacy platforms: settled in `doc/decisions/legacy-platforms.md`. The team
+   accepted option 2: the Rust port does not support OS/2, DOS, and Amiga, and
+   the C code stays as their reference and build.
 3. Log text: is the message text part of the contract?
    The plan assumes no. The log line format is a contract.
 4. Error exit codes: the C code calls `exit(1)` on a level 0 log message.
@@ -1145,8 +1305,9 @@ The list below holds the decisions that the plan needs before phase 4.
    exit code.
 5. The `-d` dump: the plan treats the dump as a stable contract.
    A future change needs a version note.
-6. Windows support: the C code has a service mode and a tray icon. The
-   plan keeps these in phase 6.
+6. Windows support: settled in `doc/decisions/windows-support.md`. Windows NT
+   and later is supported, the service mode is in scope, the tray icon is not,
+   and Windows 9x/Me is out of scope.
 7. Minimum supported Rust version: 1.85, stated as `rust-version` in
    `rust/Cargo.toml`. The dependency policy is in `AGENTS.md`.
 
@@ -1158,7 +1319,7 @@ The list below holds the decisions that the plan needs before phase 4.
 | The config parser has 100 keywords | The parse result can change | Use the corpus and the `-d` dump |
 | The core files have `#ifdef` blocks | A port can mix platform behaviour | Keep the platform code at the edges |
 | The concurrency model changes | `.bsy` files and the cleanup can differ | Keep the level 4 tests |
-| Perl hooks need the Perl interpreter | The hooks can break | Decide in phase 7. Keep the C module first |
+| Perl hooks need the Perl interpreter | The hooks can break | Follow the decision record. Cover the hooks with the oracle |
 | The log text changes | Log parsers can break | Keep the line format. Pin it with a test |
 | The `-d` dump changes | Config tools can break | Compare the dump in phase 3 |
 | The port has no user feedback for long | The port can drift | Each phase ends with a green suite |
@@ -1190,7 +1351,9 @@ The milestones follow the phases. Each milestone is a mergeable state.
    the spool and parses every config.
 3. Milestone 3: phase 4. The Rust code runs a binkp session with the C
    code.
-4. Milestone 4: phase 5 and phase 6. The Rust binary runs as a daemon
-   and as a library.
-5. Milestone 5: phase 7 and phase 8. The Rust code is the default. The
-   C code is a reference or is gone.
+4. Milestone 4: phase 5 and phase 6 (done). The Rust binary runs as a daemon
+   and as a library on UNIX and Windows, and the Windows service mode is in
+   place.
+5. Milestone 5: phase 7 and phase 8. Phase 7 is done. The Rust code is the
+   default on UNIX and on Windows NT and later. The C code stays as the
+   reference and the legacy build.

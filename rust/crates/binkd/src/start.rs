@@ -66,7 +66,41 @@ impl From<binkd_config::Error> for Error {
 /// supplies the log, as the C code of the port of `binkd-log` keeps the log of
 /// the process.
 pub fn run(args: &[String], log: &std::sync::Arc<Log>) -> Result<Outcome, Error> {
+    run_with(args, log, None)
+}
+
+/// Runs the daemon of the Windows service, the port of `ServiceStart()` of
+/// `nt/service.c`.
+///
+/// The display name of the service is the name that the C code reads from the
+/// service control manager before `binkd_main()`, so the `BEGIN service` line
+/// holds it.
+#[cfg(windows)]
+pub fn run_service(
+    args: &[String],
+    log: &std::sync::Arc<Log>,
+    display: &str,
+) -> Result<Outcome, Error> {
+    run_with(args, log, Some(display))
+}
+
+/// Runs the startup order with the optional display name of the service.
+fn run_with(
+    args: &[String],
+    log: &std::sync::Arc<Log>,
+    service: Option<&str>,
+) -> Result<Outcome, Error> {
     let options = cli::parse(args)?;
+    #[cfg(windows)]
+    let options = {
+        let mut options = options;
+        if let Some(display) = service {
+            options.service_display = Some(display.to_string());
+        }
+        options
+    };
+    #[cfg(not(windows))]
+    let _ = service;
 
     // The C code of `parseargs()` writes this message before the config.
     if options.extra {
@@ -81,6 +115,14 @@ pub fn run(args: &[String], log: &std::sync::Arc<Log>) -> Result<Outcome, Error>
         let mut parser = Parser::new();
         parser.set_quiet(options.quiet);
         parser.set_verbose(options.verbose as i32);
+        // The C code of `perl_init()` accepts the `perl-*` keywords only in a
+        // build of `--with-perl`, the port of the `WITH_PERL` of `readcfg.c`.
+        #[cfg(feature = "perl")]
+        {
+            let mut features = binkd_config::Features::unix_default();
+            features.perl = true;
+            parser.set_features(features);
+        }
         // The C code resolves the paths of the config against the current
         // directory, the port of `readcfg0()`.
         if let Ok(dir) = std::env::current_dir() {
@@ -100,8 +142,48 @@ pub fn run(args: &[String], log: &std::sync::Arc<Log>) -> Result<Outcome, Error>
             &config.logpath,
             config.nolog.clone(),
         );
+        #[cfg(feature = "perl")]
+        let perl = (config.perl_script.clone(), config.perl_strict);
+        // The port of `perl_setup()`: the hooks read the whole config, so the
+        // binary keeps a copy before the daemon owns it.
+        #[cfg(feature = "perl")]
+        let perl_config = (!config.perl_script.is_empty()).then(|| config.clone());
         // The port of `print_args()` and of the `Log (4, "BEGIN, ...")`.
         let mut daemon = Daemon::new(config, &options, log.clone(), args);
+        // The port of the `perl_init()` block of `main()` of `binkd.c`: the
+        // hook runs after the `BEGIN` line of the C code.
+        #[cfg(feature = "perl")]
+        if !perl.0.is_empty() {
+            let config = perl_config.expect("the config of the script");
+            match crate::perl::load(log, &perl.0, config) {
+                Some(runtime) => {
+                    if let Ok(hooks) = runtime.master.lock() {
+                        hooks.on_start();
+                        hooks.config_loaded();
+                    }
+                    log.set_hook(Some(runtime.log_hook.clone()));
+                    daemon.set_perl(runtime);
+                }
+                None => {
+                    if perl.1 {
+                        log.message(
+                            FATAL,
+                            &format!("error parsing Perl script {}", perl.0),
+                            &platform::now(),
+                        );
+                        return Ok(Outcome::Exit {
+                            code: 1,
+                            text: String::new(),
+                        });
+                    }
+                    log.message(
+                        binkd_log::ERROR,
+                        &format!("cannot load Perl script {}, hooks disabled", perl.0),
+                        &platform::now(),
+                    );
+                }
+            }
+        }
         // The C code ends here on the `-n` switch and writes no pid file.
         if options.no {
             log.message(FATAL, "Exit on option '-n'", &platform::now());

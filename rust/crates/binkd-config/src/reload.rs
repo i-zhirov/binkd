@@ -9,6 +9,9 @@ use crate::model::Config;
 use crate::parser::{Error, Parser};
 use crate::port;
 
+/// The hook of `need_reload()`, the port of `perl_need_reload()`.
+pub type NeedReload = Box<dyn Fn(&[String], bool) -> i32 + Send + Sync>;
+
 /// The result of a check of the config files.
 #[derive(Clone, Debug)]
 pub enum Outcome {
@@ -36,6 +39,8 @@ pub struct Reloader {
     features: Features,
     /// The time of the parse.
     now: i64,
+    /// The hook of `need_reload()`, the port of `perl_need_reload()`.
+    need_reload: Option<NeedReload>,
 }
 
 impl Reloader {
@@ -48,6 +53,7 @@ impl Reloader {
             base_dir: None,
             features: Features::unix_default(),
             now: 0,
+            need_reload: None,
         }
     }
 
@@ -74,6 +80,14 @@ impl Reloader {
     /// Sets the time of the parse.
     pub fn set_now(&mut self, now: i64) {
         self.now = now;
+    }
+
+    /// Sets the hook of `need_reload()`, the port of `perl_need_reload()`.
+    ///
+    /// The hook answers 1 to force a reload, 2 to suppress it, and 0 to leave
+    /// the value of the check.
+    pub fn set_need_reload(&mut self, hook: Option<NeedReload>) {
+        self.need_reload = hook;
     }
 
     /// Returns the config in use.
@@ -123,6 +137,21 @@ impl Reloader {
             }
         }
 
+        // The port of the `perl_need_reload()` call of `checkcfg()`.
+        if let Some(hook) = &self.need_reload {
+            let files: Vec<String> = self
+                .config
+                .config_list
+                .iter()
+                .map(|file| file.path.clone())
+                .collect();
+            match hook(&files, need_reload) {
+                1 => need_reload = true,
+                2 => need_reload = false,
+                _ => {}
+            }
+        }
+
         if !need_reload {
             return Outcome::Unchanged;
         }
@@ -145,5 +174,55 @@ impl Reloader {
             }
             Err(e) => Outcome::Failed(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicI32, Ordering};
+    use std::sync::{Arc, Mutex};
+
+    use super::*;
+    use crate::parser::Parser;
+
+    #[test]
+    fn the_hook_forces_and_suppresses_the_reload() {
+        let dir = std::env::temp_dir().join(format!("binkd-reload-hook-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("binkd.conf");
+        fs::write(
+            &path,
+            "domain fidonet /tmp 2\naddress 2:5047/100@fidonet\nsysname \"test\"\nsysop \"test\"\nlocation \"test\"\nnodeinfo \"test\"\n",
+        )
+        .unwrap();
+        let config = Parser::with_ports(&port::resolve)
+            .parse(&path.display().to_string())
+            .unwrap();
+        let mut reloader = Reloader::new(config);
+        reloader.set_check_on_change(true);
+        reloader.set_base_dir(&dir);
+        let answer = Arc::new(AtomicI32::new(0));
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let answer_hook = Arc::clone(&answer);
+        let seen_hook = Arc::clone(&seen);
+        reloader.set_need_reload(Some(Box::new(move |_files, need| {
+            seen_hook.lock().unwrap().push(need);
+            answer_hook.load(Ordering::SeqCst)
+        })));
+        // The first check stores the time of the file and answers no reload.
+        assert!(matches!(reloader.check(), Outcome::Unchanged));
+        // The second check sees a change and the hook suppresses it.
+        let mtime = reloader.config().config_list[0].mtime;
+        reloader.config_mut().config_list[0].mtime = mtime - 1;
+        answer.store(2, Ordering::SeqCst);
+        assert!(matches!(reloader.check(), Outcome::Unchanged));
+        // The third check sees a change and the hook forces the reload.
+        let mtime = reloader.config().config_list[0].mtime;
+        reloader.config_mut().config_list[0].mtime = mtime - 1;
+        answer.store(1, Ordering::SeqCst);
+        assert!(matches!(reloader.check(), Outcome::Reloaded(_)));
+        assert_eq!(*seen.lock().unwrap(), vec![false, true, true]);
+        let _ = fs::remove_dir_all(&dir);
     }
 }

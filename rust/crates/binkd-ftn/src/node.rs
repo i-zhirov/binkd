@@ -234,7 +234,7 @@ impl NodeTable {
         node.recheck = now.wrapping_add(RESOLVE_TTL);
 
         if let Some(v) = spec.md_flag {
-            if v != USE_OLD {
+            if v != MD_USE_OLD {
                 node.md_flag = v;
             }
         }
@@ -265,7 +265,7 @@ impl NodeTable {
             }
         }
         if let Some(v) = spec.hc_flag {
-            if v != USE_OLD {
+            if v != HC_USE_OLD {
                 node.hc_flag = v;
             }
         }
@@ -443,6 +443,20 @@ mod tests {
         let node = &table.nodes()[index];
         assert_eq!(node.pwd, "secret");
         assert_eq!(node.pkt_pwd, NodePassword::Main);
+    }
+
+    #[test]
+    fn the_off_flags_apply() {
+        let mut table = NodeTable::new();
+        let spec = NodeSpec {
+            md_flag: Some(MD_OFF),
+            hc_flag: Some(HC_OFF),
+            ..NodeSpec::default()
+        };
+        let index = table.add(&addr("2:5047/100@fidonet"), &spec, 0);
+        let node = &table.nodes()[index];
+        assert_eq!(node.md_flag, MD_OFF);
+        assert_eq!(node.hc_flag, HC_OFF);
     }
 
     #[test]

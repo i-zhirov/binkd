@@ -182,6 +182,8 @@ fn session_config(
         }],
         methods,
         crypt,
+        no_md5: false,
+        md_flag: 0,
         nr: false,
         nd: false,
         domains: binkd_ftn::domain::DomainTable::new(Vec::new()),

@@ -1,8 +1,8 @@
 # Decision: the legacy platforms
 
-Status: recommended. The plan keeps the C code for OS/2, DOS, and Amiga, and it
-marks the three out of scope for the Rust port. The record waits for the decision
-of the team.
+Status: accepted. The Rust port does not support OS/2, DOS, and Amiga. The C
+code stays in the tree as the reference and the build of the three. The team
+accepted option 2.
 
 ## Context
 
@@ -32,18 +32,19 @@ Amiga, and the three systems hold no current toolchain of the workspace.
    systems that hold no toolchain of the workspace, and the port of a layer that
    `std` cannot express.
 2. Keep the C code for the three platforms and mark them out of scope for the Rust
-   port, the recommendation of the plan. This option keeps the systems of the
+   port, the choice of this record. This option keeps the systems of the
    operators, and it keeps one C module of the platform layer of the tree.
 3. Stop the support of the three platforms. This option gives one tree, and it
    breaks the systems of the operators who run them.
 
-## Recommendation
+## Decision
 
-Option 2. The C code holds the reference and the build of OS/2, DOS, and Amiga, and
-the record of this decision states the status of the three. The Rust port covers UNIX
-and Windows, the port of the systems of the test suite and of the oracle of the
-port. A system of the three that a maintainer asks for gets its own record and its
-own phase.
+The port takes option 2. The C code holds the reference and the build of OS/2,
+DOS, and Amiga, and the record of this decision states the status of the three.
+The Rust port covers UNIX and Windows, the port of the systems of the test suite
+and of the oracle of the port. A system of the three that a maintainer asks for
+gets its own record and its own phase. Windows 9x/Me is out of scope too, the
+decision of `doc/decisions/windows-support.md`.
 
 ## Consequences
 

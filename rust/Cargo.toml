@@ -10,6 +10,7 @@ members = [
     "crates/binkd-srif",
     "crates/binkd-corpus",
     "crates/binkd",
+    "crates/binkd-win",
 ]
 # The crate of the FFI is optional: the default build holds it not, the port of
 # the decision of `doc/decisions/perl-hooks.md`.

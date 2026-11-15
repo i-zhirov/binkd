@@ -6,7 +6,7 @@ use binkd_config::model::Config;
 use binkd_ftn::addr::FtnAddr;
 use binkd_ftn::node::NP_ON;
 use binkd_log::{DateTime, Log, ERROR, START};
-use binkd_proto::{run_with, Report, Role, SendFile};
+use binkd_proto::{run_with_hooks, CallVars, ErrorVars, Report, Role, SendFile};
 use binkd_spool::busy::{BusyList, F_BSY, F_CSY};
 use binkd_spool::queue::Queue;
 use binkd_spool::tryfile::{bad_try, good_try};
@@ -49,6 +49,10 @@ pub struct Call {
     pub fa: FtnAddr,
     /// The hosts of the node.
     pub hosts: String,
+    /// The proxy of the call, the port of the `proxy` of `call0()`.
+    pub proxy: String,
+    /// The SOCKS proxy of the call, the port of the `socks` of `call0()`.
+    pub socks: String,
 }
 
 /// The caller of the outgoing calls, the port of the state of `client.c`.
@@ -116,6 +120,8 @@ impl Caller {
             Call {
                 fa: node.fa.clone(),
                 hosts: node.hosts.clone().unwrap_or_default(),
+                proxy: config.proxy.clone(),
+                socks: config.socks.clone(),
             }
         };
         // The port of the busy gate of `do_client()`: the C code skips the
@@ -140,8 +146,64 @@ impl Caller {
             );
             return None;
         }
+        self.call_one(call, config, log, now, options, files).await
+    }
+
+    /// Calls one node, the common path of `call_next()`, `call_all()`, and
+    /// `call_node()`.
+    // The port of the C call holds the arguments of `call0()`, so it follows the
+    // C signature.
+    #[allow(clippy::too_many_arguments)]
+    async fn call_one(
+        &mut self,
+        mut call: Call,
+        config: &mut Config,
+        log: &Arc<Log>,
+        now: &(impl Fn() -> DateTime + Sync),
+        options: SessionOptions,
+        files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
+    ) -> Option<Result<Report, CallError>> {
+        // The hooks of this call, the port of `perl_init_clone()` of
+        // `client.c`.
+        let hooks = options.hooks.as_ref().and_then(|factory| factory());
+        // The port of the `perl_on_call()` call of `call0()`.
+        if let Some(hooks) = &hooks {
+            let mut queue = Queue::new();
+            queue.scan_addrs(
+                std::slice::from_ref(&call.fa),
+                true,
+                &mut config.spool,
+                now().epoch,
+                false,
+            );
+            let (traffic_mail, traffic_file) = queue.get_sizes();
+            let mut vars = CallVars {
+                addr: call.fa.clone(),
+                hosts: call.hosts.clone(),
+                proxy: call.proxy.clone(),
+                socks: call.socks.clone(),
+                traffic_mail,
+                traffic_file,
+            };
+            if !hooks.on_call(&mut vars) {
+                log.message(START, "call aborted by Perl on_call()", &now());
+                self.busy.remove(&call.fa, F_CSY, &config.spool);
+                return None;
+            }
+            call.hosts = vars.hosts;
+            call.proxy = vars.proxy;
+            call.socks = vars.socks;
+        }
         let result = self
-            .call_hosts(&call, config, log, now, options, files)
+            .call_hosts(
+                &call,
+                config,
+                log,
+                now,
+                options.clone(),
+                hooks.clone(),
+                files,
+            )
             .await;
         self.busy.remove(&call.fa, F_CSY, &config.spool);
         // The port of the try files of `call0()`: a good session clears them,
@@ -149,10 +211,61 @@ impl Caller {
         match &result {
             Ok(_) => good_try(&call.fa, "CONNECT/BND", &mut config.spool),
             Err(e) => {
+                if let Some(hooks) = &hooks {
+                    hooks.on_error(&ErrorVars {
+                        addr: call.fa.clone(),
+                        error: format!("{e:?}"),
+                        location: where_of(e),
+                    });
+                }
                 bad_try(&call.fa, &format!("{e:?}"), &mut config.spool, now().epoch);
             }
         }
         Some(result)
+    }
+
+    /// Calls the node named by the caller, the port of the `-P` switch and of
+    /// the node of `poll_node()` of `binkd.c`.
+    ///
+    /// The C code creates a poll for the node and the client manager calls it;
+    /// the caller of the port names the node and holds the report.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn call_node(
+        &mut self,
+        fa: &FtnAddr,
+        config: &mut Config,
+        log: &Arc<Log>,
+        now: &(impl Fn() -> DateTime + Sync),
+        options: SessionOptions,
+        files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
+    ) -> Option<Result<Report, CallError>> {
+        self.scan(config, now().epoch);
+        let node = config.spool.nodes.get(fa, now().epoch)?.clone();
+        let call = Call {
+            fa: fa.clone(),
+            hosts: node.hosts.clone().unwrap_or_default(),
+            proxy: config.proxy.clone(),
+            socks: config.socks.clone(),
+        };
+        if !self.busy.test(&call.fa, F_BSY, &config.spool)
+            || !self.busy.test(&call.fa, F_CSY, &config.spool)
+        {
+            log.message(
+                START,
+                &format!("{} busy, skipping", call.fa.format(false)),
+                &now(),
+            );
+            return None;
+        }
+        if !self.busy.add(&call.fa, F_CSY, &config.spool) {
+            log.message(
+                START,
+                &format!("{} busy, skipping", call.fa.format(false)),
+                &now(),
+            );
+            return None;
+        }
+        self.call_one(call, config, log, now, options, files).await
     }
 
     /// Calls the hosts of a node in turn, the port of `call0()` of `client.c`.
@@ -160,6 +273,9 @@ impl Caller {
     /// The C code resolves the name of every host with `getaddrinfo()` and tries
     /// every address; the transport of the runtime resolves the name itself, so an
     /// entry that resolves to several addresses is one attempt for the port.
+    // The port of the C call holds the arguments of `call0()`, so it follows the
+    // C signature.
+    #[allow(clippy::too_many_arguments)]
     async fn call_hosts(
         &self,
         call: &Call,
@@ -167,6 +283,7 @@ impl Caller {
         log: &Arc<Log>,
         now: &(impl Fn() -> DateTime + Sync),
         options: SessionOptions,
+        hooks: Option<binkd_proto::Shared>,
         files: &impl Fn(&FtnAddr) -> Vec<SendFile>,
     ) -> Result<Report, CallError> {
         let entries = hosts(&call.hosts, &call.fa, config);
@@ -186,7 +303,7 @@ impl Caller {
         // The port of `use_proxy` of `call0()`: the node asks for no proxy,
         // the node holds no pipe, and the config holds a proxy or a socks
         // server.
-        let use_proxy = (!config.proxy.is_empty() || !config.socks.is_empty())
+        let use_proxy = (!call.proxy.is_empty() || !call.socks.is_empty())
             && node.as_ref().map(|node| node.np_flag != NP_ON) == Some(true)
             && node
                 .as_ref()
@@ -198,8 +315,8 @@ impl Caller {
         let proxy_addr = if use_proxy {
             Some(
                 crate::proxy::proxy_address(
-                    &config.proxy,
-                    &config.socks,
+                    &call.proxy,
+                    &call.socks,
                     family(node.as_ref()),
                     log,
                     now,
@@ -295,20 +412,41 @@ impl Caller {
                     continue;
                 }
             }
-            let settings = session_config(config, node.as_ref(), options.crypt, options.trace);
+            let local = stream.local_addr().ok();
+            let mut queue = Queue::new();
+            queue.scan_addrs(
+                std::slice::from_ref(&call.fa),
+                true,
+                &mut config.spool,
+                now().epoch,
+                false,
+            );
+            let (traffic_mail, traffic_file) = queue.get_sizes();
+            let info = binkd_proto::SessionInfo {
+                peer_host: entry.name.clone(),
+                peer_ip: target.ip().to_string(),
+                our_ip: local.map(|addr| addr.ip().to_string()).unwrap_or_default(),
+                our_port: local.map(|addr| addr.port() as i32).unwrap_or(0),
+                traffic_mail,
+                traffic_file,
+            };
+            let mut settings = session_config(config, node.as_ref(), options.crypt, options.trace);
+            settings.no_md5 = options.no_md5;
             // The port of `protocol()`: the caller sends the files of the
             // queue for the peer, the port of the scan of `q_scan_boxes()`.
             let files = files(&call.fa);
             // The SRIF events of the session, the port of the calls of
             // `protocol.c` to `srif.c`.
             let mut srif = crate::srif::Events::new(config, target, Arc::clone(log), now());
-            let result = run_with(
+            let result = run_with_hooks(
                 stream,
                 Role::Client,
                 &settings,
                 &mut |_| files.clone(),
                 &mut |_| Ok(()),
                 &mut srif,
+                info,
+                hooks,
                 options.timeout,
             )
             .await;
@@ -341,6 +479,8 @@ impl Caller {
             let call = Call {
                 fa: node.fa.clone(),
                 hosts: node.hosts.clone().unwrap_or_default(),
+                proxy: config.proxy.clone(),
+                socks: config.socks.clone(),
             };
             if !self.busy.test(&call.fa, F_BSY, &config.spool)
                 || !self.busy.test(&call.fa, F_CSY, &config.spool)
@@ -356,19 +496,32 @@ impl Caller {
                 continue;
             }
             clients += 1;
-            let result = self
-                .call_hosts(&call, config, log, now, options, files)
-                .await;
-            self.busy.remove(&call.fa, F_CSY, &config.spool);
-            match &result {
-                Ok(_) => good_try(&call.fa, "CONNECT/BND", &mut config.spool),
-                Err(e) => {
-                    bad_try(&call.fa, &format!("{e:?}"), &mut config.spool, now().epoch);
-                }
+            let fa = call.fa.clone();
+            if let Some(result) = self
+                .call_one(call, config, log, now, options.clone(), files)
+                .await
+            {
+                out.push((fa, result));
             }
-            out.push((call.fa, result));
         }
         out
+    }
+}
+
+/// Returns the `$where` of a failed call, the port of the second value of
+/// `bad_try()` of `client.c` and of `protocol.c`.
+fn where_of(error: &CallError) -> i32 {
+    match error {
+        CallError::Busy => binkd_proto::BAD_MBSY,
+        CallError::Io(_) | CallError::NoHost | CallError::Proxy(_) => binkd_proto::BAD_CALL,
+        CallError::Session(error) => match error {
+            binkd_proto::Error::Busy(_) => binkd_proto::BAD_MBSY,
+            binkd_proto::Error::Io(_) | binkd_proto::Error::Timeout => binkd_proto::BAD_IO,
+            binkd_proto::Error::Peer(_)
+            | binkd_proto::Error::Protocol(_)
+            | binkd_proto::Error::BadPassword => binkd_proto::BAD_MERR,
+            binkd_proto::Error::Md5Required => binkd_proto::BAD_AUTH,
+        },
     }
 }
 
@@ -378,6 +531,33 @@ mod tests {
 
     use super::*;
     use binkd_config::model::Config;
+
+    #[test]
+    fn the_where_of_the_error_follows_the_c_code() {
+        use binkd_proto::Error;
+        assert_eq!(where_of(&CallError::NoHost), binkd_proto::BAD_CALL);
+        assert_eq!(where_of(&CallError::Busy), binkd_proto::BAD_MBSY);
+        assert_eq!(
+            where_of(&CallError::Session(Error::Busy("busy".to_string()))),
+            binkd_proto::BAD_MBSY
+        );
+        assert_eq!(
+            where_of(&CallError::Session(Error::BadPassword)),
+            binkd_proto::BAD_MERR
+        );
+        assert_eq!(
+            where_of(&CallError::Session(Error::Peer("err".to_string()))),
+            binkd_proto::BAD_MERR
+        );
+        assert_eq!(
+            where_of(&CallError::Session(Error::Io("io".to_string()))),
+            binkd_proto::BAD_IO
+        );
+        assert_eq!(
+            where_of(&CallError::Session(Error::Timeout)),
+            binkd_proto::BAD_IO
+        );
+    }
 
     #[tokio::test]
     async fn no_node_to_call() {

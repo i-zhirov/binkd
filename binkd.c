@@ -637,7 +637,10 @@ int main (int argc, char *argv[])
   }
 
   if (no_flag)
+  {
     Log (0, "Exit on option '-n'");
+    exit (0);
+  }
 
   if (inetd_flag)
   {
