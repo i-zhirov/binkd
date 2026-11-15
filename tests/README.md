@@ -269,6 +269,15 @@ A case must not hold two queue entries with the same sort key. The C code
 keeps the `readdir()` order there, and that order is not the same on every
 file system. The Rust port keeps the same order as the C code.
 
+The `inbound_minfree` case runs the non-negative `minfree` path. The focused
+checks are:
+
+```sh
+cargo test -p binkd-spool inbound::tests
+cargo test -p binkd-spool --test spool_corpus
+cargo test -p binkd the_free_space
+```
+
 ## The config corpus
 
 The config cases live in `tests/golden/config/`. A case is a config file
@@ -484,6 +493,7 @@ abandons a session of a remote without the called AKA.
 | `spool/inbound_test.tsv` | `binkd-spool` | `inb_test` and the rename styles |
 | `spool/inbound_done.tsv` | `binkd-spool` | `inb_done` rename |
 | `spool/inbound_reject.tsv` | `binkd-spool` | `inb_reject` and `inb_fopen` |
+| `spool/inbound_minfree.tsv` | `binkd-spool` | `inb_fopen` and `minfree` |
 | `spool/inbound_pkthdr.tsv` | `binkd-spool` | `check_pkthdr` |
 | `config/minimal.conf` | `binkd-config` | The defaults of the `-d` dump |
 | `config/full.conf` | `binkd-config` | The `-d` dump of the values |

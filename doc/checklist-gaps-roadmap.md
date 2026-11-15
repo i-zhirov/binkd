@@ -79,12 +79,12 @@ kilobyte/integer-division behavior, and make `minfree` and
 unit tests for the policy and a provider test with a real temporary
 directory, plus a corpus case for a non-negative `minfree`.
 
-- **Status:** Unplanned
+- **Status:** In Progress
 - **Depends on:** —
 - **Requirements:** Checklist item 1; design §3 file-system effects,
   §4.1 equivalence policy
 - **Manual prerequisites:** —
-- **Plan:** —
+- **Plan:** [the plan](checklist-gaps-plan-platform-seam-free-space.md)
 - **Done when:** a full test transfer is rejected when the computed free
   kilobytes are below the threshold and succeeds above it; the
   `temp-inbound` minimum rule is covered; the pure crates still make no

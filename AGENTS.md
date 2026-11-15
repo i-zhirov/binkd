@@ -33,9 +33,10 @@ crates are also a library for embedding in other programs.
   version of 1.85 (`rust-version` in `rust/Cargo.toml`).
 - **Primary Dependencies**: C: zlib, bzip2, and Perl (all optional),
   pthreads, libresolv, and libutil. Rust: `std` for the pure crates, `tokio`
-  for the session and the daemon, and `flate2` and `bzip2` for the
-  compression. The optional `binkd-perl` crate holds the Perl C shim. The
-  `binkd-win` crate holds the Windows service FFI and `windows-sys`.
+  for the session and the daemon, `flate2` and `bzip2` for the compression,
+  and `fs2` for the free space of the binary. The optional `binkd-perl` crate
+  holds the Perl C shim. The `binkd-win` crate holds the Windows service FFI
+  and `windows-sys`.
 - **Storage**: The local file system. The BSO spool directories, the
   `.flo`, `.try`, `.hld`, and `.bsy` files, the inbound directory, the
   binary session logs, and the config file. No database.
@@ -381,7 +382,8 @@ fixes them):
   that each crate needs; `binkd` adds the `signal` feature for the handlers of
   the daemon, which `std` cannot install. `binkd-proto` depends on `flate2` with
   the pure Rust backend (`=1.1.10`, `rust_backend`) and on `bzip2` (`=0.6.1`).
-  Every other crate uses `std` only. The `binkd-win` crate depends on
+  `binkd` depends on `fs2` (`=0.4.3`) for the free space of the inbound
+  directories; the pure crates use `std` only. The `binkd-win` crate depends on
   `windows-sys` (`=0.61.2`) with the features of the service control manager;
   it is a target-specific dependency of `binkd` and the UNIX build does not
   compile it. Add a dependency only with an exact version.

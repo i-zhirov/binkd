@@ -137,6 +137,10 @@ These surfaces are the oracles for the equivalence tests:
   byte-comparable contract for the config parser.
 - The spool directory. Queue files, `.flo` files, `.try` files, `.bsy`
   files, and inbound names are observable file system effects.
+- The free space of the inbound directories. The C code calls `getfree()`;
+  the port calls `binkd::platform::free_space`, computes kilobytes from the
+  bytes of `fs2`, passes them through `SessionConfig.free_space` to
+  `inb_fopen()`, and assumes enough space when the query fails.
 - The log file. The format is stable. The message text is not a contract.
 - The `-p`, `-n`, and `-P` modes. They run a poll and exit.
 
@@ -1309,7 +1313,8 @@ The list below holds the decisions that the plan needs before phase 4.
    and later is supported, the service mode is in scope, the tray icon is not,
    and Windows 9x/Me is out of scope.
 7. Minimum supported Rust version: 1.85, stated as `rust-version` in
-   `rust/Cargo.toml`. The dependency policy is in `AGENTS.md`.
+   `rust/Cargo.toml`. The dependency policy is in `AGENTS.md`. The free-space
+   provider of the binary pins `fs2 = "=0.4.3"`.
 
 ## 8. Risks
 
