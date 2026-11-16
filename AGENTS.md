@@ -34,7 +34,8 @@ crates are also a library for embedding in other programs.
 - **Primary Dependencies**: C: zlib, bzip2, and Perl (all optional),
   pthreads, libresolv, and libutil. Rust: `std` for the pure crates, `tokio`
   for the session and the daemon, `flate2` and `bzip2` for the compression,
-  and `fs2` for the free space of the binary. The optional `binkd-perl` crate
+  `fs2` for the free space of the binary, and `time` for the safe local offset
+  of the logs, the `TIME` frame, and `-v`. The optional `binkd-perl` crate
   holds the Perl C shim. The `binkd-win` crate holds the Windows service FFI
   and `windows-sys`.
 - **Storage**: The local file system. The BSO spool directories, the
@@ -355,6 +356,10 @@ fixes them):
   block. The corpus tests live in `crates/*/tests/corpus.rs`.
 - The Rust crates have no mocks. A function under test is pure, and the
   corpus supplies the values.
+- A recorded session holds a fixed banner time in the `# time` metadata line,
+  so a replay and a recording that sends `TIME` are deterministic.
+- The `tz_off` cases of `tests/golden/tools.tsv` cover the truncation toward
+  zero of positive and negative seconds values.
 - All tests MUST pass before a change is complete: `make -C tests` and
   `cd rust && cargo test --workspace`.
 - The C and Rust interop suite runs the C binary against the Rust session in
@@ -383,10 +388,12 @@ fixes them):
   the daemon, which `std` cannot install. `binkd-proto` depends on `flate2` with
   the pure Rust backend (`=1.1.10`, `rust_backend`) and on `bzip2` (`=0.6.1`).
   `binkd` depends on `fs2` (`=0.4.3`) for the free space of the inbound
-  directories; the pure crates use `std` only. The `binkd-win` crate depends on
-  `windows-sys` (`=0.61.2`) with the features of the service control manager;
-  it is a target-specific dependency of `binkd` and the UNIX build does not
-  compile it. Add a dependency only with an exact version.
+  directories, and on `time` (`=0.3.44`) with the `local-offset` feature for
+  the safe local offset of the logs, the `TIME` frame, and `-v`; the pure
+  crates use `std` only and do not use `time`. The `binkd-win` crate
+  depends on `windows-sys` (`=0.61.2`) with the features of the service
+  control manager; it is a target-specific dependency of `binkd` and the UNIX
+  build does not compile it. Add a dependency only with an exact version.
 - **Prefer vanilla solutions.** Use `std` when it solves the problem. The
   Rust port of a C module uses `std` only, apart from the async runtime of
   the session and of the daemon.

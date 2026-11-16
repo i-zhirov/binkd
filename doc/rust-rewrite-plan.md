@@ -290,9 +290,11 @@ The tests found these behaviours. The Rust port must reproduce them.
 - `ed()` can read the result of a rule with an empty `from` field as the
   source and the destination of the copy. The Rust port returns a new
   value.
-- `tz_off()` computes the local time zone when the value is -1. The Rust
-  port of phase 1 returns the explicit value only. The platform layer of
-  phase 6 computes the local value.
+- The clock surfaces use the system local time. `tz_off()` turns an
+  explicit `tzoff` seconds value into whole minutes with truncation toward
+  zero; `tzoff == -1` selects the system local offset, and a failed lookup
+  falls back to UTC. The Rust port keeps the division in the pure crate and
+  supplies the system offset from the platform layer.
 - `read_flo_line()` splits a line longer than `MAXPATHLEN` into several
   lines with `fgets()`. The Rust port reads a whole line.
 
@@ -534,6 +536,10 @@ Progress:
 - `binkd-proto::session` holds the session state machine of `protocol.c` over
   `AsyncRead` and `AsyncWrite`: the banner, `ADR`, `PWD`, the login, the file
   transfer in both directions, `GOT`, and `EOB`. (done)
+- `binkd-proto::banner` holds `BannerTime`, the port of `banner()`: the C
+  `TIME` text from the local civil fields and the explicit or system offset.
+  Both roles send `M_NUL TIME <value>` after `NDL` and before `VER`, and the
+  `TIME` frame of the peer stays ignored. (done)
 - The in-memory test `crates/binkd-proto/tests/session.rs` runs the two ends of
   a session against each other: plain, password, bad password, and a file in both
   directions. (done)
@@ -569,6 +575,10 @@ Progress:
   session when the answerer does not hold the AKA that the caller calls
   (`remote has no such AKA`), so the recording of the answerer must hold the
   address of the caller. (done)
+- The recordings hold the fixed banner time in the `# time` metadata line, so
+  a replay and a recorded `TIME` frame are deterministic. The interop test
+  holds the C frame sequence with `NUL TIME` after `NDL` and before `VER`.
+  (done)
 - The NR mode and the ND mode are open. Step 4 is done: the spool holds the
   link status files of the ND mode, `binkd-spool::status`, the port of
   `ND_set_status()`: `status_path()` gives `<outbound>/<address>.stc`,
@@ -715,15 +725,23 @@ Progress:
   process id, and the message. The C code opens and closes the file for every
   message, and the port does the same. The caller supplies the local time,
   because `std` has no local time: the platform layer of the binary owns the
-  timezone. A message of the level 0 is fatal and returns `Outcome::Fatal` for
-  the caller, the port of the `exit(1)` of `vLog()`. (done)
+  timezone. `DateTime` holds the local civil fields, the `year`, and the
+  `offset_minutes`, and a failed offset lookup falls back to UTC, so the text
+  log and `-v` show the system local time. A message of the level 0 is fatal
+  and returns `Outcome::Fatal` for the caller, the port of the `exit(1)` of
+  `vLog()`. (done)
 - `binkd-log::binlog` holds the binary session logs, the port of
   `BinLogStat()`: the T-Mail record of 28 bytes and the FrontDoor record of
   116 bytes, both little-endian, with the status of the T-Mail record and the
-  direction that selects the FrontDoor file. (done)
+  direction that selects the FrontDoor file. The caller supplies the system
+  offset in minutes, and the writer uses the explicit `tzoff` value when it
+  is not `-1`, the port of `tz_off()`. (done)
 - The tests of the crate cover the two line formats, the masks of `nolog`,
-  the fatal level, the fields of the two records, the time offset, and the two
-  files.
+  the fatal level, the fields of the two records, the explicit offset, the
+  system offset, the truncation of an explicit offset, and the T-Mail and
+  FrontDoor records.
+- The binary interop test fixes `tzoff -3h` and holds `-0300` in the received
+  `TIME` line of the C server and of the C client.
 - `binkd-net::port` holds the port names, the port of `find_port()`: the names
   that the C code uses and the numbers. The C code asks the services database
   of the system, so an unknown name is an error for the port and may resolve
@@ -1314,7 +1332,8 @@ The list below holds the decisions that the plan needs before phase 4.
    and Windows 9x/Me is out of scope.
 7. Minimum supported Rust version: 1.85, stated as `rust-version` in
    `rust/Cargo.toml`. The dependency policy is in `AGENTS.md`. The free-space
-   provider of the binary pins `fs2 = "=0.4.3"`.
+   provider of the binary pins `fs2 = "=0.4.3"`, and the local-offset provider
+   of the binary pins `time = "=0.3.44"` with the `local-offset` feature.
 
 ## 8. Risks
 

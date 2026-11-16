@@ -99,12 +99,12 @@ frame. Update the log and `-v` paths, add fixed-epoch tests for explicit
 and system offsets, and compare the new frame against the C binary in
 the interop suite.
 
-- **Status:** Unplanned
+- **Status:** Implemented
 - **Depends on:** Slice 2
 - **Requirements:** Checklist item 1; design §4.1 log format, the
   `banner()` and `tz_off()` behavior of `protocol.c` and `tools.c`
 - **Manual prerequisites:** —
-- **Plan:** —
+- **Plan:** [the plan](checklist-gaps-plan-local-time-and-time-frame.md)
 - **Done when:** the fixed-offset tests match the C civil fields, the
   `TIME` frame matches the C frame, and the Windows and Unix offset
   paths both pass

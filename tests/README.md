@@ -357,7 +357,11 @@ the Rust library against each other.
 
 The binary-level test `crates/binkd/tests/interop_binary.rs` starts the real
 C and Rust binaries. It runs the C server with the Rust client, the Rust
-server with the C client, and the C server with the C client:
+server with the C client, and the C server with the C client. The generated
+configs fix `tzoff -3h`, and the test checks that the received `TIME` line of
+the C server and of the C client carries `-0300`. The frame test of the
+protocol interop suite holds the `NUL TIME` frame after `NDL` and before
+`VER` in the C and the Rust sequence:
 
 ```sh
 cd rust
@@ -458,6 +462,12 @@ session: `s` for the bytes that the recorded side sent and `r` for the bytes tha
 it received. The test replays the bytes of the peer into a fresh session and
 compares every byte that our side sends with the recording.
 
+A recording holds a `# time` line after `# role`: the fixed banner time of
+the session as `<year> <month> <day> <hour> <minute> <second>
+<offset_minutes>`. The replay fills `BannerTime` from those seven values, and
+the recorder that sends `TIME` writes the same value, so the frame and the
+bytes stay deterministic.
+
 The recordings come from the Rust session itself, one for each role, and each
 covers the full batch: the banner, the login, the file of the caller, and the
 `M_GOT` frame of the answerer. The test `write_the_recordings` writes them and
@@ -468,6 +478,22 @@ The replay of a live session of the C binary runs with `BINKD_C`: the test recor
 the C client that polls the Rust server, then replays the bytes. The answerer of
 that recording must hold the address that the C client calls, because the C code
 abandons a session of a remote without the called AKA.
+
+## Run the local time tests
+
+The focused cases of the local clock, the `TIME` frame, and the binary log:
+
+```sh
+cd rust
+cargo test -p binkd-log binlog::tests
+cargo test -p binkd-ftn --test corpus
+cargo test -p binkd-proto banner
+cargo test -p binkd-proto --test session the_time_frame_is_sent
+cargo test -p binkd-net the_banner_time
+cargo test -p binkd --test cli the_version_date_is_local
+BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop
+BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary
+```
 
 ## What the corpus covers
 
@@ -500,6 +526,11 @@ abandons a session of a remote without the called AKA.
 | `config/styles.conf` | `binkd-config` | The `-d` dump of the styles |
 | `config/reload_basic.conf` | `binkd-config` | The reload of the values |
 | `config/reload_node.conf` | `binkd-config` | The reload of the node table |
+
+The `tz_off` cases of `tools.tsv` cover the truncation toward zero for
+positive and negative seconds values. The explicit offset path is exact; the
+system offset for `tzoff -1` comes from the platform layer and the binary
+log takes it as an argument.
 
 The corpus does not cover the modules that need the network, the process
 managers, or the config parser. See `doc/rust-rewrite-plan.md` for the
