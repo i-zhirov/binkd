@@ -11,6 +11,9 @@ description = "The binkd mailer: the command line and the daemon, the port of `b
 # `doc/decisions/perl-hooks.md`.
 perl = ["dep:binkd-perl"]
 
+[target.'cfg(unix)'.dependencies]
+syslog = "=7.0.0"
+
 [target.'cfg(windows)'.dependencies]
 binkd-win = { path = "../binkd-win" }
 

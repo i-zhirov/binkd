@@ -17,6 +17,8 @@ mod perl;
 pub mod pipe;
 pub mod platform;
 pub mod start;
+#[cfg(unix)]
+pub(crate) mod syslog;
 pub mod version;
 
 pub use binkd_config::Config;
