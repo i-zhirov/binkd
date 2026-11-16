@@ -142,6 +142,10 @@ fn run_with(
             &config.logpath,
             config.nolog.clone(),
         );
+        // The port of the `openlog()` call of `vLog()`: the sink is ready
+        // before the `BEGIN` line of `Daemon::new()`.
+        #[cfg(unix)]
+        crate::syslog::configure(log, config.syslog_facility);
         #[cfg(feature = "perl")]
         let perl = (config.perl_script.clone(), config.perl_strict);
         // The port of `perl_setup()`: the hooks read the whole config, so the

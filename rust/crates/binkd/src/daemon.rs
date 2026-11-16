@@ -742,6 +742,10 @@ impl Daemon {
                     &config.logpath,
                     config.nolog.clone(),
                 );
+                // The port of the `openlog()` call of `vLog()`: a reload
+                // recreates the sink, a failed connection keeps the old one.
+                #[cfg(unix)]
+                crate::syslog::configure(&self.log, config.syslog_facility);
                 #[cfg(feature = "perl")]
                 {
                     let runtime = loaded.flatten();

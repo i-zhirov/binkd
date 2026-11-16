@@ -775,11 +775,15 @@ impl<'a> Parser<'a> {
     /// The port of the `read_syslog_facility()` callback.
     fn syslog_arg(&self, words: &[String]) -> Result<i32, Error> {
         self.argc(1, words.len())?;
-        // The C code asks the facility table of the system.
-        match words[0].to_ascii_lowercase().as_str() {
-            "auth" | "authpriv" => Ok(32),
+        // The C code asks the facility table of the system and compares the
+        // name with `strcmp()`, so the match is case sensitive. The `mark`
+        // name of the C table has no backend variant and stays out.
+        match words[0].as_str() {
+            "auth" | "security" => Ok(32),
+            "authpriv" => Ok(80),
             "cron" => Ok(72),
             "daemon" => Ok(24),
+            "ftp" => Ok(88),
             "kern" => Ok(0),
             "local0" => Ok(128),
             "local1" => Ok(136),
@@ -1613,6 +1617,89 @@ mod tests {
         assert_eq!(config.config_list.len(), 2);
         let _ = fs::remove_file(&path);
         let _ = fs::remove_file(&included);
+    }
+
+    // The C parser rejects a correct `syslog` line because of an inverted
+    // argument check in `read_syslog_facility()`, so no golden corpus case
+    // covers this keyword. The parser tests cover the line instead.
+
+    /// Parses a config with one extra line and returns the config.
+    fn with_line(name: &str, line: &str) -> Config {
+        let dir = std::env::temp_dir();
+        let dir = dir.to_string_lossy();
+        let text = format!("{}{line}", base(&dir));
+        let path = write_case(name, &text);
+        let config = Parser::new().parse(&path).unwrap();
+        let _ = fs::remove_file(&path);
+        config
+    }
+
+    /// Returns the error of a config with one extra line.
+    fn line_error(name: &str, line: &str) -> Error {
+        let dir = std::env::temp_dir();
+        let dir = dir.to_string_lossy();
+        let text = format!("{}{line}", base(&dir));
+        let path = write_case(name, &text);
+        let error = Parser::new().parse(&path).unwrap_err();
+        let _ = fs::remove_file(&path);
+        error
+    }
+
+    #[test]
+    fn the_syslog_facility_is_parsed() {
+        // `Parser::new()` holds `Features::unix_default()`, the feature set
+        // that carries the `syslog` keyword.
+        let config = with_line("syslog-local0", "syslog local0\n");
+        assert_eq!(config.syslog_facility, 128);
+    }
+
+    #[test]
+    fn the_syslog_facility_of_auth_and_authpriv() {
+        for (name, value) in [
+            ("auth", 32),
+            ("authpriv", 80),
+            ("ftp", 88),
+            ("security", 32),
+        ] {
+            let config = with_line(&format!("syslog-{name}"), &format!("syslog {name}\n"));
+            assert_eq!(config.syslog_facility, value, "facility {name}");
+        }
+    }
+
+    #[test]
+    fn the_syslog_facility_is_case_sensitive() {
+        // The C code compares the name with `strcmp()`, so the uppercase form
+        // is not a facility.
+        let error = line_error("syslog-case", "syslog LOG_LOCAL0\n");
+        assert!(error.message.contains("LOG_LOCAL0"), "{}", error.message);
+        assert!(
+            error.message.contains("incorrect facility name"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn the_mark_facility_is_rejected() {
+        // The C facility table accepts `mark`, but the syslog backend has no
+        // variant for it, so the port rejects the name.
+        let error = line_error("syslog-mark", "syslog mark\n");
+        assert!(error.message.contains("mark"), "{}", error.message);
+        assert!(
+            error.message.contains("incorrect facility name"),
+            "{}",
+            error.message
+        );
+    }
+
+    #[test]
+    fn the_syslog_keyword_shows_the_c_fallback() {
+        let config = with_line("syslog-dump", "syslog local0\n");
+        let dump = crate::dump(&config);
+        assert!(
+            dump.contains("syslog                   [this item cannot be displayed]"),
+            "{dump}"
+        );
     }
 
     #[test]
