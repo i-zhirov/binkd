@@ -132,11 +132,13 @@ fn concurrent_calls_do_not_race_on_the_master() {
     log.set_hook(Some(Arc::new(LogHook::new(hooks))));
     let now = DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut threads = Vec::new();
     for _ in 0..2 {

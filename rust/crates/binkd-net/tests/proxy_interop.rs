@@ -105,11 +105,13 @@ fn address(s: &str, domains: &DomainTable) -> FtnAddr {
 fn time() -> DateTime {
     DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     }
 }
 

@@ -430,7 +430,8 @@ impl Caller {
                 traffic_mail,
                 traffic_file,
             };
-            let mut settings = session_config(config, node.as_ref(), options.crypt, options.trace);
+            let mut settings =
+                session_config(config, node.as_ref(), options.crypt, options.trace, &now());
             settings.no_md5 = options.no_md5;
             settings.free_space = options.free_space;
             // The port of `protocol()`: the caller sends the files of the
@@ -566,11 +567,13 @@ mod tests {
         let log = Arc::new(Log::new(0, 0, "", Vec::new()));
         let now = || DateTime {
             epoch: 0,
+            year: 1970,
             day: 1,
             month: 1,
             hour: 0,
             minute: 0,
             second: 0,
+            offset_minutes: 0,
         };
         let mut caller = Caller::new();
         assert!(caller

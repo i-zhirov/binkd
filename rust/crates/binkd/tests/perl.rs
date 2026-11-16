@@ -233,11 +233,13 @@ async fn the_oracle_of_the_perl_hooks_of_the_session() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let _ = caller
@@ -529,11 +531,13 @@ async fn the_on_log_hook_runs_on_the_master() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let _ = caller
@@ -630,11 +634,13 @@ async fn the_port_of_the_perl_hooks_of_the_session() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let _ = caller
@@ -863,11 +869,13 @@ async fn the_port_of_the_perl_clones_of_two_sessions() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller_a = Caller::new();
     let mut caller_b = Caller::new();
@@ -987,11 +995,13 @@ async fn the_port_of_the_rebuilt_session_queue() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let result = caller
@@ -1104,11 +1114,13 @@ async fn the_port_of_the_removed_file_of_the_session_queue() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let result = caller
@@ -1231,11 +1243,13 @@ async fn the_port_of_the_queue_of_before_recv() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let result = caller
@@ -1388,11 +1402,13 @@ async fn the_port_of_the_removed_file_of_after_recv() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let result = caller
@@ -1503,11 +1519,13 @@ async fn the_port_of_the_queue_of_after_sent() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let result = caller
@@ -1644,11 +1662,13 @@ async fn the_port_of_the_reload_of_the_script() {
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let result = caller

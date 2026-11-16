@@ -209,11 +209,13 @@ mod tests {
         let log = Arc::new(Log::new(6, 6, "", Vec::new()));
         let now = DateTime {
             epoch: 1_000_000_000,
+            year: 2001,
             day: 9,
             month: 9,
             hour: 1,
             minute: 46,
             second: 40,
+            offset_minutes: 0,
         };
         let mut runner = Runner::new(log, now);
         runner.run(&format!("echo hello > {}", file.display()));

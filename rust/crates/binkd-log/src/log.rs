@@ -37,11 +37,15 @@ pub trait Hook: Send + Sync {
 /// `vLog()` fills with `safe_localtime()`.
 ///
 /// The C code uses the local time, so the caller supplies it: `std` has no local
-/// time, and the platform layer of the binary owns the timezone.
+/// time, and the platform layer of the binary owns the timezone. The civil
+/// fields and the year are the local system time. `epoch` stays the real epoch
+/// of the instant.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DateTime {
     /// The time in seconds since the epoch, the port of `time_t`.
     pub epoch: i64,
+    /// The year, the port of `tm_year` plus 1900.
+    pub year: i32,
     /// The day of the month, 1 to 31, the port of `tm_mday`.
     pub day: u32,
     /// The month, 1 to 12, the port of `tm_mon` plus one.
@@ -52,6 +56,9 @@ pub struct DateTime {
     pub minute: u32,
     /// The second, the port of `tm_sec`.
     pub second: u32,
+    /// The local offset from UTC in minutes, the value that `tz_off()` needs
+    /// for `tzoff == -1`.
+    pub offset_minutes: i32,
 }
 
 /// The result of a message, the port of the return of `vLog()`.
@@ -357,11 +364,13 @@ mod tests {
     fn time() -> DateTime {
         DateTime {
             epoch: 1_600_991_262,
+            year: 2020,
             day: 3,
             month: 10,
             hour: 9,
             minute: 5,
             second: 7,
+            offset_minutes: 0,
         }
     }
 

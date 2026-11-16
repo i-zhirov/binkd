@@ -13,37 +13,39 @@ const MONTHS: [&str; 12] = [
 /// Returns the time of the system clock, the port of the `time()` and of the
 /// `safe_localtime()` of `vLog()` of `tools.c`.
 ///
-/// The C code answers the local time. The port answers the time in UTC until
-/// the platform layer holds the timezone of the system.
+/// The C code answers the local time. The port asks the system for the local
+/// offset and falls back to UTC when the lookup fails, so a host without zone
+/// data still holds a civil time. The `epoch` is the real epoch, and the civil
+/// fields and the year are the local time.
 pub fn now() -> DateTime {
-    let epoch = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_secs() as i64)
-        .unwrap_or(0);
-    let days = epoch.div_euclid(86400);
-    let rest = epoch.rem_euclid(86400);
-    let (_, month, day) = civil_from_days(days);
+    let time =
+        time::OffsetDateTime::now_local().unwrap_or_else(|_| time::OffsetDateTime::now_utc());
+    let offset = time.offset();
     DateTime {
-        epoch,
-        day,
-        month,
-        hour: (rest / 3600) as u32,
-        minute: (rest % 3600 / 60) as u32,
-        second: (rest % 60) as u32,
+        epoch: time.unix_timestamp(),
+        year: time.year(),
+        day: u32::from(time.day()),
+        month: u32::from(u8::from(time.month())),
+        hour: u32::from(time.hour()),
+        minute: u32::from(time.minute()),
+        second: u32::from(time.second()),
+        offset_minutes: i32::from(offset.whole_minutes()),
     }
 }
 
-/// Returns the date of a time, the port of `__DATE__` and of `__TIME__` of
-/// the C code, for example `Oct 27 2026 02:00:00`.
+/// Returns the date of a local time, the port of `__DATE__` and of `__TIME__`
+/// of the C code, for example `Oct 27 2026 02:00:00`.
+///
+/// The fields and the year of the time are local, so the text holds the local
+/// date and time.
 pub fn date(time: &DateTime) -> String {
-    let (year, _, _) = civil_from_days(time.epoch.div_euclid(86400));
     let month = MONTHS
         .get(time.month.saturating_sub(1) as usize)
         .copied()
         .unwrap_or("Jan");
     format!(
         "{} {:2} {} {:02}:{:02}:{:02}",
-        month, time.day, year, time.hour, time.minute, time.second
+        month, time.day, time.year, time.hour, time.minute, time.second
     )
 }
 
@@ -110,13 +112,30 @@ mod tests {
     fn the_date_of_a_time() {
         let time = DateTime {
             epoch: 1_800_000_000,
+            year: 2027,
             day: 25,
             month: 1,
             hour: 23,
             minute: 57,
             second: 8,
+            offset_minutes: 0,
         };
         assert_eq!(date(&time), "Jan 25 2027 23:57:08");
+    }
+
+    #[test]
+    fn the_local_offset_of_now() {
+        let time = now();
+        assert!(
+            (-720..=840).contains(&time.offset_minutes),
+            "the offset is {} minutes",
+            time.offset_minutes
+        );
+        assert!(
+            (1970..=9999).contains(&time.year),
+            "the year is {}",
+            time.year
+        );
     }
 
     #[test]

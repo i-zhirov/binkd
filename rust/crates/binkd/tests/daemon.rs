@@ -253,11 +253,13 @@ async fn the_listener_serves_a_session() {
     let log = Arc::new(Log::new(6, 6, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut caller = Caller::new();
     let result = caller
@@ -339,11 +341,13 @@ async fn the_client_manager_polls_a_node() {
     let log = Arc::new(Log::new(6, 6, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let peer_files = vec![SendFile {
         netname: "13b70064.cut".to_string(),
@@ -512,11 +516,13 @@ async fn the_inetd_session_runs_on_the_pipe() {
     let mut pipe = binkd::pipe::Pipe::new(input, output);
     let now = || DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     };
     let mut client = client_config(&dir, "2:5047/13@fidonet", 0);
     let server = FtnAddr::parse("2:5047/100@fidonet", &client.spool.domains).unwrap();
@@ -543,7 +549,7 @@ async fn the_inetd_session_runs_on_the_pipe() {
         size: packet.len() as u64,
         time: now().epoch,
     }];
-    let settings = binkd_net::session_config(&client, server_node.as_ref(), true, false);
+    let settings = binkd_net::session_config(&client, server_node.as_ref(), true, false, &now());
     let mut received: Vec<binkd_proto::ReceivedFile> = Vec::new();
     let result = binkd_proto::run(
         &mut pipe,

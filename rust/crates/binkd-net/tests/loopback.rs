@@ -52,11 +52,13 @@ fn no_space(_: &Path) -> u64 {
 fn time() -> DateTime {
     DateTime {
         epoch: 1_000_000_000,
+        year: 2001,
         day: 9,
         month: 9,
         hour: 1,
         minute: 46,
         second: 40,
+        offset_minutes: 0,
     }
 }
 
@@ -248,7 +250,7 @@ async fn two_instances_exchange_a_packet() {
         let listeners = bind(&server_config, &server_log, &now).await.unwrap();
         let listener = listeners.into_iter().next().unwrap();
         let (stream, _) = listener.accept().await.unwrap();
-        let settings = binkd_net::session_config(&server_config, None, true, true);
+        let settings = binkd_net::session_config(&server_config, None, true, true, &time());
         let mut received: Vec<binkd_proto::ReceivedFile> = Vec::new();
         let result = binkd_proto::run(
             stream,

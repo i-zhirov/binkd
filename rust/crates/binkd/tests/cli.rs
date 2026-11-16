@@ -48,6 +48,22 @@ fn run_port(args: &[&str], dir: &Path) -> (i32, String, String) {
     run(&binary(), args, dir)
 }
 
+/// Runs the binary of the port with extra environment values.
+#[cfg(unix)]
+fn run_port_env(args: &[&str], dir: &Path, env: &[(&str, &str)]) -> (i32, String, String) {
+    let mut command = Command::new(binary());
+    command.args(args).current_dir(dir);
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    let out = command.output().expect("cannot run the binary");
+    (
+        out.status.code().unwrap_or(-1),
+        normalize(String::from_utf8_lossy(&out.stdout).into_owned()),
+        normalize(String::from_utf8_lossy(&out.stderr).into_owned()),
+    )
+}
+
 /// Returns the name, the version, the date, and the system of a version line,
 /// the shape of the line of the `-v` switch.
 fn version_shape(line: &str) -> Option<(String, String, String)> {
@@ -91,6 +107,25 @@ fn version_with_v() {
         assert_eq!(c_code, code);
         assert!(version_shape(&c_out).is_some());
     }
+}
+
+#[cfg(unix)]
+#[test]
+fn the_version_date_is_local() {
+    if time::OffsetDateTime::now_local().is_err() {
+        println!("the system holds no local offset; skipping the local date check");
+        return;
+    }
+    let dir = corpus_dir();
+    // The two zones are on opposite sides of the line: the west zone is
+    // twelve hours behind UTC, and the east zone is fourteen hours ahead.
+    let (west_code, west, _) = run_port_env(&["-v"], &dir, &[("TZ", "Etc/GMT+12")]);
+    let (east_code, east, _) = run_port_env(&["-v"], &dir, &[("TZ", "Pacific/Kiritimati")]);
+    assert_eq!(west_code, 0);
+    assert_eq!(east_code, 0);
+    let (_, west_date, _) = version_shape(&west).expect("the shape of the west line");
+    let (_, east_date, _) = version_shape(&east).expect("the shape of the east line");
+    assert_ne!(west_date, east_date, "the version date is not local");
 }
 
 #[test]

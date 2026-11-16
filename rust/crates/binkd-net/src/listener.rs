@@ -153,7 +153,7 @@ pub async fn listen(
         // sessions before it starts one.
         let count = sessions.fetch_add(1, Ordering::SeqCst) + 1;
         log.message(TRACE, &format!("started server #{count}"), &now());
-        let mut settings = session_config(&config, None, options.crypt, options.trace);
+        let mut settings = session_config(&config, None, options.crypt, options.trace, &now());
         settings.no_md5 = options.no_md5;
         settings.free_space = options.free_space;
         settings.max_servers = config.max_servers;
@@ -213,11 +213,13 @@ mod tests {
         let log = Arc::new(Log::new(0, 0, "", Vec::new()));
         let now = || DateTime {
             epoch: 0,
+            year: 1970,
             day: 1,
             month: 1,
             hour: 0,
             minute: 0,
             second: 0,
+            offset_minutes: 0,
         };
         assert!(matches!(
             bind(&config, &log, &now).await,
