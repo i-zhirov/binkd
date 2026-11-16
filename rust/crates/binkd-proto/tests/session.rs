@@ -10,8 +10,8 @@ use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
 use binkd_proto::{
-    run, run_with, Error, Method, Methods, Protocol, Report, Role, SendFile, SessionConfig, Srif,
-    ZRule,
+    run, run_with, BannerTime, Error, Method, Methods, Protocol, Report, Role, SendFile,
+    SessionConfig, Srif, ZRule,
 };
 
 /// The settings of the spool of a test.
@@ -52,6 +52,7 @@ fn config_with(dir: &Path, aka: &str, password: &str, methods: Methods) -> Sessi
         addresses: vec![address(aka)],
         password: password.to_string(),
         inbound: dir.to_path_buf(),
+        banner_time: Some(BannerTime::new(2026, 11, 15, 9, 5, 7, 0)),
         free_space: binkd_spool::inbound::assume_enough,
         spool: spool(dir),
         version: "test/1.0".to_string(),
@@ -1170,6 +1171,49 @@ async fn a_hook_message_reaches_the_peer() {
     let server = server.unwrap();
     let names: Vec<&str> = server.frames.iter().map(|f| f.name.as_str()).collect();
     assert!(names.contains(&"NUL OPT"), "{names:?}");
+}
+
+#[tokio::test]
+async fn the_time_frame_is_sent() {
+    let client_dir = temp_dir("time-client");
+    let server_dir = temp_dir("time-server");
+    let client_config = config(&client_dir, "2:5047/13@fidonet", "secret");
+    let mut server_config = config(&server_dir, "2:5047/100@fidonet", "secret");
+    server_config.trace = true;
+    let (client_stream, server_stream) = tokio::io::duplex(1 << 20);
+
+    let client = async move {
+        run(
+            client_stream,
+            Role::Client,
+            &client_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let server = async move {
+        run(
+            server_stream,
+            Role::Server,
+            &server_config,
+            &[],
+            &mut |_| Ok(()),
+            Duration::from_secs(2),
+        )
+        .await
+    };
+    let (client, server) = tokio::join!(client, server);
+    assert!(client.is_ok(), "{client:?}");
+    let server = server.unwrap();
+    // Both sides send a `TIME` frame, so the report also holds the frame of
+    // the peer. We hold the frame that the server itself sent.
+    let sent = server
+        .frames
+        .iter()
+        .any(|frame| frame.sent && frame.name == "NUL TIME");
+    assert!(sent, "{:?}", server.frames);
 }
 
 /// The hooks of the test of the session values.

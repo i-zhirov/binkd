@@ -18,7 +18,7 @@ use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
 use binkd_proto::record::{Recorder, Recording, Replay};
-use binkd_proto::{run, Protocol, Report, Role, SendFile, SessionConfig};
+use binkd_proto::{run, BannerTime, Protocol, Report, Role, SendFile, SessionConfig};
 
 /// The number of the bytes of the file of a test.
 const FILE_SIZE: usize = 300;
@@ -77,6 +77,7 @@ fn config_with(dir: &Path, role: Role, server_aka: &str) -> SessionConfig {
         addresses: vec![address(aka)],
         password: String::new(),
         inbound: dir.join("in"),
+        banner_time: Some(BannerTime::new(2026, 11, 15, 9, 5, 7, 0)),
         free_space: binkd_spool::inbound::assume_enough,
         spool: spool(dir),
         version: "rust-test/0.1".to_string(),
@@ -151,6 +152,7 @@ async fn replay(recording: &Recording, dir: &Path, server_aka: &str) -> (Vec<u8>
     let mut config = config_with(dir, recording.role, server_aka);
     config.nr = recording.nr;
     config.nd = recording.nd;
+    config.banner_time = recording.banner_time;
     let mut replay = Replay::new(recording);
     let report = run(
         &mut replay,
@@ -246,7 +248,9 @@ async fn record_a_c_binary_session(dir: &Path, port: u16) -> Recording {
         )
         .await;
         assert!(result.is_ok(), "{result:?}");
-        recorder.into_recording()
+        let mut recording = recorder.into_recording();
+        recording.banner_time = server_config.banner_time;
+        recording
     };
 
     let client_dir = dir.to_path_buf();
@@ -308,6 +312,7 @@ async fn write_the_recordings() {
         let mut side = config(&dir, role);
         side.nr = modes;
         side.nd = modes;
+        side.banner_time = Some(BannerTime::new(2026, 11, 15, 9, 5, 7, 0));
         // The side that calls sends the file, as in the other tests.
         let files = match role {
             Role::Client => vec![make_file(&dir)],
@@ -380,6 +385,7 @@ async fn write_the_recordings() {
                     );
                     peer.nr = modes;
                     peer.nd = modes;
+                    peer.banner_time = Some(BannerTime::new(2026, 11, 15, 9, 5, 7, 0));
                     peer
                 },
                 &peer_files,
@@ -394,6 +400,7 @@ async fn write_the_recordings() {
         recording.nr = modes;
         recording.nd = modes;
         recording.partial = held;
+        recording.banner_time = side.banner_time;
         let name = match (role, modes, partial) {
             (Role::Client, false, _) => "rust-client.session",
             (Role::Server, false, _) => "rust-server.session",

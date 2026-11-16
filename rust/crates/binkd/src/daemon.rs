@@ -458,8 +458,13 @@ impl Daemon {
                 .get(fa, platform::now().epoch)
                 .cloned()
         });
-        let mut settings =
-            binkd_net::session_config(&self.config, node.as_ref(), !self.options.no_crypt, false);
+        let mut settings = binkd_net::session_config(
+            &self.config,
+            node.as_ref(),
+            !self.options.no_crypt,
+            false,
+            &platform::now(),
+        );
         settings.no_md5 = self.options.no_md5;
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let mut files = {

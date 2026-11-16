@@ -5,6 +5,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod banner;
 pub mod bw;
 pub mod compress;
 pub mod frame;
@@ -12,6 +13,7 @@ pub mod hooks;
 pub mod record;
 pub mod session;
 
+pub use banner::BannerTime;
 pub use compress::{Compressor, Decompressor, Method, Methods, ZRule};
 pub use frame::{decode, read_frame, write_frame, Command, Frame};
 pub use hooks::{

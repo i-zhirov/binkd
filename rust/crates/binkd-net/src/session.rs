@@ -5,8 +5,9 @@ use std::time::Duration;
 
 use binkd_config::model::Config;
 use binkd_ftn::node::FtnNode;
+use binkd_log::DateTime;
 use binkd_proto::bw::{self, RateRule};
-use binkd_proto::{Methods, Protocol, SessionConfig, SkipRule, ZRule};
+use binkd_proto::{BannerTime, Methods, Protocol, SessionConfig, SkipRule, ZRule};
 use binkd_spool::inbound::{assume_enough, FreeSpaceFn};
 
 /// The settings of one session that a manager passes, the port of the parts of
@@ -75,11 +76,16 @@ pub fn mailer() -> String {
 /// session that the peer called: the port of the `to` argument of `protocol()`.
 ///
 /// The `crypt` argument is the `no_crypt` of the C code, the `-r` switch.
+///
+/// The `time` argument is the local session time. The `TIME` banner uses its
+/// civil fields and the offset of the `tzoff` directive, or the system offset
+/// when the directive is -1.
 pub fn session_config(
     config: &Config,
     node: Option<&FtnNode>,
     crypt: bool,
     trace: bool,
+    time: &DateTime,
 ) -> SessionConfig {
     let (password, nr, nd, listed, skip, md_flag) = match node {
         Some(node) => (
@@ -102,6 +108,19 @@ pub fn session_config(
         addresses: config.spool.aka.clone(),
         password,
         inbound: std::path::PathBuf::from(&config.inbound),
+        banner_time: Some(BannerTime::new(
+            time.year,
+            time.month,
+            time.day,
+            time.hour,
+            time.minute,
+            time.second,
+            if config.tzoff != -1 {
+                binkd_ftn::text::tz_off(config.tzoff) as i32
+            } else {
+                time.offset_minutes
+            },
+        )),
         free_space: assume_enough,
         version: mailer(),
         blksize: config.oblksize as usize,
@@ -170,6 +189,31 @@ mod tests {
 
     use binkd_config::model::Config;
 
+    /// The fixed local time of a session test, 2026-11-15 09:05:07.
+    fn time(offset_minutes: i32) -> DateTime {
+        DateTime {
+            epoch: 1_794_733_507 - i64::from(offset_minutes) * 60,
+            year: 2026,
+            month: 11,
+            day: 15,
+            hour: 9,
+            minute: 5,
+            second: 7,
+            offset_minutes,
+        }
+    }
+
+    #[test]
+    fn the_fixed_time_holds_the_real_epoch() {
+        for offset in [0, 120, -180, 330] {
+            assert_eq!(
+                time(offset).epoch,
+                1_794_733_507 - i64::from(offset) * 60,
+                "offset {offset}"
+            );
+        }
+    }
+
     #[test]
     fn settings_of_a_caller() {
         let mut config = Config {
@@ -181,7 +225,7 @@ mod tests {
         let mut node = binkd_ftn::node::FtnNode::new(&address("2:5047/100@fidonet"));
         node.pwd = "secret".to_string();
         node.nr_flag = binkd_ftn::node::NR_ON;
-        let settings = session_config(&config, Some(&node), true, false);
+        let settings = session_config(&config, Some(&node), true, false, &time(0));
         assert_eq!(settings.sysname, "test");
         assert_eq!(settings.password, "secret");
         assert!(settings.nr);
@@ -198,10 +242,42 @@ mod tests {
     #[test]
     fn settings_of_an_answerer() {
         let config = Config::new();
-        let settings = session_config(&config, None, true, false);
+        let settings = session_config(&config, None, true, false, &time(0));
         assert!(settings.password.is_empty());
         assert!(!settings.nr);
         assert!(!settings.nd);
+    }
+
+    #[test]
+    fn the_banner_time_of_an_explicit_offset() {
+        let mut config = Config::new();
+        config.tzoff = -10800;
+        let settings = session_config(&config, None, false, false, &time(0));
+        let text = settings.banner_time.unwrap().text();
+        assert!(text.ends_with("-0300"), "{text}");
+    }
+
+    #[test]
+    fn the_banner_time_of_the_system_offset() {
+        let mut config = Config::new();
+        config.tzoff = -1;
+        let settings = session_config(&config, None, false, false, &time(120));
+        let text = settings.banner_time.unwrap().text();
+        assert!(text.ends_with("+0200"), "{text}");
+    }
+
+    #[test]
+    fn the_banner_time_truncates_seconds() {
+        let mut config = Config::new();
+        config.tzoff = 90;
+        let settings = session_config(&config, None, false, false, &time(0));
+        let text = settings.banner_time.unwrap().text();
+        assert!(text.ends_with("+0001"), "{text}");
+
+        config.tzoff = -90;
+        let settings = session_config(&config, None, false, false, &time(0));
+        let text = settings.banner_time.unwrap().text();
+        assert!(text.ends_with("-0001"), "{text}");
     }
 
     fn address(s: &str) -> binkd_ftn::addr::FtnAddr {

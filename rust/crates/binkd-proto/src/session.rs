@@ -16,6 +16,7 @@ use std::task::Poll;
 use binkd_ftn::addr::FtnAddr;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 
+use crate::banner::BannerTime;
 use crate::bw;
 use crate::compress::{self, Compressor, Decompressor, Method, Methods, ZRule, BLOCK_SIZE};
 use crate::frame::{self, Command, Frame};
@@ -68,6 +69,9 @@ pub struct SessionConfig {
     pub password: String,
     /// The inbound directory of the session.
     pub inbound: PathBuf,
+    /// The fixed banner of the session, the value of the `M_NUL TIME` frame. A
+    /// session without a value sends no `TIME` frame.
+    pub banner_time: Option<BannerTime>,
     /// The provider of the free space of the inbound directories, in
     /// kilobytes. The C code calls `getfree()` from the inbound code.
     pub free_space: FreeSpaceFn,
@@ -1194,6 +1198,12 @@ where
         self.send_text2(Command::Nul, "LOC ", &location).await?;
         let nodeinfo = self.config.nodeinfo.clone();
         self.send_text2(Command::Nul, "NDL ", &nodeinfo).await?;
+        // The port of the `TIME` message of `banner()`. The text is read
+        // before the await, so the borrow of the settings does not cross it.
+        if let Some(banner_time) = self.config.banner_time {
+            let text = banner_time.text();
+            self.send_text2(Command::Nul, "TIME ", &text).await?;
+        }
         let version = self.config.version.clone();
         let protocol = self.config.protocol.name();
         self.send_text(Command::Nul, &format!("VER {version} binkp/{protocol}"))

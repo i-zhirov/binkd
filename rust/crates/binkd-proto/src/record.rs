@@ -10,6 +10,7 @@
 //! ```text
 //! # binkd recorded session
 //! # role server
+//! # time 2026 11 15 9 5 7 0
 //! s 5300053459...
 //! r 000d0a...
 //! ```
@@ -25,7 +26,7 @@ use std::task::{Context, Poll};
 
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 
-use crate::Role;
+use crate::{BannerTime, Role};
 
 /// The direction of the recorded bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -45,6 +46,9 @@ pub struct Recording {
     pub nr: bool,
     /// The session asked for the ND mode, the port of `THEY_ND`.
     pub nd: bool,
+    /// The fixed banner of the recording, the value of the `M_NUL TIME` frame.
+    /// A recording without a value sends no `TIME` frame.
+    pub banner_time: Option<BannerTime>,
     /// The bytes that our side sent.
     pub sent: Vec<u8>,
     /// The bytes that our side received.
@@ -61,6 +65,7 @@ impl Recording {
             role,
             nr: false,
             nd: false,
+            banner_time: None,
             sent: Vec::new(),
             received: Vec::new(),
             partial: Vec::new(),
@@ -107,6 +112,32 @@ impl Recording {
                     recording.partial = decode_hex(hex.trim())?;
                     continue;
                 }
+                if let Some(values) = comment.trim().strip_prefix("time ") {
+                    let fields: Vec<&str> = values.split_whitespace().collect();
+                    if fields.len() != 7 {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidData,
+                            "the time line needs seven values",
+                        ));
+                    }
+                    let year: i32 = time_value(&fields, 0)?;
+                    let month: u32 = time_value(&fields, 1)?;
+                    let day: u32 = time_value(&fields, 2)?;
+                    let hour: u32 = time_value(&fields, 3)?;
+                    let minute: u32 = time_value(&fields, 4)?;
+                    let second: u32 = time_value(&fields, 5)?;
+                    let offset_minutes: i32 = time_value(&fields, 6)?;
+                    recording.banner_time = Some(BannerTime::new(
+                        year,
+                        month,
+                        day,
+                        hour,
+                        minute,
+                        second,
+                        offset_minutes,
+                    ));
+                    continue;
+                }
                 if let Some(name) = comment.trim().strip_prefix("role ") {
                     role = Some(match name.trim() {
                         "client" => Role::Client,
@@ -147,6 +178,18 @@ impl Recording {
         match self.role {
             Role::Client => text.push_str("# role client\n"),
             Role::Server => text.push_str("# role server\n"),
+        }
+        if let Some(time) = self.banner_time {
+            text.push_str(&format!(
+                "# time {} {} {} {} {} {} {}\n",
+                time.year,
+                time.month,
+                time.day,
+                time.hour,
+                time.minute,
+                time.second,
+                time.offset_minutes
+            ));
         }
         if self.nr {
             text.push_str("# nr\n");
@@ -302,6 +345,13 @@ impl AsyncWrite for Replay {
     }
 }
 
+/// Returns a numeric field of the time line, or an invalid-data error.
+fn time_value<T: std::str::FromStr>(fields: &[&str], index: usize) -> io::Result<T> {
+    fields[index]
+        .parse()
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "a time value is not a number"))
+}
+
 /// Returns the bytes of a hexadecimal string.
 fn decode_hex(s: &str) -> io::Result<Vec<u8>> {
     if s.len() % 2 != 0 {
@@ -351,6 +401,15 @@ mod tests {
     }
 
     #[test]
+    fn banner_time_round_trip() {
+        let mut recording = Recording::new(Role::Server);
+        recording.banner_time = Some(crate::BannerTime::new(2026, 11, 15, 9, 5, 7, -180));
+        recording.push(Direction::Sent, &[0x00]);
+        let parsed = Recording::parse(&recording.to_text()).unwrap();
+        assert_eq!(parsed, recording);
+    }
+
+    #[test]
     fn role() {
         let mut recording = Recording::new(Role::Client);
         recording.push(Direction::Sent, &[0x00]);
@@ -380,6 +439,7 @@ mod tests {
             addresses: Vec::new(),
             password: String::new(),
             inbound: std::env::temp_dir(),
+            banner_time: Some(crate::BannerTime::new(2026, 11, 15, 9, 5, 7, 0)),
             free_space: binkd_spool::inbound::assume_enough,
             spool: binkd_spool::config::SpoolConfig::new(),
             version: "test/1.0".to_string(),
