@@ -34,10 +34,10 @@ crates are also a library for embedding in other programs.
 - **Primary Dependencies**: C: zlib, bzip2, and Perl (all optional),
   pthreads, libresolv, and libutil. Rust: `std` for the pure crates, `tokio`
   for the session and the daemon, `flate2` and `bzip2` for the compression,
-  `fs2` for the free space of the binary, and `time` for the safe local offset
-  of the logs, the `TIME` frame, and `-v`. The optional `binkd-perl` crate
-  holds the Perl C shim. The `binkd-win` crate holds the Windows service FFI
-  and `windows-sys`.
+  `fs2` for the free space of the binary, `time` for the safe local offset
+  of the logs, the `TIME` frame, and `-v`, and `syslog` for the local syslog
+  backend of the Unix binary. The optional `binkd-perl` crate holds the Perl C
+  shim. The `binkd-win` crate holds the Windows service FFI and `windows-sys`.
 - **Storage**: The local file system. The BSO spool directories, the
   `.flo`, `.try`, `.hld`, and `.bsy` files, the inbound directory, the
   binary session logs, and the config file. No database.
@@ -360,6 +360,16 @@ fixes them):
   so a replay and a recording that sends `TIME` are deterministic.
 - The `tz_off` cases of `tests/golden/tools.tsv` cover the truncation toward
   zero of positive and negative seconds values.
+- The log sink cases use a fake sink: `a_sink_receives_the_level_and_text`,
+  `a_hook_rewrites_the_message_of_the_sink`,
+  `a_suppressing_hook_leaves_the_sink_empty`,
+  `a_nolog_mask_suppresses_the_sink`, and
+  `a_level_above_the_file_level_skips_the_sink` of `binkd-log`. The
+  `binkd::syslog` cases cover the facility and the priority mapping. No live
+  syslog daemon is needed. The Rust parser and dump cases cover the `syslog`
+  keyword. No golden C case parses a `syslog <name>` line; the dump holds only
+  the fallback, because the C parser `read_syslog_facility()` has an inverted
+  argument check.
 - All tests MUST pass before a change is complete: `make -C tests` and
   `cd rust && cargo test --workspace`.
 - The C and Rust interop suite runs the C binary against the Rust session in
@@ -390,7 +400,9 @@ fixes them):
   `binkd` depends on `fs2` (`=0.4.3`) for the free space of the inbound
   directories, and on `time` (`=0.3.44`) with the `local-offset` feature for
   the safe local offset of the logs, the `TIME` frame, and `-v`; the pure
-  crates use `std` only and do not use `time`. The `binkd-win` crate
+  crates use `std` only and do not use `time`. `binkd` also depends on
+  `syslog` (`=7.0.0`) as a Unix-only target dependency for the safe local
+  syslog backend, and the Windows build compiles it not. The `binkd-win` crate
   depends on `windows-sys` (`=0.61.2`) with the features of the service
   control manager; it is a target-specific dependency of `binkd` and the UNIX
   build does not compile it. Add a dependency only with an exact version.

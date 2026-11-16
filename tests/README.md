@@ -495,6 +495,32 @@ BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop
 BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary
 ```
 
+## Run the syslog tests
+
+The focused cases of the log sink, the syslog backend, and the keyword. They
+need no live syslog daemon:
+
+```sh
+cd rust
+cargo test -p binkd-log a_sink_receives_the_level_and_text
+cargo test -p binkd-log a_hook_rewrites_the_message_of_the_sink
+cargo test -p binkd-log a_suppressing_hook_leaves_the_sink_empty
+cargo test -p binkd-log a_nolog_mask_suppresses_the_sink
+cargo test -p binkd-log a_level_above_the_file_level_skips_the_sink
+cargo test -p binkd syslog::tests
+cargo test -p binkd-config the_syslog_facility_is_parsed
+cargo test -p binkd-config the_syslog_facility_of_auth_and_authpriv
+cargo test -p binkd-config the_syslog_facility_is_case_sensitive
+cargo test -p binkd-config the_mark_facility_is_rejected
+cargo test -p binkd-config the_syslog_keyword_shows_the_c_fallback
+```
+
+The cases of `binkd-log` use a fake sink, and the cases of `binkd` cover the
+facility and priority mapping. No live syslog daemon is required. No golden C
+case parses a `syslog <name>` line; the dump holds only the fallback, because
+the C parser `read_syslog_facility()` has an inverted argument check. The Rust
+parser and dump cases are the only coverage of the keyword.
+
 ## What the corpus covers
 
 | File | Crate | Cases |

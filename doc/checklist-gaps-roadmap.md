@@ -117,12 +117,12 @@ config. Keep `binkd-log` free of platform FFI. Add a fake sink that
 asserts the level and text, a test that the hook and `nolog` filters
 run before the sink, and a parser/dump case for the enabled feature.
 
-- **Status:** Unplanned
+- **Status:** Implemented
 - **Depends on:** —
 - **Requirements:** Checklist item 1; the `syslog` branch of `vLog()`
   in `tools.c`
 - **Manual prerequisites:** —
-- **Plan:** —
+- **Plan:** [the plan](checklist-gaps-plan-syslog-sink.md)
 - **Done when:** a fake sink receives the expected priority and message
   on Unix, a disabled `syslog` sends nothing, Windows has no backend,
   and the parser and dump use the same feature set

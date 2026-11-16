@@ -508,7 +508,14 @@ The port holds:
   config when the new one is broken.
 
 The C `read_syslog_facility()` inverts its argument check, so a `syslog <name>`
-line fails the C parser. The port accepts the line; the corpus has no such line.
+line fails the C parser, and the corpus has no such line. The port accepts the
+common names of the C table: `auth`, `security`, `authpriv`, `cron`,
+`daemon`, `ftp`, `kern`, `local0` to `local7`, `lpr`, `mail`, `news`,
+`syslog`, `user`, and `uucp`. The match is case sensitive, as the `strcmp()`
+of the C code is. The port rejects `mark`, because `syslog` 7.0.0 has no
+backend variant for it. The port also rejects the system names that are not
+portable, such as the macOS `install`, `netinfo`, `ras`, `remoteauth`, and
+`launchd` entries.
 
 Exit criteria:
 
@@ -730,6 +737,16 @@ Progress:
   log and `-v` show the system local time. A message of the level 0 is fatal
   and returns `Outcome::Fatal` for the caller, the port of the `exit(1)` of
   `vLog()`. (done)
+- `binkd-log::log` holds the `Sink` trait, the platform output of the log, the
+  port of the syslog branch of `vLog()`. The sink receives the final level and
+  the final text after the hook and the `nolog` filter, and it runs only when
+  the level is at most the level of the file. The crate holds no platform
+  code; the binary supplies the backend. The tests use a fake sink and need no
+  live syslog daemon: `a_sink_receives_the_level_and_text`,
+  `a_hook_rewrites_the_message_of_the_sink`,
+  `a_suppressing_hook_leaves_the_sink_empty`,
+  `a_nolog_mask_suppresses_the_sink`, and
+  `a_level_above_the_file_level_skips_the_sink`.
 - `binkd-log::binlog` holds the binary session logs, the port of
   `BinLogStat()`: the T-Mail record of 28 bytes and the FrontDoor record of
   116 bytes, both little-endian, with the status of the T-Mail record and the
@@ -1120,6 +1137,35 @@ Deliverables:
   of `exitfunc()`. (done: the port takes the `signal` feature of `tokio` for the
   handlers, because `std` states no signal of a process; the feature holds the
   small `signal-hook-registry` crate)
+- `binkd::syslog` holds the local syslog backend, the port of the syslog
+  branch of `vLog()` of `tools.c`: the `SyslogSink` of the `syslog` crate,
+  the common facility values of `read_syslog_facility()`, and the priority
+  table of the C code (level 0 `LOG_ERR`, level 1 `LOG_WARNING`, level 2
+  `LOG_NOTICE`, levels 3 to 6 `LOG_INFO`, and every other level `LOG_DEBUG`).
+  The module is Unix-only; the Windows build has no backend. The daemon calls
+  `configure()` after `log.init()` at startup, before the `BEGIN` line, and
+  after `log.init()` on a reload. (done)
+- The differences of the syslog backend, for the record:
+    - The C `vLog()` passes the original format string and the arguments to
+      `vsyslog()`, not the formatted buffer. The port has no format string at
+      this layer and sends the filtered text, the same text as the console and
+      the file.
+    - The `syslog` crate writes an RFC 3164 header from UTC. It uses a
+      zero-padded day instead of the space-padded day of the local C header,
+      and its `hostname: None` value omits the host name. The priority,
+      facility, process, and text are the contract; the header differs.
+    - The C parser `read_syslog_facility()` inverts its argument check, so the
+      C binary rejects a correct `syslog <name>` line. The port accepts it; a
+      golden C case cannot parse the line, and the dump holds only the
+      fallback text.
+    - The C `openlog()` runs once, so a reload keeps the first facility. The
+      port recreates the sink on a reload. A failed new connection keeps the
+      old sink, and a negative facility removes it.
+    - A failed `syslog::unix()` connection disables the first sink without a
+      log message, so the log cannot recurse through itself.
+    - The C `facilitynames` table holds `mark`, but `syslog` 7.0.0 has no
+      backend variant for it, so the port rejects the name with the
+      incorrect-facility error.
 - The Windows service mode: the `-t` commands, the `-S` name, the service
   control manager, the stop and restart control events, the cleanup, and the
   `BEGIN service` line, the port of `nt/service.c` and of the `WIN32` blocks of
@@ -1333,7 +1379,9 @@ The list below holds the decisions that the plan needs before phase 4.
 7. Minimum supported Rust version: 1.85, stated as `rust-version` in
    `rust/Cargo.toml`. The dependency policy is in `AGENTS.md`. The free-space
    provider of the binary pins `fs2 = "=0.4.3"`, and the local-offset provider
-   of the binary pins `time = "=0.3.44"` with the `local-offset` feature.
+   of the binary pins `time = "=0.3.44"` with the `local-offset` feature. The
+   Unix build of the binary pins `syslog = "=7.0.0"` as a target dependency,
+   and the Windows build compiles it not.
 
 ## 8. Risks
 
