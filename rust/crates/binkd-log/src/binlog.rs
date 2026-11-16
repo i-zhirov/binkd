@@ -46,15 +46,26 @@ pub struct BinLogConfig {
     pub fdinhist: String,
     /// The path of the FrontDoor file of an outgoing session, or empty.
     pub fdouthist: String,
-    /// The offset in seconds, or -1 for the local zone.
+    /// The offset in seconds, or -1 for the system local offset.
     pub tzoff: i64,
 }
 
 /// Writes the records of a session, the port of `BinLogStat()` of `binlog.c`.
 ///
-/// A path that is empty writes no file, as the C code does. The caller supplies
-/// the local zone offset of the session in minutes, the port of `tz_off()`.
-pub fn write(config: &BinLogConfig, stat: &SessionStat, tz_minutes: i64) -> std::io::Result<()> {
+/// A path that is empty writes no file, as the C code does. An explicit `tzoff`
+/// value of seconds selects the offset in whole minutes, truncated toward zero;
+/// `-1` selects the system local offset that the caller supplies in minutes,
+/// the port of `tz_off()`.
+pub fn write(
+    config: &BinLogConfig,
+    stat: &SessionStat,
+    system_offset_minutes: i64,
+) -> std::io::Result<()> {
+    let tz_minutes = if config.tzoff == -1 {
+        system_offset_minutes
+    } else {
+        binkd_ftn::text::tz_off(config.tzoff as i32)
+    };
     if !config.binlog.is_empty() {
         let record = t_mail_record(stat, tz_minutes);
         append(&config.binlog, &record)?;
@@ -267,5 +278,51 @@ mod tests {
         write(&config, &stat(), 0).unwrap();
         assert_eq!(std::fs::read(&dir).unwrap().len(), 56);
         let _ = std::fs::remove_file(&dir);
+    }
+
+    fn write_record(name: &str, tzoff: i64, system_offset_minutes: i64) -> Vec<u8> {
+        let path =
+            std::env::temp_dir().join(format!("binkd-binlog-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_file(&path);
+        let config = BinLogConfig {
+            binlog: path.display().to_string(),
+            tzoff,
+            ..BinLogConfig::default()
+        };
+        write(&config, &stat(), system_offset_minutes).unwrap();
+        let record = std::fs::read(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        record
+    }
+
+    #[test]
+    fn write_uses_the_explicit_offset() {
+        // The tzoff value is in seconds, and the start time moves by three
+        // hours, whatever the system offset is.
+        let record = write_record("explicit", 10800, -240);
+        assert_eq!(
+            &record[8..12],
+            &(stat().start_time as u32 + 10_800).to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn write_uses_the_system_offset() {
+        // A tzoff of -1 selects the system offset, here two hours.
+        let record = write_record("system", -1, 120);
+        assert_eq!(
+            &record[8..12],
+            &(stat().start_time as u32 + 7_200).to_le_bytes()
+        );
+    }
+
+    #[test]
+    fn write_truncates_an_explicit_offset() {
+        // The explicit offset takes whole minutes, so 90 seconds is one minute.
+        let record = write_record("truncated", 90, -240);
+        assert_eq!(
+            &record[8..12],
+            &(stat().start_time as u32 + 60).to_le_bytes()
+        );
     }
 }
