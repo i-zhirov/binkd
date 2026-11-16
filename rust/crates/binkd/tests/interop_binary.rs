@@ -65,6 +65,7 @@ fn write_c_server_config(dir: &Path, port: u16) -> PathBuf {
              sysop \"C sysop\"\n\
              location \"C location\"\n\
              nodeinfo \"C node\"\n\
+             tzoff -3h\n\
              inbound in\n\
              iport {port}\n\
              listen 127.0.0.1:{port}\n\
@@ -88,6 +89,7 @@ fn write_rust_server_config(dir: &Path, port: u16) -> PathBuf {
              sysop \"Rust sysop\"\n\
              location \"Rust location\"\n\
              nodeinfo \"Rust node\"\n\
+             tzoff -3h\n\
              inbound in\n\
              listen 127.0.0.1:{port}\n\
              node {CLIENT_AKA} 127.0.0.1 {PASSWORD}\n\
@@ -110,6 +112,7 @@ fn write_c_client_config(dir: &Path, port: u16) -> PathBuf {
              sysop \"C sysop\"\n\
              location \"C location\"\n\
              nodeinfo \"C node\"\n\
+             tzoff -3h\n\
              inbound in\n\
              node {SERVER_AKA} 127.0.0.1:{port} {PASSWORD}\n\
              zallow *\n\
@@ -132,6 +135,7 @@ fn write_rust_client_config(dir: &Path, port: u16) -> PathBuf {
              sysop \"Rust sysop\"\n\
              location \"Rust location\"\n\
              nodeinfo \"Rust node\"\n\
+             tzoff -3h\n\
              inbound in\n\
              node {SERVER_AKA} 127.0.0.1:{port} {PASSWORD}\n\
              zallow *\n\
@@ -246,6 +250,16 @@ fn assert_log(dir: &Path, name: &str, text: &str) {
     assert!(log.contains(text), "{name}: {log}");
 }
 
+/// Asserts that one line of the log holds both texts.
+fn assert_log_line(dir: &Path, name: &str, first: &str, second: &str) {
+    let log = fs::read_to_string(dir.join(name)).unwrap_or_default();
+    assert!(
+        log.lines()
+            .any(|line| line.contains(first) && line.contains(second)),
+        "{name}: {log}"
+    );
+}
+
 /// The Rust client calls the C server.
 #[test]
 fn the_rust_client_calls_the_c_server() {
@@ -274,6 +288,7 @@ fn the_rust_client_calls_the_c_server() {
     );
     assert_log(&server_dir, "c-server.log", "BEGIN, binkd/");
     assert_log(&client_dir, "rust-client.log", "BEGIN, binkd/");
+    assert_log_line(&server_dir, "c-server.log", "rcvd msg NUL TIME", "-0300");
 }
 
 /// The C client calls the Rust server.
@@ -304,6 +319,7 @@ fn the_c_client_calls_the_rust_server() {
     );
     assert_log(&server_dir, "rust-server.log", "BEGIN, binkd/");
     assert_log(&client_dir, "c-client.log", "BEGIN, binkd/");
+    assert_log_line(&client_dir, "c-client.log", "rcvd msg NUL TIME", "-0300");
 }
 
 /// The C client calls the C server.
