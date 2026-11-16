@@ -33,6 +33,24 @@ pub trait Hook: Send + Sync {
     fn on_log(&self, message: &mut Vec<u8>, level: &mut Level) -> bool;
 }
 
+/// A platform output of the log, the port of the syslog branch of `vLog()` of
+/// `tools.c`.
+///
+/// The C code writes every message of a level at most `current_loglevel` to
+/// the local syslog when `syslog_facility` is not negative. The port keeps that
+/// output behind this trait, so the crate holds no platform code: the binary
+/// supplies the backend.
+///
+/// The sink receives the message after the hook and the `nolog` filter and the
+/// final level, and it runs only when the level is at most the level of the
+/// file. The sink may be called from several threads. A sink MUST be
+/// `Send + Sync` and MUST serialize the state that it shares.
+pub trait Sink: Send + Sync {
+    /// Writes a message at a level, the port of the `vsyslog()` call of the
+    /// syslog branch of `vLog()` of `tools.c`.
+    fn write(&self, level: Level, text: &str);
+}
+
 /// The broken down local time of a message, the port of the `struct tm` that
 /// `vLog()` fills with `safe_localtime()`.
 ///
@@ -86,6 +104,9 @@ pub struct Log {
     inner: Mutex<Inner>,
     /// The hook of the log, the port of `perl_on_log()`.
     hook: RwLock<Option<Arc<dyn Hook>>>,
+    /// The platform output of the log, the port of the syslog branch of
+    /// `vLog()`.
+    sink: RwLock<Option<Arc<dyn Sink>>>,
 }
 
 thread_local! {
@@ -143,6 +164,7 @@ impl Log {
                 first: true,
             }),
             hook: RwLock::new(None),
+            sink: RwLock::new(None),
         }
     }
 
@@ -160,6 +182,22 @@ impl Log {
     /// Returns the hook of the log, when the log holds one.
     fn hook(&self) -> Option<Arc<dyn Hook>> {
         self.hook.read().ok().and_then(|slot| slot.clone())
+    }
+
+    /// Sets the platform output of the log, the port of the syslog branch of
+    /// `vLog()` of `tools.c`.
+    ///
+    /// A sink of `None` removes the sink. The crate holds no platform code, so
+    /// the binary supplies the backend as a trait object.
+    pub fn set_sink(&self, sink: Option<Arc<dyn Sink>>) {
+        if let Ok(mut slot) = self.sink.write() {
+            *slot = sink;
+        }
+    }
+
+    /// Returns the sink of the log, when the log holds one.
+    fn sink(&self) -> Option<Arc<dyn Sink>> {
+        self.sink.read().ok().and_then(|slot| slot.clone())
     }
 
     /// Sets the state of the log, the port of `InitLog()`.
@@ -263,6 +301,16 @@ impl Log {
                     }
                 }
             }
+            if level <= inner.level {
+                // The port of the syslog branch of `vLog()`: the sink runs
+                // after the console and the file, and the guard is dropped
+                // before the call, so a sink cannot deadlock the log.
+                let sink = self.sink();
+                drop(inner);
+                if let Some(sink) = sink {
+                    sink.write(level, text.as_ref());
+                }
+            }
         }
         if level == crate::level::FATAL {
             return Outcome::Fatal;
@@ -344,6 +392,17 @@ mod tests {
     impl Hook for Suppress {
         fn on_log(&self, _message: &mut Vec<u8>, _level: &mut Level) -> bool {
             false
+        }
+    }
+
+    /// Records the level and the text of every message.
+    struct Record(Arc<Mutex<Vec<(Level, String)>>>);
+
+    impl Sink for Record {
+        fn write(&self, level: Level, text: &str) {
+            if let Ok(mut records) = self.0.lock() {
+                records.push((level, text.to_string()));
+            }
         }
     }
 
@@ -459,6 +518,70 @@ mod tests {
         log.set_hook(Some(Arc::new(Rewrite)));
         assert_eq!(log.message(INFO, "hello", &time()), Outcome::Written);
         assert!(!path.exists(), "the mask did not see the changed message");
+    }
+
+    #[test]
+    fn a_sink_receives_the_level_and_text() {
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let log = Log::new(DEBUG, FATAL, "", Vec::new());
+        log.set_sink(Some(Arc::new(Record(Arc::clone(&records)))));
+        assert_eq!(log.message(INFO, "hello", &time()), Outcome::Written);
+        assert_eq!(
+            *records.lock().unwrap(),
+            vec![(INFO, "hello".to_string())],
+            "the sink did not receive the message"
+        );
+    }
+
+    #[test]
+    fn a_hook_rewrites_the_message_of_the_sink() {
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let log = Log::new(DEBUG, FATAL, "", Vec::new());
+        log.set_sink(Some(Arc::new(Record(Arc::clone(&records)))));
+        log.set_hook(Some(Arc::new(Rewrite)));
+        assert_eq!(log.message(INFO, "hello", &time()), Outcome::Written);
+        assert_eq!(
+            *records.lock().unwrap(),
+            vec![(crate::level::ERROR, "rewritten".to_string())],
+            "the sink did not see the changed level and text"
+        );
+    }
+
+    #[test]
+    fn a_suppressing_hook_leaves_the_sink_empty() {
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let log = Log::new(DEBUG, FATAL, "", Vec::new());
+        log.set_sink(Some(Arc::new(Record(Arc::clone(&records)))));
+        log.set_hook(Some(Arc::new(Suppress)));
+        assert_eq!(log.message(INFO, "hello", &time()), Outcome::Written);
+        assert!(
+            records.lock().unwrap().is_empty(),
+            "the suppressed message reached the sink"
+        );
+    }
+
+    #[test]
+    fn a_nolog_mask_suppresses_the_sink() {
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let log = Log::new(DEBUG, FATAL, "", vec!["hello".to_string()]);
+        log.set_sink(Some(Arc::new(Record(Arc::clone(&records)))));
+        assert_eq!(log.message(INFO, "hello", &time()), Outcome::Written);
+        assert!(
+            records.lock().unwrap().is_empty(),
+            "the masked message reached the sink"
+        );
+    }
+
+    #[test]
+    fn a_level_above_the_file_level_skips_the_sink() {
+        let records = Arc::new(Mutex::new(Vec::new()));
+        let log = Log::new(INFO, FATAL, "", Vec::new());
+        log.set_sink(Some(Arc::new(Record(Arc::clone(&records)))));
+        assert_eq!(log.message(DEBUG, "hello", &time()), Outcome::Written);
+        assert!(
+            records.lock().unwrap().is_empty(),
+            "the message above the file level reached the sink"
+        );
     }
 
     struct Count {
