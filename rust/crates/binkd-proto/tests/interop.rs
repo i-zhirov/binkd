@@ -26,8 +26,8 @@ use std::time::Duration;
 
 use binkd_ftn::addr::FtnAddr;
 use binkd_proto::{
-    run, run_with, Method, Methods, Peer, Protocol, Report, Role, SendFile, SessionConfig, Srif,
-    ZRule,
+    run, run_with, BannerTime, Method, Methods, Peer, Protocol, Report, Role, SendFile,
+    SessionConfig, Srif, ZRule,
 };
 use tokio::net::TcpStream;
 
@@ -171,6 +171,7 @@ fn session_config(
         addresses: vec![address(aka)],
         password: password.to_string(),
         inbound: dir.join("in"),
+        banner_time: Some(BannerTime::new(2026, 11, 15, 9, 5, 7, 0)),
         free_space: binkd_spool::inbound::assume_enough,
         spool: spool(dir),
         version: "rust-test/0.1".to_string(),
@@ -675,7 +676,7 @@ fn c_frames_sent(log: &str) -> Vec<String> {
             let name = words.next().unwrap_or_default();
             let kind = words.next().unwrap_or_default();
             if name == "NUL" {
-                if matches!(kind, "SYS" | "ZYZ" | "LOC" | "NDL" | "VER" | "OPT") {
+                if matches!(kind, "SYS" | "ZYZ" | "LOC" | "NDL" | "TIME" | "VER" | "OPT") {
                     out.push(format!("NUL {kind}"));
                 }
             } else if !name.is_empty() {
@@ -698,7 +699,7 @@ fn c_frames_received(log: &str) -> Vec<String> {
             let name = words.next().unwrap_or_default();
             let kind = words.next().unwrap_or_default();
             if name == "NUL" {
-                if matches!(kind, "SYS" | "ZYZ" | "LOC" | "NDL" | "VER" | "OPT") {
+                if matches!(kind, "SYS" | "ZYZ" | "LOC" | "NDL" | "TIME" | "VER" | "OPT") {
                     out.push(format!("NUL {kind}"));
                 }
             } else if !name.is_empty() {

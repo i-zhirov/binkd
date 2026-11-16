@@ -170,7 +170,7 @@ impl Frame {
                 }
                 let text = String::from_utf8_lossy(argument);
                 let kind = text.split_whitespace().next().unwrap_or_default();
-                if matches!(kind, "SYS" | "ZYZ" | "LOC" | "NDL" | "VER" | "OPT") {
+                if matches!(kind, "SYS" | "ZYZ" | "LOC" | "NDL" | "TIME" | "VER" | "OPT") {
                     Some(format!("{name} {kind}"))
                 } else {
                     None
@@ -258,6 +258,12 @@ mod tests {
         let bytes = frame.encode();
         assert_eq!(&bytes[..3], &[0x80, 0x0a, 0x00]);
         assert_eq!(&bytes[3..], b"SYS binkd");
+    }
+
+    #[test]
+    fn the_time_frame_name() {
+        let frame = Frame::text(Command::Nul, "TIME Sun, 15 Nov 2026 09:05:07 +0000");
+        assert_eq!(frame.log_name().as_deref(), Some("NUL TIME"));
     }
 
     #[tokio::test]
