@@ -13,6 +13,13 @@ use crate::Session;
 /// alphanumerics, `valid_filename_chars`.
 const VALID: &str = ".\\-_:/@";
 
+/// The lookup of the short name of a file, the port of the
+/// `GetShortPathName()` call of `run_args()`.
+///
+/// The error is the Windows error code of a failed call. The crate stays pure:
+/// the caller supplies the lookup, and no platform call lives here.
+pub type ShortName = fn(&str) -> Result<String, u32>;
+
 /// The result of the expansion of a command, the port of the state of
 /// `run_args()`.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,6 +30,9 @@ pub struct Expanded {
     /// holds a character that it does not accept, and the command holds `*F` or
     /// `*N`. The C code logs `Security problem. Execution aborted...`.
     pub aborted: bool,
+    /// The error of a failed short-name lookup, the port of the
+    /// `GetLastError()` value that the C code logs.
+    pub short_name_error: Option<u32>,
 }
 
 /// Returns true when the C code accepts every character of a name.
@@ -35,9 +45,9 @@ fn accepted(name: &str) -> bool {
 ///
 /// The macros of the C code, with the same case-insensitive letters:
 ///
-/// - `*N`: the short name of the file on Windows, the name of the file
-///   elsewhere. The port answers the name everywhere, because the short name needs
-///   the Win32 call `GetShortPathName()`.
+/// - `*N`: the short name of the file when the caller supplies a lookup, the
+///   name of the file when it does not. A failed lookup logs its code and
+///   falls back to the validated name, the C branch.
 /// - `*F`: the name of the file.
 /// - `*A*` and `*A@`: the addresses of the peer, separated by spaces.
 /// - `*A0` to `*A9`: the address of that number, or `-`.
@@ -50,6 +60,21 @@ fn accepted(name: &str) -> bool {
 ///
 /// The C code leaves a macro that it does not know as it is.
 pub fn expand(command: &str, filename: &str, session: &Session) -> Expanded {
+    expand_with(command, filename, session, None)
+}
+
+/// Expands the macros of a command with a short-name lookup, the port of
+/// `run_args()` with the Windows branch.
+///
+/// The lookup answers the short path, or the Windows error code of a failed
+/// `GetShortPathName()`. The C code falls back to the validated name and logs
+/// the code when the call fails.
+pub fn expand_with(
+    command: &str,
+    filename: &str,
+    session: &Session,
+    short_name: Option<ShortName>,
+) -> Expanded {
     // The C code answers `-` for a name that it does not accept, and it holds
     // the flag of the abort for a command that uses the name.
     let name_ok = accepted(filename);
@@ -65,6 +90,7 @@ pub fn expand(command: &str, filename: &str, session: &Session) -> Expanded {
     let mut out = String::with_capacity(command.len());
     let mut chars = command.chars().peekable();
     let mut used_name = false;
+    let mut short_name_error = None;
     while let Some(c) = chars.next() {
         if c != '*' {
             out.push(c);
@@ -76,7 +102,21 @@ pub fn expand(command: &str, filename: &str, session: &Session) -> Expanded {
             break;
         };
         match letter.to_ascii_uppercase() {
-            'N' | 'F' => {
+            'N' => match short_name {
+                Some(lookup) => match lookup(filename) {
+                    Ok(short) => out.push_str(&short),
+                    Err(code) => {
+                        short_name_error = Some(code);
+                        used_name = true;
+                        out.push_str(name);
+                    }
+                },
+                None => {
+                    used_name = true;
+                    out.push_str(name);
+                }
+            },
+            'F' => {
                 out.push_str(name);
                 used_name = true;
             }
@@ -126,6 +166,7 @@ pub fn expand(command: &str, filename: &str, session: &Session) -> Expanded {
     Expanded {
         command: out,
         aborted: !name_ok && used_name,
+        short_name_error,
     }
 }
 
@@ -163,6 +204,82 @@ mod tests {
         // The letters of a macro are not case sensitive.
         let expanded = expand("program *f", "13b70064.pkt", &session);
         assert_eq!(expanded.command, "program 13b70064.pkt");
+    }
+
+    fn short_name_ok(_filename: &str) -> Result<String, u32> {
+        Ok("13B700~1.PKT".to_string())
+    }
+
+    fn short_name_failure(_filename: &str) -> Result<String, u32> {
+        Err(5)
+    }
+
+    #[test]
+    fn the_short_name_of_a_file() {
+        let session = session();
+        let expanded = expand_with("program *N", "13b70064.pkt", &session, Some(short_name_ok));
+        assert_eq!(expanded.command, "program 13B700~1.PKT");
+        assert!(!expanded.aborted);
+        assert_eq!(expanded.short_name_error, None);
+        // `*F` still answers the long name of the file.
+        let expanded = expand_with("program *F", "13b70064.pkt", &session, Some(short_name_ok));
+        assert_eq!(expanded.command, "program 13b70064.pkt");
+        assert!(!expanded.aborted);
+        assert_eq!(expanded.short_name_error, None);
+    }
+
+    #[test]
+    fn the_short_name_falls_back_to_the_name() {
+        let session = session();
+        let expanded = expand_with(
+            "program *N",
+            "13b70064.pkt",
+            &session,
+            Some(short_name_failure),
+        );
+        assert_eq!(expanded.command, "program 13b70064.pkt");
+        assert!(!expanded.aborted);
+        assert_eq!(expanded.short_name_error, Some(5));
+        // A failed lookup of an invalid name uses `-` and aborts, the C branch.
+        let expanded = expand_with(
+            "program *N",
+            "13b70064.pkt;rm -rf",
+            &session,
+            Some(short_name_failure),
+        );
+        assert_eq!(expanded.command, "program -");
+        assert!(expanded.aborted);
+        assert_eq!(expanded.short_name_error, Some(5));
+    }
+
+    #[test]
+    fn the_short_name_of_an_invalid_name_does_not_abort() {
+        let session = session();
+        // The C Windows branch does not set `use_fn` when GetShortPathName()
+        // succeeds, so an invalid received name does not abort the command.
+        let expanded = expand_with(
+            "program *N",
+            "13b70064.pkt;rm -rf",
+            &session,
+            Some(short_name_ok),
+        );
+        assert_eq!(expanded.command, "program 13B700~1.PKT");
+        assert!(!expanded.aborted);
+        assert_eq!(expanded.short_name_error, None);
+    }
+
+    #[test]
+    fn the_short_name_is_absent_outside_windows() {
+        let session = session();
+        let expanded = expand("*N", "13b70064.pkt", &session);
+        assert_eq!(expanded.command, "13b70064.pkt");
+        assert!(!expanded.aborted);
+        assert_eq!(expanded.short_name_error, None);
+        // Without a lookup, an invalid name with `*N` aborts.
+        let expanded = expand("*N", "13b70064.pkt;rm -rf", &session);
+        assert_eq!(expanded.command, "-");
+        assert!(expanded.aborted);
+        assert_eq!(expanded.short_name_error, None);
     }
 
     #[test]

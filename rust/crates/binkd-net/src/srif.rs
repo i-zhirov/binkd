@@ -154,6 +154,7 @@ impl binkd_proto::Srif for Events {
             spool: &mut self.config.spool,
             log: &self.log,
             runner: &mut self.runner,
+            short_name: None,
             now: self.now,
         };
         self.engine
@@ -170,6 +171,7 @@ impl binkd_proto::Srif for Events {
             spool: &mut self.config.spool,
             log: &self.log,
             runner: &mut self.runner,
+            short_name: None,
             now: self.now,
         };
         self.engine
@@ -188,6 +190,7 @@ impl binkd_proto::Srif for Events {
             spool: &mut self.config.spool,
             log: &self.log,
             runner: &mut self.runner,
+            short_name: None,
             now: self.now,
         };
         self.engine.finish(&mut context);

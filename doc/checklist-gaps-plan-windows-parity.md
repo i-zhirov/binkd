@@ -202,7 +202,7 @@
       installs the Windows provider in Task 4; the platform-neutral tests
       cover the seam with a fake provider.
 
-- [ ] **Task 3: Add the short-name seam to the SRIF expansion**
+- [x] **Task 3: Add the short-name seam to the SRIF expansion**
     - **Implements:** the `*N` branch of `run_args()` of `srif.c`;
       design Phase 6 SRIF; roadmap `windows-parity`
     - **Modify `rust/crates/binkd-srif/src/args.rs`**
@@ -252,6 +252,9 @@
           that a failing provider logs the C text and runs the command
           with the long name.
     - **Verify:** `cd rust && cargo test -p binkd-srif`.
+    - **Implementation status:** done. The expansion and engine tests pass,
+      including the failed-lookup log. The `binkd-net` session contexts
+      hold `None` until Task 4 passes the platform lookup.
 
 - [ ] **Task 4: Wire the short name and the partition provider through
   the binary**

@@ -23,7 +23,7 @@ use binkd_log::{DateTime, Log, CONNECTION, ERROR, INFO, START};
 use binkd_spool::config::SpoolConfig;
 use binkd_spool::queue::{EntryKind, Queue};
 
-use crate::args;
+use crate::args::{self, ShortName};
 use crate::event::{self, Event, Events};
 use crate::srif::{self, Action};
 use crate::Session;
@@ -51,6 +51,9 @@ pub struct Context<'a> {
     pub log: &'a Log,
     /// The runner of the external programs, the port of `run()`.
     pub runner: &'a mut dyn Runner,
+    /// The lookup of the short name of a file, the port of the
+    /// `GetShortPathName()` call of `run_args()`.
+    pub short_name: Option<ShortName>,
     /// The time, the port of `time()`.
     pub now: DateTime,
 }
@@ -209,7 +212,8 @@ impl Engine {
                 // The C code expands the macros of the command and it runs the
                 // command at once, or it queues the command for the end of the
                 // session.
-                let expanded = args::expand(command, filename, session);
+                let expanded = args::expand_with(command, filename, session, context.short_name);
+                log_short_name_error(context, expanded.short_name_error);
                 if expanded.aborted {
                     context.log.message(
                         ERROR,
@@ -280,7 +284,8 @@ impl Engine {
             // The C code runs the program of the command, and it deletes the
             // received file after that. The C code answers a run of an immediate
             // command with the value zero, so the delete always runs.
-            let expanded = args::expand(&command, filename, session);
+            let expanded = args::expand_with(&command, filename, session, context.short_name);
+            log_short_name_error(context, expanded.short_name_error);
             if expanded.aborted {
                 context.log.message(
                     ERROR,
@@ -352,6 +357,16 @@ fn holds_srif(command: &str) -> bool {
     command.contains("*S") || command.contains("*s")
 }
 
+/// Logs a failed short-name lookup, the port of the C
+/// `Log(2, "GetShortPathName() fails %d", ...)` line.
+fn log_short_name_error(context: &Context, error: Option<u32>) {
+    if let Some(code) = error {
+        context
+            .log
+            .message(2, &format!("GetShortPathName() fails {code}"), &context.now);
+    }
+}
+
 /// Replaces every `*S` of a command with a path, the port of the `ed()` call of
 /// `evt_run()`.
 ///
@@ -406,6 +421,7 @@ fn flag(path: &str) {
 mod tests {
     use super::*;
     use binkd_ftn::addr::FtnAddr;
+    use binkd_log::{Level, Sink};
     use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
 
@@ -535,6 +551,7 @@ mod tests {
             log: &log,
             runner: &mut runner,
             now: now(),
+            short_name: None,
         };
         engine.on_file("13b70064.pkt", &session(), &mut queue, &mut context);
         assert!(path.is_file());
@@ -574,6 +591,7 @@ mod tests {
             log: &log,
             runner: &mut runner,
             now: now(),
+            short_name: None,
         };
         engine.on_file("13b70064.pkt", &session(), &mut queue, &mut context);
         // The C code touches the file, so its content stays.
@@ -602,6 +620,7 @@ mod tests {
             log: &log,
             runner: &mut runner,
             now: now(),
+            short_name: None,
         };
         engine.on_file("13b70064.pkt", &session(), &mut queue, &mut context);
         // The immediate command ran, and the other waits.
@@ -611,6 +630,57 @@ mod tests {
             *commands.lock().unwrap(),
             vec!["toss 13b70064.pkt", "slow 13b70064.pkt"]
         );
+    }
+
+    /// The log of the tests records the level and the text of a message.
+    struct LogRecord(Arc<Mutex<Vec<(Level, String)>>>);
+
+    impl Sink for LogRecord {
+        fn write(&self, level: Level, text: &str) {
+            if let Ok(mut records) = self.0.lock() {
+                records.push((level, text.to_string()));
+            }
+        }
+    }
+
+    fn short_name_failure(_filename: &str) -> Result<String, u32> {
+        Err(5)
+    }
+
+    /// A failed short-name lookup logs the C text and runs the command with the
+    /// validated long name.
+    #[test]
+    fn a_failed_short_name_logs_and_runs_the_name() {
+        let dir = temp_dir("short-name-log");
+        let flags = vec![command_entry("toss *N", "*.pkt", true)];
+        let mut engine = Engine::new();
+        let mut queue = Queue::new();
+        let log = Log::new(2, 0, "", Vec::new());
+        let records = Arc::new(Mutex::new(Vec::new()));
+        log.set_sink(Some(Arc::new(LogRecord(Arc::clone(&records)))));
+        let mut runner = Recorder::default();
+        let commands = Arc::clone(&runner.commands);
+        let mut spool = spool(&dir);
+        let domains = spool.domains.clone();
+        let mut context = Context {
+            flags: &flags,
+            domains: &domains,
+            spool: &mut spool,
+            log: &log,
+            runner: &mut runner,
+            now: now(),
+            short_name: Some(short_name_failure),
+        };
+        engine.on_file("13b70064.pkt", &session(), &mut queue, &mut context);
+        assert_eq!(*commands.lock().unwrap(), vec!["toss 13b70064.pkt"]);
+        let records = records.lock().unwrap();
+        assert!(
+            records
+                .iter()
+                .any(|(level, text)| *level == 2 && text == "GetShortPathName() fails 5"),
+            "{records:?}"
+        );
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// The SRIF exchange of a file, the port of the `*S` branch of `evt_run()`.
@@ -644,6 +714,7 @@ mod tests {
             log: &log,
             runner: &mut runner,
             now: now(),
+            short_name: None,
         };
         // The peer claims a FREQ, the port of the `M_NUL FREQ` frame. The C
         // code takes the full name of the received file.
@@ -711,6 +782,7 @@ mod tests {
             log: &log,
             runner: &mut runner,
             now: now(),
+            short_name: None,
         };
         // The peer did not claim a FREQ, so the exchange waits.
         let name = request.to_str().unwrap();
@@ -747,6 +819,7 @@ mod tests {
             log: &log,
             runner: &mut runner,
             now: now(),
+            short_name: None,
         };
         assert!(!engine.claimed());
         engine.claim();
