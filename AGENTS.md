@@ -37,7 +37,8 @@ crates are also a library for embedding in other programs.
   `fs2` for the free space of the binary, `time` for the safe local offset
   of the logs, the `TIME` frame, and `-v`, and `syslog` for the local syslog
   backend of the Unix binary. The optional `binkd-perl` crate holds the Perl C
-  shim. The `binkd-win` crate holds the Windows service FFI and `windows-sys`.
+  shim. The `binkd-win` crate holds the Windows service and file-system FFI
+  and `windows-sys`.
 - **Storage**: The local file system. The BSO spool directories, the
   `.flo`, `.try`, `.hld`, and `.bsy` files, the inbound directory, the
   binary session logs, and the config file. No database.
@@ -101,7 +102,7 @@ binkd/
         ├── binkd-srif/         # the SRIF interface and its event engine
         ├── binkd-corpus/       # test-only corpus reader
         ├── binkd-perl/         # optional Perl hooks (excluded)
-        ├── binkd-win/          # Windows service FFI (Windows only)
+        ├── binkd-win/          # Windows service and file-system FFI
         └── binkd/              # the binary: CLI, daemon, signals
 ```
 
@@ -121,6 +122,9 @@ default. The C build is the reference and the oracle of the tests.
   `cd rust && cargo test -p binkd --features perl -- --test-threads=1`
 - **Check the Windows service** (needs the target):
   `cd rust && cargo check -p binkd-win -p binkd --target x86_64-pc-windows-gnu`
+- **Test the Windows parity** (needs Windows):
+  `cd rust && cargo test -p binkd-win && cargo test -p binkd-config`
+  and the full workspace suite.
 - **Test the Windows service** (needs Windows, an administrator prompt, and
   the release binary): `cd rust && cargo build --release -p binkd`, then
   `cd ..` and
@@ -379,6 +383,10 @@ fixes them):
   `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10` build the C
   reference and set the `BINKD_C*` variables. The tests and the build commands
   are in `tests/README.md`.
+- The Windows target-gated tests cover the short-name and volume wrappers,
+  the partition provider, the Windows feature set, and the Windows dump. They
+  run in the `windows` CI job. The config corpus holds only successful dumps,
+  so the partition and missing-inbox rejection paths are unit tests.
 - The Windows service smoke test is the script `tests/windows-smoke.ps1`.
   The Windows job of CI runs it after the release build. The script installs a
   temporary service, checks the service states, the process, the busy and pid
@@ -404,8 +412,9 @@ fixes them):
   `syslog` (`=7.0.0`) as a Unix-only target dependency for the safe local
   syslog backend, and the Windows build compiles it not. The `binkd-win` crate
   depends on `windows-sys` (`=0.61.2`) with the features of the service
-  control manager; it is a target-specific dependency of `binkd` and the UNIX
-  build does not compile it. Add a dependency only with an exact version.
+  control manager and `Win32_Storage_FileSystem` for the short-name and volume
+  wrappers; it is a target-specific dependency of `binkd` and the UNIX build
+  does not compile it. Add a dependency only with an exact version.
 - **Prefer vanilla solutions.** Use `std` when it solves the problem. The
   Rust port of a C module uses `std` only, apart from the async runtime of
   the session and of the daemon.

@@ -60,6 +60,27 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1
 
 The `windows` job of `.github/workflows/ci.yml` runs the script.
 
+## Run the Windows parity tests
+
+The parity tests are target-gated and run in the `windows` CI job. On a
+Windows host:
+
+```
+cd rust
+cargo test -p binkd-win
+cargo test -p binkd-config
+cargo test --workspace
+```
+
+The cases cover the short-name and volume wrappers, the partition provider,
+the Windows feature set, and the Windows `-d` dump. On another system the
+cross-target check is:
+
+```
+cd rust
+cargo check -p binkd-win -p binkd-config -p binkd --target x86_64-pc-windows-gnu
+```
+
 ## Run the Perl tests
 
 The hooks of Perl need the optional crate `binkd-perl` and the interpreter
@@ -302,6 +323,10 @@ binary, the test also runs it and checks that the expectation is current:
 cd rust
 BINKD_C=/path/to/binkd cargo test -p binkd-config --test dump_corpus
 ```
+
+The config corpus holds successful `-d` dumps only. The partition and
+missing-inbox rejection paths are unit tests in `binkd-config`; the corpus
+format has no expected-error case.
 
 ## The reload corpus
 

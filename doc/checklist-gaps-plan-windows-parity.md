@@ -5,7 +5,7 @@
 > Verify command passes.
 
 - **Date**: 2026-11-16
-- **Status**: Draft
+- **Status**: Implemented
 - **Design**: [rust-rewrite-plan.md](rust-rewrite-plan.md), with the
   decisions [windows-support.md](decisions/windows-support.md) and
   [legacy-platforms.md](decisions/legacy-platforms.md)
@@ -402,7 +402,7 @@
       pass. The Windows dump and keyword tests are target-gated and run
       in the `windows` CI job.
 
-- [ ] **Task 6: Update the documents and run the full verification**
+- [x] **Task 6: Update the documents and run the full verification**
     - **Implements:** the design and decision documentation obligation;
       roadmap `windows-parity`
     - **Modify `doc/decisions/windows-support.md`**
@@ -471,6 +471,9 @@
       -p binkd-config`, and `cargo test --workspace` in the `windows`
       CI job. Run the service smoke test when the release binary is
       built.
+    - **Implementation status:** done. The documents and the full local
+      suite pass. The Windows-targeted runtime tests remain in the
+      `windows` CI job.
 
 ## Done When
 

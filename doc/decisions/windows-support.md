@@ -2,7 +2,8 @@
 
 Status: accepted and implemented. The Rust port supports Windows NT and later.
 The Windows service mode is in scope. The tray icon is out of scope. The team
-accepted the record, and the `binkd-win` crate holds the service mode.
+accepted the record, and the `binkd-win` crate holds the service mode and the
+safe file-system helpers of the Windows build.
 
 ## Context
 
@@ -84,12 +85,49 @@ service mode is the Windows layer; the `binkd-win` crate holds it.
 ## Status
 
 The crate `binkd-win` holds the pure command values and the service dispatcher,
-the port of `nt/service.c` and of the Windows part of `nt/w32tools.c`. The
-`binkd` binary parses `-t` and `-S` before the config, installs the service with
-the program and the arguments in the registry, and reports the service state.
-The Windows job of `.github/workflows/ci.yml` runs the check, the clippy, the
-workspace tests, the release build, and the
-[smoke test](#windows-scm-smoke-test) below.
+the port of `nt/service.c` and of the Windows part of `nt/w32tools.c`. It also
+holds the safe path and volume wrappers of the parity work. The `binkd` binary
+parses `-t` and `-S` before the config, installs the service with the program
+and the arguments in the registry, and reports the service state. The Windows
+job of `.github/workflows/ci.yml` runs the check, the clippy, the workspace
+tests, the release build, and the [smoke test](#windows-scm-smoke-test) below.
+The target-gated parity tests are in the same workspace suite.
+
+## Parity of the Rust build
+
+The Windows Rust build also ports the Windows behavior outside the service
+control manager:
+
+- The partition check of `check_config()` reads the volume identity through
+  the `Partition` provider of `binkd-config`. The Windows binary supplies the
+  safe `binkd-win::storage::volume_serial()` wrapper; Unix reads the device
+  number. `binkd-config` holds no `binkd-win` dependency.
+- The `*N` macro of `run_args()` asks the `ShortName` lookup of the SRIF
+  expansion. The Windows binary supplies
+  `binkd-win::storage::short_path()`; the other systems answer no lookup. A
+  failed lookup logs `GetShortPathName() fails <code>` and falls back to the
+  validated name, as the C code does.
+- The parser, the reloader, the dump, and the binary use one `Features` set.
+  The Windows set accepts the proxy, socks, rate-limit, and compression
+  keywords. It rejects `aso`, `syslog`, `zlib-dll`, and `bzlib2-dll`.
+- The `windows-sys` file-system feature holds the `GetShortPathNameW()` and
+  `GetFileInformationByHandle()` calls. The unsafe calls stay in `binkd-win`.
+
+The C Windows build differs in these points:
+
+- It defines `AMIGADOS_4D_OUTBOUND` and accepts the `aso` keyword; the Rust
+  port rejects it.
+- It has no syslog backend; the Rust port also rejects `syslog`.
+- It accepts `limit-rate` only with `BW_LIM`; the Rust Windows build accepts
+  it.
+- It accepts proxy and socks with `HTTPS`; the Rust Windows build accepts them
+  too.
+- It accepts the compression keywords only with `WITH_ZLIB` or `WITH_BZLIB2`;
+  the Rust Windows build accepts them.
+- It can load zlib and bzip2 dynamically with `ZLIBDL`; the Rust port cannot.
+- Its `stat()` `st_dev` is the drive number, while the Rust provider uses the
+  volume serial. The common case is the same; a path on the same volume
+  compares equal either way.
 
 ## Windows SCM smoke test
 
@@ -142,5 +180,8 @@ the binary version, and the result in the release notes.
   The crate is small, and a review of the crate covers the whole unsafe surface.
 - A user of the C `-T` switch and of the tray icon gets a known difference. The
   release notes name it.
+- The Windows build accepts the proxy and rate-limit keywords, and refuses
+  `aso`, `syslog`, `zlib-dll`, and `bzlib2-dll`. The record names the C
+  differences above.
 - Windows 9x/Me stays a C-only platform, the decision of
   `doc/decisions/legacy-platforms.md`.

@@ -1176,6 +1176,29 @@ Deliverables:
   [service smoke test](decisions/windows-support.md#windows-scm-smoke-test);
   the decision is `doc/decisions/windows-support.md`)
 
+- The Windows parity of the Rust build:
+    - `binkd-win::storage` holds the safe `short_path()` and
+      `volume_serial()` wrappers. The unsafe calls stay in `binkd-win`.
+    - `binkd-config::Partition` is the provider seam of the volume check.
+      The Windows binary installs `binkd_win::storage::volume_serial()`; Unix
+      reads the device number. The parser and the reloader resolve the paths
+      against `base_dir` and check `temp-inbound`, `inbound`,
+      `inbound-nonsecure`, and every node `ibox`.
+    - `binkd-srif::args::ShortName` is the lookup of the `*N` short name. The
+      Windows binary supplies the `binkd-win` wrapper through `SessionOptions`
+      and `Events`; a failed lookup logs the C text and falls back to the
+      validated name.
+    - The Windows `Features` set accepts the proxy, socks, rate-limit, and
+      compression keywords. It rejects `aso`, `syslog`, `zlib-dll`, and
+      `bzlib2-dll`. The parser, the reloader, the dump, and the binary use one
+      set. The C Windows differences are in
+      `doc/decisions/windows-support.md`.
+    - The Windows `stat()` `st_dev` is a drive number, while the provider
+      reads the volume serial. The common case compares the same volume.
+    - The target-gated tests of `binkd-win`, `binkd-config`, and `binkd` run
+      in the `windows` CI job. The config corpus holds only successful dumps;
+      the partition rejection paths are unit tests.
+
 Exit criteria:
 
 - The Rust binary passes every level 4 scenario.
@@ -1332,8 +1355,10 @@ Deliverables:
   Amiga, the decision of `doc/decisions/legacy-platforms.md`. The cutover does
   not remove it.
 - The README, the man page, and the packaging files state the Rust default and
-  the known differences: the Windows tray icon, Windows 9x/Me, and the C-only
-  legacy platforms.
+  the known differences: the Windows tray icon, Windows 9x/Me, the C-only
+  legacy platforms, and the Windows keyword set (`aso`, `syslog`,
+  `zlib-dll`, and `bzlib2-dll` rejected; proxy, socks, and `limit-rate`
+  accepted).
 - CI runs both suites. The `interop` jobs run the C and Rust matrix; the
   `macos` and `windows` jobs run the workspace suite; the Windows job runs the
   service smoke test.
@@ -1381,7 +1406,11 @@ The list below holds the decisions that the plan needs before phase 4.
    provider of the binary pins `fs2 = "=0.4.3"`, and the local-offset provider
    of the binary pins `time = "=0.3.44"` with the `local-offset` feature. The
    Unix build of the binary pins `syslog = "=7.0.0"` as a target dependency,
-   and the Windows build compiles it not.
+   and the Windows build compiles it not. The Windows volume identity uses
+   the safe `binkd-win` wrapper, because
+   `MetadataExt::volume_serial_number` is nightly-only on every current stable
+   release. The `binkd-config` provider keeps the crate free of a Windows
+   dependency.
 
 ## 8. Risks
 

@@ -144,7 +144,7 @@ Close the Windows-specific behavior gaps:
 Add target-gated unit tests and a Windows dump test; run them in the
 `windows` CI job.
 
-- **Status:** Planned
+- **Status:** Implemented
 - **Depends on:** —
 - **Requirements:** Checklist item 1;
   [windows-support.md](decisions/windows-support.md);

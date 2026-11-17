@@ -20,7 +20,10 @@ The binary is `rust/target/release/binkd`.
 
 The Windows port supports Windows NT and later, including the service mode,
 the decision of `doc/decisions/windows-support.md`. The tray icon is not
-supported, and Windows 9x/Me is out of scope.
+supported, and Windows 9x/Me is out of scope. The Windows build accepts the
+proxy, socks, and `limit-rate` keywords. It rejects `aso`, `syslog`,
+`zlib-dll`, and `bzlib2-dll`; the C Windows build accepts `aso` and the
+dynamic loader keywords.
 
 ### C reference
 
@@ -94,6 +97,8 @@ behavior of the C code.
 
 - The Rust binary is the default on UNIX and Windows NT and later.
 - The Windows service mode is implemented; the tray icon is not supported.
+- The Windows build accepts the proxy, socks, and `limit-rate` keywords and
+  rejects `aso`, `syslog`, `zlib-dll`, and `bzlib2-dll`.
 - OS/2, DOS, Amiga, and Windows 9x/Me are C-only platforms. The C code is the
   reference and the oracle of the tests.
 
