@@ -130,7 +130,7 @@
       clippy pass locally. The Windows-runner test gate remains: the
       four target-gated tests must run in the `windows` CI job.
 
-- [ ] **Task 2: Add the partition provider and the volume checks**
+- [x] **Task 2: Add the partition provider and the volume checks**
     - **Implements:** the `check_config()` volume checks of `readcfg.c`;
       design Phase 6 Windows parity; roadmap `windows-parity`
     - **Modify `rust/crates/binkd-config/src/parser.rs`**
@@ -197,6 +197,10 @@
     - **Modify `rust/crates/binkd-config/src/lib.rs`**
         - Re-export `parser::Partition`.
     - **Verify:** `cd rust && cargo test -p binkd-config`.
+    - **Implementation status:** done. The parser and reloader tests pass,
+      and the Windows-target check and strict clippy pass. The binary
+      installs the Windows provider in Task 4; the platform-neutral tests
+      cover the seam with a fake provider.
 
 - [ ] **Task 3: Add the short-name seam to the SRIF expansion**
     - **Implements:** the `*N` branch of `run_args()` of `srif.c`;

@@ -15,6 +15,6 @@ pub mod reload;
 pub use dump::{dump, dump_with};
 pub use keywords::Features;
 pub use model::Config;
-pub use parser::{parse, Error, Parser};
+pub use parser::{parse, Error, Parser, Partition};
 pub use port::PortResolver;
 pub use reload::{Outcome, Reloader};

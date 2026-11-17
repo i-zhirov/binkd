@@ -6,7 +6,7 @@ use std::time::UNIX_EPOCH;
 
 use crate::keywords::Features;
 use crate::model::Config;
-use crate::parser::{Error, Parser};
+use crate::parser::{default_partition, Error, Parser, Partition};
 use crate::port;
 
 /// The hook of `need_reload()`, the port of `perl_need_reload()`.
@@ -37,6 +37,8 @@ pub struct Reloader {
     base_dir: Option<PathBuf>,
     /// The build features of the parse.
     features: Features,
+    /// The identity of the file system of a path.
+    partition: Partition,
     /// The time of the parse.
     now: i64,
     /// The hook of `need_reload()`, the port of `perl_need_reload()`.
@@ -52,6 +54,7 @@ impl Reloader {
             forced: false,
             base_dir: None,
             features: Features::unix_default(),
+            partition: default_partition,
             now: 0,
             need_reload: None,
         }
@@ -75,6 +78,11 @@ impl Reloader {
     /// Sets the build features of the parse.
     pub fn set_features(&mut self, features: Features) {
         self.features = features;
+    }
+
+    /// Sets the identity of the file system of a path.
+    pub fn set_partition(&mut self, partition: Partition) {
+        self.partition = partition;
     }
 
     /// Sets the time of the parse.
@@ -163,6 +171,7 @@ impl Reloader {
 
         let mut parser = Parser::with_ports(&port::resolve);
         parser.set_features(self.features);
+        parser.set_partition(self.partition);
         parser.set_now(self.now);
         if let Some(dir) = &self.base_dir {
             parser.set_base_dir(dir);

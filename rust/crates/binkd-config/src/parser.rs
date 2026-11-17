@@ -77,6 +77,28 @@ impl fmt::Display for Error {
 
 impl std::error::Error for Error {}
 
+/// Returns the identity of the file system that holds a path, for the
+/// partition check of `check_config()`.
+///
+/// On Unix the identity is the device number of the file system. On Windows
+/// the binary supplies the volume serial through `set_partition()`; the
+/// default answers `None`, the port of a failed `stat()`.
+pub type Partition = fn(&Path) -> Option<u64>;
+
+/// Returns the platform default partition identity.
+pub(crate) fn default_partition(path: &Path) -> Option<u64> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        fs::metadata(path).ok().map(|metadata| metadata.dev())
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = path;
+        None
+    }
+}
+
 /// The config parser.
 pub struct Parser<'a> {
     config: Config,
@@ -91,6 +113,8 @@ pub struct Parser<'a> {
     features: Features,
     /// The directory of the relative paths of the config.
     base_dir: Option<std::path::PathBuf>,
+    /// The identity of the file system of a path.
+    partition: Partition,
 }
 
 impl Default for Parser<'static> {
@@ -123,6 +147,7 @@ impl<'a> Parser<'a> {
                 .unwrap_or(0),
             features: Features::unix_default(),
             base_dir: None,
+            partition: default_partition,
         }
     }
 
@@ -152,6 +177,14 @@ impl<'a> Parser<'a> {
     /// Sets the verbose level of the command line.
     pub fn set_verbose(&mut self, verbose: i32) {
         self.verbose = verbose;
+    }
+
+    /// Sets the identity of the file system of a path.
+    ///
+    /// The Windows binary supplies the volume serial; the default Unix
+    /// provider reads the device number.
+    pub fn set_partition(&mut self, partition: Partition) {
+        self.partition = partition;
     }
 
     /// Sets the time of the parse. The node table stores it.
@@ -1392,33 +1425,67 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    /// The port of `check_config()`: the inbound and the temporary inbound
-    /// directory must be in the same partition.
+    /// The port of `check_config()`: the inbound, the temporary inbound, the
+    /// unsecure inbound, and every node inbox must be on the same partition as
+    /// the temporary inbound.
     ///
-    /// The check needs the device number of the file system; the port keeps it
-    /// on UNIX.
-    #[cfg(unix)]
+    /// The C code reads a device number with `stat()`. The port asks the
+    /// provider, so the binary supplies the Windows volume serial and the Unix
+    /// default reads the device number.
     fn check_directories(&self) -> Result<(), Error> {
-        use std::os::unix::fs::MetadataExt;
-
-        if !self.config.spool.temp_inbound.is_empty() {
-            let temp = fs::metadata(&self.config.spool.temp_inbound)
-                .map(|m| m.dev())
-                .ok();
-            if let (Some(temp), Ok(inbound)) = (temp, fs::metadata(&self.config.inbound)) {
-                if inbound.dev() != temp {
+        let resolve = |path: &str| -> PathBuf {
+            match &self.base_dir {
+                Some(dir) if Path::new(path).is_relative() => dir.join(path),
+                _ => PathBuf::from(path),
+            }
+        };
+        let temp_path = resolve(&self.config.spool.temp_inbound);
+        let temp = if self.config.spool.temp_inbound.is_empty() {
+            None
+        } else {
+            (self.partition)(&temp_path)
+        };
+        if let Some(temp) = temp {
+            let inbound_path = resolve(&self.config.inbound);
+            if let Some(inbound) = (self.partition)(&inbound_path) {
+                if inbound != temp {
                     return Err(self.error(
                         "Inbound and temp-inbound must be in the same partition".to_string(),
                     ));
                 }
             }
+            let nonsecure_path = resolve(&self.config.spool.inbound_nonsecure);
+            if let Some(nonsecure) = (self.partition)(&nonsecure_path) {
+                if nonsecure != temp {
+                    return Err(self.error(
+                        "Unsecure-inbound and temp-inbound must be in the same partition"
+                            .to_string(),
+                    ));
+                }
+            }
         }
-        Ok(())
-    }
 
-    /// The directory check needs the device number of the file system.
-    #[cfg(not(unix))]
-    fn check_directories(&self) -> Result<(), Error> {
+        for node in self.config.spool.nodes.nodes() {
+            let Some(ibox) = node.ibox.as_deref().filter(|path| !path.is_empty()) else {
+                continue;
+            };
+            let ibox_path = resolve(ibox);
+            let metadata = fs::metadata(&ibox_path).ok();
+            if !metadata.as_ref().is_some_and(|metadata| metadata.is_dir()) {
+                return Err(self.error(format!(
+                    "Inbox for {ibox} does not exist (link {})",
+                    node.fa.format(false)
+                )));
+            }
+            if let (Some(temp), Some(inbox)) = (temp, (self.partition)(&ibox_path)) {
+                if inbox != temp {
+                    return Err(self.error(format!(
+                        "Inbox and temp-inbound must be in the same partition (link {})",
+                        node.fa.format(false)
+                    )));
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -1520,6 +1587,187 @@ mod tests {
         // The C code holds the option with `BW_LIM` only.
         let mut parser = Parser::new();
         assert!(parser.parse(&path).is_err());
+    }
+
+    fn partition(path: &Path) -> Option<u64> {
+        let text = path.to_string_lossy();
+        if text.contains("missing") {
+            None
+        } else if text.contains("other") {
+            Some(2)
+        } else {
+            Some(1)
+        }
+    }
+
+    fn no_partition(_path: &Path) -> Option<u64> {
+        None
+    }
+
+    fn partition_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "binkd-config-partition-{}-{name}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn remove_partition_dirs(dirs: &[&Path]) {
+        for dir in dirs {
+            let _ = fs::remove_dir_all(dir);
+        }
+    }
+
+    #[test]
+    fn the_inbound_and_temp_inbound_share_a_partition() {
+        let inbound = partition_dir("share-inbound");
+        let temp = partition_dir("share-temp");
+        let ibox = partition_dir("share-inbox");
+        let text = format!(
+            "{}temp-inbound {}\nnode 2:5047/100@fidonet host.example.com secret - - {}\n",
+            base(&inbound.to_string_lossy()),
+            temp.to_string_lossy(),
+            ibox.to_string_lossy()
+        );
+        let path = write_case("partition-share", &text);
+        let mut parser = Parser::new();
+        parser.set_partition(partition);
+        let result = parser.parse(&path);
+        assert!(result.is_ok(), "{:?}", result.err());
+        let _ = fs::remove_file(&path);
+        remove_partition_dirs(&[&inbound, &temp, &ibox]);
+    }
+
+    #[test]
+    fn the_inbound_and_temp_inbound_differ() {
+        let inbound = partition_dir("other-inbound-one");
+        let temp = partition_dir("temp-inbound-one");
+        let text = format!(
+            "{}temp-inbound {}\n",
+            base(&inbound.to_string_lossy()),
+            temp.to_string_lossy()
+        );
+        let path = write_case("partition-inbound", &text);
+        let mut parser = Parser::new();
+        parser.set_partition(partition);
+        let error = parser.parse(&path).unwrap_err();
+        assert_eq!(
+            error.message,
+            "Inbound and temp-inbound must be in the same partition"
+        );
+        let _ = fs::remove_file(&path);
+        remove_partition_dirs(&[&inbound, &temp]);
+    }
+
+    #[test]
+    fn the_unsecure_inbound_and_temp_inbound_differ() {
+        let inbound = partition_dir("inbound-two");
+        let temp = partition_dir("temp-two");
+        let nonsecure = partition_dir("other-nonsecure-two");
+        let text = format!(
+            "{}temp-inbound {}\ninbound-nonsecure {}\n",
+            base(&inbound.to_string_lossy()),
+            temp.to_string_lossy(),
+            nonsecure.to_string_lossy()
+        );
+        let path = write_case("partition-nonsecure", &text);
+        let mut parser = Parser::new();
+        parser.set_partition(partition);
+        let error = parser.parse(&path).unwrap_err();
+        assert_eq!(
+            error.message,
+            "Unsecure-inbound and temp-inbound must be in the same partition"
+        );
+        let _ = fs::remove_file(&path);
+        remove_partition_dirs(&[&inbound, &temp, &nonsecure]);
+    }
+
+    #[test]
+    fn the_node_inbox_and_temp_inbound_differ() {
+        let inbound = partition_dir("inbound-three");
+        let temp = partition_dir("temp-three");
+        let ibox = partition_dir("other-inbox-three");
+        let text = format!(
+            "{}temp-inbound {}\nnode 2:5047/100@fidonet host.example.com secret - - {}\n",
+            base(&inbound.to_string_lossy()),
+            temp.to_string_lossy(),
+            ibox.to_string_lossy()
+        );
+        let path = write_case("partition-inbox", &text);
+        let mut parser = Parser::new();
+        parser.set_partition(partition);
+        let error = parser.parse(&path).unwrap_err();
+        assert_eq!(
+            error.message,
+            "Inbox and temp-inbound must be in the same partition (link 2:5047/100@fidonet)"
+        );
+        let _ = fs::remove_file(&path);
+        remove_partition_dirs(&[&inbound, &temp, &ibox]);
+    }
+
+    #[test]
+    fn the_missing_node_inbox_is_an_error() {
+        let inbound = partition_dir("inbound-four");
+        let ibox = inbound.join("missing-inbox");
+        let text = format!(
+            "{}node 2:5047/100@fidonet host.example.com secret - - {}\n",
+            base(&inbound.to_string_lossy()),
+            ibox.to_string_lossy()
+        );
+        let path = write_case("partition-missing", &text);
+        let mut parser = Parser::new();
+        parser.set_partition(partition);
+        let error = parser.parse(&path).unwrap_err();
+        assert_eq!(
+            error.message,
+            format!(
+                "Inbox for {} does not exist (link 2:5047/100@fidonet)",
+                ibox.to_string_lossy()
+            )
+        );
+        let _ = fs::remove_file(&path);
+        remove_partition_dirs(&[&inbound]);
+    }
+
+    #[test]
+    fn the_partition_provider_is_optional() {
+        let inbound = partition_dir("inbound-five");
+        let temp = partition_dir("other-temp-five");
+        let ibox = partition_dir("other-inbox-five");
+        let text = format!(
+            "{}temp-inbound {}\nnode 2:5047/100@fidonet host.example.com secret - - {}\n",
+            base(&inbound.to_string_lossy()),
+            temp.to_string_lossy(),
+            ibox.to_string_lossy()
+        );
+        let path = write_case("partition-optional", &text);
+        let mut parser = Parser::new();
+        parser.set_partition(no_partition);
+        let result = parser.parse(&path);
+        assert!(result.is_ok(), "{:?}", result.err());
+        let _ = fs::remove_file(&path);
+        remove_partition_dirs(&[&inbound, &temp, &ibox]);
+    }
+
+    #[test]
+    fn the_relative_paths_use_the_base_dir() {
+        let dir = partition_dir("relative-six");
+        let ibox = dir.join("inbox");
+        fs::create_dir_all(&ibox).unwrap();
+        let text = format!(
+            "{}node 2:5047/100@fidonet host.example.com secret - - inbox\n",
+            base(&dir.to_string_lossy())
+        );
+        let path = write_case("partition-relative", &text);
+        let mut parser = Parser::new();
+        parser.set_base_dir(&dir);
+        parser.set_partition(partition);
+        let result = parser.parse(&path);
+        assert!(result.is_ok(), "{:?}", result.err());
+        let _ = fs::remove_file(&path);
+        remove_partition_dirs(&[&dir]);
     }
 
     #[test]
