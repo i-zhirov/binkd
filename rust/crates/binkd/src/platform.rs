@@ -4,6 +4,7 @@
 use std::path::Path;
 
 use binkd_log::DateTime;
+use binkd_net::srif::ShortName;
 
 /// The names of the months, the port of `__DATE__` of the C code.
 const MONTHS: [&str; 12] = [
@@ -71,6 +72,28 @@ pub fn free_space(path: &Path) -> u64 {
     fs2::available_space(path)
         .map(|bytes| bytes / 1024)
         .unwrap_or(u64::MAX)
+}
+
+/// Returns the lookup of the short name of a received file, the port of the
+/// Windows branch of `run_args()` of `srif.c`.
+///
+/// The Windows binary supplies the safe wrapper of `binkd-win`; the other
+/// systems answer no lookup, and the expansion keeps the name of the file.
+#[cfg(windows)]
+fn windows_short_name(path: &str) -> Result<String, u32> {
+    binkd_win::storage::short_path(Path::new(path))
+}
+
+/// Returns the lookup of the short name of a received file.
+#[cfg(windows)]
+pub fn short_name() -> Option<ShortName> {
+    Some(windows_short_name)
+}
+
+/// Returns the lookup of the short name of a received file.
+#[cfg(not(windows))]
+pub fn short_name() -> Option<ShortName> {
+    None
 }
 
 /// Returns the name of the system, the port of `uname()` of
@@ -141,6 +164,18 @@ mod tests {
     #[test]
     fn the_system_holds_a_name() {
         assert!(!system().is_empty());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn the_short_name_provider_is_absent_outside_windows() {
+        assert!(short_name().is_none());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_short_name_provider_is_present_on_windows() {
+        assert!(short_name().is_some());
     }
 
     #[test]

@@ -9,6 +9,7 @@ use binkd_log::DateTime;
 use binkd_proto::bw::{self, RateRule};
 use binkd_proto::{BannerTime, Methods, Protocol, SessionConfig, SkipRule, ZRule};
 use binkd_spool::inbound::{assume_enough, FreeSpaceFn};
+use binkd_srif::args::ShortName;
 
 /// The settings of one session that a manager passes, the port of the parts of
 /// `STATE` that `do_server()` and `do_client()` set from the config.
@@ -28,6 +29,8 @@ pub struct SessionOptions {
     pub no_md5: bool,
     /// The free-space provider of the inbound directories.
     pub free_space: FreeSpaceFn,
+    /// The lookup of the short name of a received file.
+    pub short_name: Option<ShortName>,
 }
 
 impl SessionOptions {
@@ -40,6 +43,7 @@ impl SessionOptions {
             hooks: None,
             no_md5: false,
             free_space: assume_enough,
+            short_name: None,
         }
     }
 
@@ -52,6 +56,12 @@ impl SessionOptions {
     /// Sets the free-space provider of the inbound directories.
     pub fn with_free_space(mut self, provider: FreeSpaceFn) -> SessionOptions {
         self.free_space = provider;
+        self
+    }
+
+    /// Sets the short-name lookup of a received file.
+    pub fn with_short_name(mut self, short_name: Option<ShortName>) -> SessionOptions {
+        self.short_name = short_name;
         self
     }
 }

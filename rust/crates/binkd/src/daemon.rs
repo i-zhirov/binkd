@@ -476,7 +476,8 @@ impl Daemon {
             peer,
             Arc::clone(&self.log),
             platform::now(),
-        );
+        )
+        .with_short_name(platform::short_name());
         let mut pipe = crate::pipe::Pipe::new(tokio::io::stdin(), tokio::io::stdout());
         let result = binkd_proto::run_with(
             &mut pipe,
@@ -539,6 +540,7 @@ impl Daemon {
         let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
         options.no_md5 = self.options.no_md5;
         options.free_space = platform::free_space;
+        options.short_name = platform::short_name();
         match &self.hooks {
             Some(hooks) => options.with_hooks(Arc::clone(hooks)),
             None => options,

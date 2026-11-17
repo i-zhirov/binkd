@@ -18,6 +18,8 @@ use binkd_spool::queue::Queue;
 use binkd_srif::engine::{Context, Engine, Runner as Run};
 use binkd_srif::Session;
 
+pub use binkd_srif::args::ShortName;
+
 /// The runner of the external programs, the port of `run()` of `run.c`.
 ///
 /// The C code runs the command with `system()`, which is the shell of the system
@@ -87,6 +89,8 @@ pub struct Events {
     log: Arc<Log>,
     /// The time.
     now: DateTime,
+    /// The lookup of the short name of a received file.
+    short_name: Option<ShortName>,
 }
 
 impl Events {
@@ -102,7 +106,14 @@ impl Events {
             ipaddr: peer.ip().to_string(),
             log,
             now,
+            short_name: None,
         }
+    }
+
+    /// Sets the short-name lookup of a received file.
+    pub fn with_short_name(mut self, short_name: Option<ShortName>) -> Events {
+        self.short_name = short_name;
+        self
     }
 
     /// Returns the fields of the peer that the SRIF code reads.
@@ -154,7 +165,7 @@ impl binkd_proto::Srif for Events {
             spool: &mut self.config.spool,
             log: &self.log,
             runner: &mut self.runner,
-            short_name: None,
+            short_name: self.short_name,
             now: self.now,
         };
         self.engine
@@ -171,7 +182,7 @@ impl binkd_proto::Srif for Events {
             spool: &mut self.config.spool,
             log: &self.log,
             runner: &mut self.runner,
-            short_name: None,
+            short_name: self.short_name,
             now: self.now,
         };
         self.engine
@@ -190,7 +201,7 @@ impl binkd_proto::Srif for Events {
             spool: &mut self.config.spool,
             log: &self.log,
             runner: &mut self.runner,
-            short_name: None,
+            short_name: self.short_name,
             now: self.now,
         };
         self.engine.finish(&mut context);

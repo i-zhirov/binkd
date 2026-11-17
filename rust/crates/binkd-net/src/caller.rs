@@ -439,7 +439,8 @@ impl Caller {
             let files = files(&call.fa);
             // The SRIF events of the session, the port of the calls of
             // `protocol.c` to `srif.c`.
-            let mut srif = crate::srif::Events::new(config, target, Arc::clone(log), now());
+            let mut srif = crate::srif::Events::new(config, target, Arc::clone(log), now())
+                .with_short_name(options.short_name);
             let result = run_with_hooks(
                 stream,
                 Role::Client,

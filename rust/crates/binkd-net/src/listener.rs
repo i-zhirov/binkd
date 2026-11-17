@@ -180,7 +180,8 @@ pub async fn listen(
         tokio::spawn(async move {
             // The SRIF events of the session, the port of the calls of
             // `protocol.c` to `srif.c`.
-            let mut srif = crate::srif::Events::new(&config, addr, server_log, now());
+            let mut srif = crate::srif::Events::new(&config, addr, server_log, now())
+                .with_short_name(options.short_name);
             let result = run_with_hooks(
                 stream,
                 Role::Server,

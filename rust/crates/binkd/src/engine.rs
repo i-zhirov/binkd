@@ -63,6 +63,7 @@ impl Engine {
         let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
         options.no_md5 = self.options.no_md5;
         options.free_space = platform::free_space;
+        options.short_name = platform::short_name();
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let files = {
             let spool = Arc::clone(&spool);
@@ -94,6 +95,7 @@ impl Engine {
         let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
         options.no_md5 = self.options.no_md5;
         options.free_space = platform::free_space;
+        options.short_name = platform::short_name();
         let spool = Arc::new(Mutex::new(self.config.spool.clone()));
         let files = {
             let spool = Arc::clone(&spool);
