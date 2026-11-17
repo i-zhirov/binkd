@@ -256,7 +256,7 @@
       including the failed-lookup log. The `binkd-net` session contexts
       hold `None` until Task 4 passes the platform lookup.
 
-- [ ] **Task 4: Wire the short name and the partition provider through
+- [x] **Task 4: Wire the short name and the partition provider through
   the binary**
     - **Implements:** the platform seam of the design; the `*N` call
       and the volume check; roadmap `windows-parity`
@@ -316,6 +316,10 @@
       `SessionOptions` value; none may be left without
       `with_short_name()` or the field. The test call sites may rely
       on the `None` default.
+    - **Implementation status:** done. The short-name provider reaches the
+      caller, listener, inetd, and engine paths; the partition provider
+      reaches the parser and reloader. The Windows-runner test gate
+      remains for the target-gated tests.
 
 - [ ] **Task 5: Add the Windows feature set and the dump test**
     - **Implements:** the `Features` of `readcfg.c`; the parser, reload,

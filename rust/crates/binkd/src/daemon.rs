@@ -209,6 +209,7 @@ impl Daemon {
         // and fills it from the scan of the spool.
         let busy = BusyList::new();
         let mut reloader = Reloader::new(config.clone());
+        reloader.set_partition(platform::partition);
         reloader.set_check_on_change(options.check_on_change);
         // The C code of `perl_init()` accepts the `perl-*` keywords only in a
         // build of `--with-perl`, the port of the `WITH_PERL` of `readcfg.c`.

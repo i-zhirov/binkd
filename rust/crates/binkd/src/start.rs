@@ -113,6 +113,7 @@ fn run_with(
 
     if let Some(path) = options.config.clone() {
         let mut parser = Parser::new();
+        parser.set_partition(platform::partition);
         parser.set_quiet(options.quiet);
         parser.set_verbose(options.verbose as i32);
         // The C code of `perl_init()` accepts the `perl-*` keywords only in a

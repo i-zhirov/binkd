@@ -96,6 +96,30 @@ pub fn short_name() -> Option<ShortName> {
     None
 }
 
+/// Returns the identity of the file system of a path, the volume identity of
+/// the C `stat()` that `check_config()` of `readcfg.c` uses.
+///
+/// On Unix the identity is the device number. On Windows the binary asks the
+/// safe wrapper of `binkd-win` for the volume serial. The other systems answer
+/// `None`, the port of a failed `stat()`.
+#[cfg(unix)]
+pub fn partition(path: &Path) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::metadata(path).ok().map(|metadata| metadata.dev())
+}
+
+/// Returns the identity of the file system of a path.
+#[cfg(windows)]
+pub fn partition(path: &Path) -> Option<u64> {
+    binkd_win::storage::volume_serial(path).map(u64::from)
+}
+
+/// Returns the identity of the file system of a path.
+#[cfg(not(any(unix, windows)))]
+pub fn partition(_path: &Path) -> Option<u64> {
+    None
+}
+
 /// Returns the name of the system, the port of `uname()` of
 /// `get_os_string()` of `tools.c`.
 ///
@@ -176,6 +200,23 @@ mod tests {
     #[test]
     fn the_short_name_provider_is_present_on_windows() {
         assert!(short_name().is_some());
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn the_partition_of_a_directory() {
+        let dir = std::env::temp_dir().join(format!("binkd-partition-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(partition(&dir).is_some(), "the directory has no partition");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn the_partition_of_a_missing_path() {
+        let path =
+            std::env::temp_dir().join(format!("binkd-partition-missing-{}", std::process::id()));
+        assert_eq!(partition(&path), None);
     }
 
     #[test]
