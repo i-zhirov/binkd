@@ -53,7 +53,7 @@ impl Reloader {
             check_on_change: false,
             forced: false,
             base_dir: None,
-            features: Features::unix_default(),
+            features: Features::platform_default(),
             partition: default_partition,
             now: 0,
             need_reload: None,

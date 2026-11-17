@@ -145,7 +145,7 @@ impl<'a> Parser<'a> {
                 .duration_since(UNIX_EPOCH)
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0),
-            features: Features::unix_default(),
+            features: Features::platform_default(),
             base_dir: None,
             partition: default_partition,
         }
@@ -1586,6 +1586,9 @@ mod tests {
         assert_eq!(node.bw_recv, 0);
         // The C code holds the option with `BW_LIM` only.
         let mut parser = Parser::new();
+        let mut features = Features::platform_default();
+        features.bwlim = false;
+        parser.set_features(features);
         assert!(parser.parse(&path).is_err());
     }
 
@@ -1893,6 +1896,7 @@ mod tests {
         error
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_syslog_facility_is_parsed() {
         // `Parser::new()` holds `Features::unix_default()`, the feature set
@@ -1901,6 +1905,7 @@ mod tests {
         assert_eq!(config.syslog_facility, 128);
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_syslog_facility_of_auth_and_authpriv() {
         for (name, value) in [
@@ -1914,6 +1919,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_syslog_facility_is_case_sensitive() {
         // The C code compares the name with `strcmp()`, so the uppercase form
@@ -1927,6 +1933,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_mark_facility_is_rejected() {
         // The C facility table accepts `mark`, but the syslog backend has no
@@ -1940,6 +1947,7 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_syslog_keyword_shows_the_c_fallback() {
         let config = with_line("syslog-dump", "syslog local0\n");
@@ -1948,6 +1956,36 @@ mod tests {
             dump.contains("syslog                   [this item cannot be displayed]"),
             "{dump}"
         );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_windows_keywords_are_parsed() {
+        for (name, line) in [
+            ("windows-proxy", "proxy proxy.example.org\n"),
+            ("windows-socks", "socks socks.example.org\n"),
+            ("windows-rate", "limit-rate 1k *.pkt\n"),
+        ] {
+            let config = with_line(name, line);
+            match name {
+                "windows-proxy" => assert_eq!(config.proxy, "proxy.example.org"),
+                "windows-socks" => assert_eq!(config.socks, "socks.example.org"),
+                "windows-rate" => assert_eq!(config.rates.len(), 1),
+                _ => {}
+            }
+        }
+        for (name, line, word) in [
+            ("windows-aso", "aso yes\n", "aso"),
+            ("windows-syslog", "syslog local0\n", "syslog"),
+        ] {
+            let error = line_error(name, line);
+            assert!(error.message.contains(word), "{}", error.message);
+            assert!(
+                error.message.contains("unknown keyword"),
+                "{}",
+                error.message
+            );
+        }
     }
 
     #[test]

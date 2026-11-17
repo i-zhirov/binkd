@@ -7,7 +7,7 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use binkd_config::reload::{Outcome as ReloadOutcome, Reloader};
-use binkd_config::Config;
+use binkd_config::{Config, Features};
 use binkd_ftn::addr::FtnAddr;
 use binkd_ftn::text::extract_filename;
 use binkd_log::{Log, CONNECTION, DEBUG, DEBUG2, ERROR, INFO, START, TRACE};
@@ -211,14 +211,6 @@ impl Daemon {
         let mut reloader = Reloader::new(config.clone());
         reloader.set_partition(platform::partition);
         reloader.set_check_on_change(options.check_on_change);
-        // The C code of `perl_init()` accepts the `perl-*` keywords only in a
-        // build of `--with-perl`, the port of the `WITH_PERL` of `readcfg.c`.
-        #[cfg(feature = "perl")]
-        {
-            let mut features = binkd_config::Features::unix_default();
-            features.perl = true;
-            reloader.set_features(features);
-        }
         if let Ok(dir) = std::env::current_dir() {
             reloader.set_base_dir(&dir);
         }
@@ -232,6 +224,13 @@ impl Daemon {
             #[cfg(feature = "perl")]
             perl: None,
         }
+    }
+
+    /// Sets the feature set of the config parse, so a reload uses the same
+    /// keywords as the first parse.
+    pub fn with_features(mut self, features: Features) -> Daemon {
+        self.reloader.set_features(features);
+        self
     }
 
     /// Sets the source of the hooks of the sessions.

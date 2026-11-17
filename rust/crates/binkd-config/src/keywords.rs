@@ -38,6 +38,29 @@ impl Features {
             ..Features::default()
         }
     }
+
+    /// The features of the Windows build: the compression, proxy, and rate
+    /// limit keywords, without syslog, `aso`, or the dynamic loaders.
+    pub fn windows_default() -> Features {
+        Features {
+            zlib: true,
+            https: true,
+            bwlim: true,
+            perl: false,
+            amiga: false,
+            zlibdl: false,
+            syslog: false,
+        }
+    }
+
+    /// The features of the target of the build.
+    pub fn platform_default() -> Features {
+        if cfg!(windows) {
+            Features::windows_default()
+        } else {
+            Features::unix_default()
+        }
+    }
 }
 
 /// A keyword of the config file.
@@ -208,5 +231,34 @@ mod tests {
         all.perl = true;
         assert!(is_keyword("limit-rate", &all));
         assert!(is_keyword("perl-hooks", &all));
+    }
+
+    #[test]
+    fn the_windows_default_has_the_rust_keywords() {
+        let features = Features::windows_default();
+        for name in [
+            "proxy",
+            "socks",
+            "limit-rate",
+            "zlevel",
+            "zminsize",
+            "zallow",
+            "zdeny",
+        ] {
+            assert!(is_keyword(name, &features), "{name}");
+        }
+        for name in ["aso", "syslog", "zlib-dll", "bzlib2-dll", "perl-hooks"] {
+            assert!(!is_keyword(name, &features), "{name}");
+        }
+    }
+
+    #[test]
+    fn the_platform_default_follows_the_target() {
+        let features = Features::platform_default();
+        if cfg!(windows) {
+            assert_eq!(features, Features::windows_default());
+        } else {
+            assert_eq!(features, Features::unix_default());
+        }
     }
 }

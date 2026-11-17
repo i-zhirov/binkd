@@ -112,18 +112,15 @@ fn run_with(
     }
 
     if let Some(path) = options.config.clone() {
+        let mut features = binkd_config::Features::platform_default();
+        // The C code of `perl_init()` accepts the `perl-*` keywords only in a
+        // build of `--with-perl`, the port of the `WITH_PERL` of `readcfg.c`.
+        features.perl = cfg!(feature = "perl");
         let mut parser = Parser::new();
+        parser.set_features(features);
         parser.set_partition(platform::partition);
         parser.set_quiet(options.quiet);
         parser.set_verbose(options.verbose as i32);
-        // The C code of `perl_init()` accepts the `perl-*` keywords only in a
-        // build of `--with-perl`, the port of the `WITH_PERL` of `readcfg.c`.
-        #[cfg(feature = "perl")]
-        {
-            let mut features = binkd_config::Features::unix_default();
-            features.perl = true;
-            parser.set_features(features);
-        }
         // The C code resolves the paths of the config against the current
         // directory, the port of `readcfg0()`.
         if let Ok(dir) = std::env::current_dir() {
@@ -134,7 +131,7 @@ fn run_with(
         if options.dump > 0 {
             return Ok(Outcome::Exit {
                 code: 0,
-                text: binkd_config::dump(&config),
+                text: binkd_config::dump_with(&config, &features),
             });
         }
         log.init(
@@ -154,7 +151,7 @@ fn run_with(
         #[cfg(feature = "perl")]
         let perl_config = (!config.perl_script.is_empty()).then(|| config.clone());
         // The port of `print_args()` and of the `Log (4, "BEGIN, ...")`.
-        let mut daemon = Daemon::new(config, &options, log.clone(), args);
+        let mut daemon = Daemon::new(config, &options, log.clone(), args).with_features(features);
         // The port of the `perl_init()` block of `main()` of `binkd.c`: the
         // hook runs after the `BEGIN` line of the C code.
         #[cfg(feature = "perl")]

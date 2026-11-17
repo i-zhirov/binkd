@@ -145,6 +145,7 @@ fn version_with_vv() {
     }
 }
 
+#[cfg(all(unix, not(feature = "perl")))]
 #[test]
 fn dump_with_d() {
     let dir = corpus_dir();
@@ -159,6 +160,50 @@ fn dump_with_d() {
         let (c_code, c_out, _err) = run(&c, &["-d", "minimal.conf"], &dir);
         assert_eq!(c_code, code);
         assert_eq!(c_out, out);
+    }
+}
+
+#[cfg(all(unix, feature = "perl"))]
+#[test]
+fn dump_with_d_perl() {
+    let dir = corpus_dir();
+    let (code, out, err) = run_port(&["-d", "minimal.conf"], &dir);
+    assert_eq!(code, 0);
+    assert_eq!(err, "");
+    for name in ["perl-hooks", "perl-dll", "perl-strict", "perl-var"] {
+        assert!(
+            out.lines().any(|line| line.starts_with(name)),
+            "{name} is missing:
+{out}"
+        );
+    }
+    if let Ok(binary) = std::env::var("BINKD_C_PERL") {
+        let (c_code, c_out, _err) = run(Path::new(&binary), &["-d", "minimal.conf"], &dir);
+        assert_eq!(c_code, code);
+        assert_eq!(c_out, out);
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn dump_with_d_windows() {
+    let dir = corpus_dir();
+    let (code, out, err) = run_port(&["-d", "minimal.conf"], &dir);
+    assert_eq!(code, 0);
+    assert_eq!(err, "");
+    for name in ["proxy", "socks", "limit-rate", "zlevel"] {
+        assert!(
+            out.lines().any(|line| line.starts_with(name)),
+            "{name} is missing:
+{out}"
+        );
+    }
+    for name in ["aso", "syslog", "zlib-dll", "bzlib2-dll"] {
+        assert!(
+            !out.lines().any(|line| line.starts_with(name)),
+            "{name} is present:
+{out}"
+        );
     }
 }
 

@@ -11,10 +11,11 @@ use crate::model::{Config, DontSendEmpty};
 /// The width of a keyword field: `%-24s ` of the C code.
 const KEY_WIDTH: usize = 24;
 
-/// Returns the dump of the config.
+/// Returns the Unix dump of the config.
 ///
 /// The port of `debug_readcfg()`. The output matches the output of the C binary
-/// of the same build, byte for byte.
+/// of the Unix build, byte for byte, and the golden corpus uses it. The binary
+/// dumps with `dump_with()` and the features of the target.
 pub fn dump(config: &Config) -> String {
     dump_with(config, &Features::unix_default())
 }
@@ -419,4 +420,26 @@ fn format_time(value: i32) -> String {
 #[allow(dead_code)]
 fn _dont_send_empty(value: DontSendEmpty) -> bool {
     matches!(value, DontSendEmpty::All)
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_windows_dump_has_the_rust_keywords() {
+        let dump = dump_with(&Config::new(), &Features::windows_default());
+        for name in ["proxy", "socks", "limit-rate", "zlevel"] {
+            assert!(
+                dump.lines().any(|line| line.starts_with(name)),
+                "{name} is missing:\n{dump}"
+            );
+        }
+        for name in ["aso", "syslog", "zlib-dll", "bzlib2-dll", "perl-hooks"] {
+            assert!(
+                !dump.lines().any(|line| line.starts_with(name)),
+                "{name} is present:\n{dump}"
+            );
+        }
+    }
 }

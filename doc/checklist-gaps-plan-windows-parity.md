@@ -321,7 +321,7 @@
       reaches the parser and reloader. The Windows-runner test gate
       remains for the target-gated tests.
 
-- [ ] **Task 5: Add the Windows feature set and the dump test**
+- [x] **Task 5: Add the Windows feature set and the dump test**
     - **Implements:** the `Features` of `readcfg.c`; the parser, reload,
       and dump; roadmap `windows-parity`
     - **Modify `rust/crates/binkd-config/src/keywords.rs`**
@@ -397,6 +397,10 @@
       dump tests in CI, `cargo test -p binkd --test cli`,
       `cargo clippy --workspace --all-targets -- -D warnings`, and the
       `cargo check --target x86_64-pc-windows-gnu` check for `binkd`.
+    - **Implementation status:** done. The Unix parser, reloader, and
+      binary use the platform set; the default and Perl CLI dump tests
+      pass. The Windows dump and keyword tests are target-gated and run
+      in the `windows` CI job.
 
 - [ ] **Task 6: Update the documents and run the full verification**
     - **Implements:** the design and decision documentation obligation;
