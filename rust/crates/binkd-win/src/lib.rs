@@ -10,3 +10,6 @@ pub mod command;
 
 #[cfg(windows)]
 pub mod service;
+
+#[cfg(windows)]
+pub mod storage;

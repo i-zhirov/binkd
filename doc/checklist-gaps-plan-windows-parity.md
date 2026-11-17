@@ -88,7 +88,7 @@
 
 ## Tasks
 
-- [ ] **Task 1: Add the safe Windows path and volume helpers**
+- [x] **Task 1: Add the safe Windows path and volume helpers**
     - **Implements:** design Phase 6 platform values; the `*N` call of
       `run_args()` of `srif.c`; the volume check of `check_config()` of
       `readcfg.c`; roadmap `windows-parity`
@@ -126,6 +126,9 @@
     - **Verify:** on Windows, `cd rust && cargo test -p binkd-win`;
       elsewhere, `cd rust && cargo check -p binkd-win --target
       x86_64-pc-windows-gnu`.
+    - **Implementation status:** done. The cross-target check and strict
+      clippy pass locally. The Windows-runner test gate remains: the
+      four target-gated tests must run in the `windows` CI job.
 
 - [ ] **Task 2: Add the partition provider and the volume checks**
     - **Implements:** the `check_config()` volume checks of `readcfg.c`;
