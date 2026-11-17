@@ -39,9 +39,11 @@ choices.
   Windows dump must use the same `Features` as the parser.
 - **Windows short names**: add a safe `binkd-win` wrapper over
   `GetShortPathNameW`; do not move `binkd-win` into a lower crate.
-- **Windows partition check**: use
-  `std::os::windows::fs::MetadataExt::volume_serial_number`; no
-  `binkd-win` dependency is needed in `binkd-config`.
+- **Windows partition check**: use a provider function in
+  `binkd-config`; the binary supplies the safe `binkd-win` wrapper
+  over the Windows volume serial. The std
+  `MetadataExt::volume_serial_number` API is nightly-only, so the
+  wrapper is required. `binkd-config` holds no `binkd-win` dependency.
 - **BSD CI**: add a FreeBSD job only if the runner action is accepted;
   otherwise document that BSD is build-supported but not CI-tested.
 
@@ -132,7 +134,7 @@ run before the sink, and a parser/dump case for the enabled feature.
 Close the Windows-specific behavior gaps:
 
 - check `temp-inbound`, `inbound`, `inbound-nonsecure`, and node `ibox`
-  volumes with `volume_serial_number`;
+  volumes through the partition provider;
 - implement the `*N` short name through `binkd-win` and the SRIF
   expansion seam;
 - add a Windows `Features` default for the keywords the Rust build
@@ -142,13 +144,13 @@ Close the Windows-specific behavior gaps:
 Add target-gated unit tests and a Windows dump test; run them in the
 `windows` CI job.
 
-- **Status:** Unplanned
+- **Status:** Planned
 - **Depends on:** —
 - **Requirements:** Checklist item 1;
   [windows-support.md](decisions/windows-support.md);
   [legacy-platforms.md](decisions/legacy-platforms.md)
 - **Manual prerequisites:** a Windows runner for the target-gated tests
-- **Plan:** —
+- **Plan:** [the plan](checklist-gaps-plan-windows-parity.md)
 - **Done when:** the Windows workspace suite passes the partition,
   short-name, feature, and dump tests; the C Windows differences are
   recorded in the decision record and the README
