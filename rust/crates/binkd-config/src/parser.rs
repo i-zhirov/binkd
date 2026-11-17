@@ -1623,6 +1623,10 @@ mod tests {
         }
     }
 
+    fn config_path(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
+    }
+
     #[test]
     fn the_inbound_and_temp_inbound_share_a_partition() {
         let inbound = partition_dir("share-inbound");
@@ -1631,8 +1635,8 @@ mod tests {
         let text = format!(
             "{}temp-inbound {}\nnode 2:5047/100@fidonet host.example.com secret - - {}\n",
             base(&inbound.to_string_lossy()),
-            temp.to_string_lossy(),
-            ibox.to_string_lossy()
+            config_path(&temp),
+            config_path(&ibox)
         );
         let path = write_case("partition-share", &text);
         let mut parser = Parser::new();
@@ -1650,7 +1654,7 @@ mod tests {
         let text = format!(
             "{}temp-inbound {}\n",
             base(&inbound.to_string_lossy()),
-            temp.to_string_lossy()
+            config_path(&temp)
         );
         let path = write_case("partition-inbound", &text);
         let mut parser = Parser::new();
@@ -1672,8 +1676,8 @@ mod tests {
         let text = format!(
             "{}temp-inbound {}\ninbound-nonsecure {}\n",
             base(&inbound.to_string_lossy()),
-            temp.to_string_lossy(),
-            nonsecure.to_string_lossy()
+            config_path(&temp),
+            config_path(&nonsecure)
         );
         let path = write_case("partition-nonsecure", &text);
         let mut parser = Parser::new();
@@ -1695,8 +1699,8 @@ mod tests {
         let text = format!(
             "{}temp-inbound {}\nnode 2:5047/100@fidonet host.example.com secret - - {}\n",
             base(&inbound.to_string_lossy()),
-            temp.to_string_lossy(),
-            ibox.to_string_lossy()
+            config_path(&temp),
+            config_path(&ibox)
         );
         let path = write_case("partition-inbox", &text);
         let mut parser = Parser::new();
@@ -1717,7 +1721,7 @@ mod tests {
         let text = format!(
             "{}node 2:5047/100@fidonet host.example.com secret - - {}\n",
             base(&inbound.to_string_lossy()),
-            ibox.to_string_lossy()
+            config_path(&ibox)
         );
         let path = write_case("partition-missing", &text);
         let mut parser = Parser::new();
@@ -1727,7 +1731,7 @@ mod tests {
             error.message,
             format!(
                 "Inbox for {} does not exist (link 2:5047/100@fidonet)",
-                ibox.to_string_lossy()
+                config_path(&ibox)
             )
         );
         let _ = fs::remove_file(&path);
@@ -1742,8 +1746,8 @@ mod tests {
         let text = format!(
             "{}temp-inbound {}\nnode 2:5047/100@fidonet host.example.com secret - - {}\n",
             base(&inbound.to_string_lossy()),
-            temp.to_string_lossy(),
-            ibox.to_string_lossy()
+            config_path(&temp),
+            config_path(&ibox)
         );
         let path = write_case("partition-optional", &text);
         let mut parser = Parser::new();
