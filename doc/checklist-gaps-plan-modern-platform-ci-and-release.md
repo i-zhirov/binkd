@@ -39,9 +39,9 @@
   keep their names.
 - The external action versions are exactly `actions/checkout@v4`,
   `dtolnay/rust-toolchain@stable`, and `msys2/setup-msys2@v2`.
-- The macOS runner is `macos-15`. The `macos-latest` label was queued
-  without a runner and cancelled after 15 minutes; `macos-15` is the
-  stable ARM64 image. The C reference uses the existing
+- The macOS runner is `macos-15-intel`. The `macos-latest` and
+  `macos-15` labels were queued without a runner and cancelled after 15
+  minutes; `macos-15-intel` is the stable x64 image. The C reference uses the existing
   UNIX steps exactly:
   `cp mkfls/unix/* .`, `chmod +x mkinstalldirs`, `./configure`, `make`.
   `BINKD_C` is `${{ github.workspace }}/binkd`.
@@ -157,7 +157,7 @@ The interop coverage:
           `macos`:
           ```yaml
           interop-macos:
-            runs-on: macos-15
+            runs-on: macos-15-intel
             env:
               BINKD_C: ${{ github.workspace }}/binkd
             steps:
@@ -742,10 +742,10 @@ The interop coverage:
 
 ## Deviations
 
-- The macOS jobs use `macos-15` instead of `macos-latest`. The
-  `macos-latest` label (macOS 26 ARM64) received no runner in three
-  attempts and was cancelled after 15 minutes; `macos-15` is the stable
-  ARM64 image.
+- The macOS jobs use `macos-15-intel` instead of `macos-latest`. The
+  `macos-latest` and `macos-15` labels received no runner in multiple
+  attempts and were cancelled after 15 minutes; `macos-15-intel` is the
+  stable x64 image.
 - The Windows C build pins `-std=gnu89` in `CFLAGS`. The approved plan had
   no dialect flag. The MinGW GCC default mode rejects the implicit
   declaration of `Is9x()` in `run.c`; `gnu89` compiles the reference. The
