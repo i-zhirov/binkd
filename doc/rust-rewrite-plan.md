@@ -105,6 +105,11 @@ scope for the port, the decision of `doc/decisions/legacy-platforms.md`: the C
 code keeps the three systems, the reference and the build of the port. A system of
 the three that a maintainer asks for gets its own record and its own phase.
 
+The CI matrix covers Linux, macOS, and Windows. The `interop-macos`
+and `interop-windows` jobs run the C↔Rust base matrix; BSD is
+build-supported but not CI-tested, the decision of
+`doc/decisions/platform-ci.md`.
+
 ### 2.4 Test state
 
 The repository had no test suite. Only `snprintf.c` has a self-test with
@@ -235,9 +240,17 @@ The interop matrix runs two real programs on the loopback address.
 Each case uses a fixture spool. The test sends one packet in each
 direction and compares the spool directories after the session.
 
-The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10`
-build the C binary and set `BINKD_C`, `BINKD_C_PROXY`, `BINKD_C_BWLIM`, and
-`BINKD_C_V10`. The `rust` and `macos` jobs run the Rust-only direction.
+The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and
+`interop-v10` build the C binary on Ubuntu and set `BINKD_C`,
+`BINKD_C_PROXY`, `BINKD_C_BWLIM`, and `BINKD_C_V10`. The
+`interop-macos` job builds the UNIX C reference on macOS and runs the
+base matrix with `BINKD_C`. The `interop-windows` job builds the
+MinGW C reference and runs the base protocol, network, record, and
+binary matrix with `BINKD_C`; the proxy, rate-limit, and protocol
+1.0 variants stay Ubuntu-only. The `rust`, `macos`, and `windows`
+jobs run the Rust-only direction; the `windows` job also runs the
+parity tests and the service smoke test. BSD is build-supported but
+not CI-tested.
 
 ### 4.1 Equivalence policy
 
@@ -1359,9 +1372,13 @@ Deliverables:
   legacy platforms, and the Windows keyword set (`aso`, `syslog`,
   `zlib-dll`, and `bzlib2-dll` rejected; proxy, socks, and `limit-rate`
   accepted).
-- CI runs both suites. The `interop` jobs run the C and Rust matrix; the
-  `macos` and `windows` jobs run the workspace suite; the Windows job runs the
-  service smoke test.
+- CI runs both suites. The `interop`, `interop-proxy`,
+  `interop-bwlim`, and `interop-v10` jobs run the C and Rust matrix
+  on Ubuntu. The `interop-macos` job runs the base matrix on macOS,
+  and the `interop-windows` job runs the base protocol, network,
+  record, and binary matrix on Windows. The `macos` and `windows`
+  jobs run the workspace suite; the Windows job runs the parity tests
+  and the service smoke test. BSD is build-supported but not CI-tested.
 
 The cutover has started:
 
@@ -1369,9 +1386,11 @@ The cutover has started:
   reference.
 - `doc/decisions/legacy-platforms.md` and
   `doc/decisions/windows-support.md` are accepted.
-- `.github/workflows/ci.yml` runs the Rust suite, the C suite, the C and Rust
-  interop jobs, the MSRV check, the Perl hooks with the C oracle, the macOS
-  workspace suite, and the Windows service smoke test.
+- `.github/workflows/ci.yml` runs the Rust suite, the C suite, the C
+  and Rust interop jobs on Ubuntu, the `interop-macos` and
+  `interop-windows` jobs, the MSRV check, the Perl hooks with the C
+  oracle, the macOS workspace suite, and the Windows workspace,
+  parity, and service smoke tests.
 
 The Windows service mode is implemented. The man page and the packaging files
 follow the release process.

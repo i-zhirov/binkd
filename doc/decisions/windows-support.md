@@ -93,6 +93,20 @@ job of `.github/workflows/ci.yml` runs the check, the clippy, the workspace
 tests, the release build, and the [smoke test](#windows-scm-smoke-test) below.
 The target-gated parity tests are in the same workspace suite.
 
+## CI coverage
+
+The `interop-windows` job of `.github/workflows/ci.yml` builds the C
+Windows reference with MSYS2/MinGW64 and runs the base C↔Rust
+protocol, network, record, and binary tests. The build command, the
+output path, and the limits of the job are in
+`doc/decisions/platform-ci.md`. The job does not run the config
+corpus, the CLI, or the daemon with the C Windows binary, because
+the C Windows feature set is not the oracle of the Rust Windows
+build. The Rust Windows parity tests stay in the `windows` job. The
+C Windows and Rust Windows binaries log `BEGIN standalone, binkd/`;
+the binary interop test accepts that line and the UNIX
+`BEGIN, binkd/` line.
+
 ## Parity of the Rust build
 
 The Windows Rust build also ports the Windows behavior outside the service

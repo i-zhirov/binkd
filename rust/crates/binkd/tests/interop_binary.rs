@@ -54,6 +54,14 @@ fn write_config(dir: &Path, text: &str) -> PathBuf {
     path
 }
 
+/// Returns a path in the config form with `/` separators.
+///
+/// The config tokenizer reads `\` as an escape, so a Windows path of the
+/// spool is written with forward slashes.
+fn config_path(path: &Path) -> String {
+    path.display().to_string().replace('\\', "/")
+}
+
 /// Writes the config of the C server.
 fn write_c_server_config(dir: &Path, port: u16) -> PathBuf {
     write_config(
@@ -73,7 +81,7 @@ fn write_c_server_config(dir: &Path, port: u16) -> PathBuf {
              log c-server.log\n\
              loglevel 8\n\
              conlog 0\n",
-            dir.join("outb").display()
+            config_path(&dir.join("outb"))
         ),
     )
 }
@@ -96,7 +104,7 @@ fn write_rust_server_config(dir: &Path, port: u16) -> PathBuf {
              log rust-server.log\n\
              loglevel 8\n\
              conlog 0\n",
-            dir.join("outb").display()
+            config_path(&dir.join("outb"))
         ),
     )
 }
@@ -119,7 +127,7 @@ fn write_c_client_config(dir: &Path, port: u16) -> PathBuf {
              log c-client.log\n\
              loglevel 8\n\
              conlog 0\n",
-            dir.join("outb").display()
+            config_path(&dir.join("outb"))
         ),
     )
 }
@@ -142,7 +150,7 @@ fn write_rust_client_config(dir: &Path, port: u16) -> PathBuf {
              log rust-client.log\n\
              loglevel 8\n\
              conlog 0\n",
-            dir.join("outb").display()
+            config_path(&dir.join("outb"))
         ),
     )
 }
@@ -244,10 +252,18 @@ fn wait_for_content(dir: &Path, content: &[u8]) -> bool {
     false
 }
 
-/// Asserts that the log holds the text.
-fn assert_log(dir: &Path, name: &str, text: &str) {
+/// Asserts that the log holds the BEGIN banner.
+///
+/// The UNIX builds of both binaries log `BEGIN, binkd/`, and the Windows
+/// builds log `BEGIN standalone, binkd/` when not a service, the `WIN32`
+/// branch of `binkd.c` and the `#[cfg(windows)]` branch of `daemon.rs`.
+fn assert_begin_log(dir: &Path, name: &str) {
     let log = fs::read_to_string(dir.join(name)).unwrap_or_default();
-    assert!(log.contains(text), "{name}: {log}");
+    assert!(
+        log.lines().any(|line| line.contains("BEGIN, binkd/")
+            || line.contains("BEGIN standalone, binkd/")),
+        "{name}: {log}"
+    );
 }
 
 /// Asserts that one line of the log holds both texts.
@@ -286,8 +302,8 @@ fn the_rust_client_calls_the_c_server() {
         wait_for_content(&client_dir.join("in"), &server_packet),
         "the Rust client holds no packet of the C server"
     );
-    assert_log(&server_dir, "c-server.log", "BEGIN, binkd/");
-    assert_log(&client_dir, "rust-client.log", "BEGIN, binkd/");
+    assert_begin_log(&server_dir, "c-server.log");
+    assert_begin_log(&client_dir, "rust-client.log");
     assert_log_line(&server_dir, "c-server.log", "rcvd msg NUL TIME", "-0300");
 }
 
@@ -317,8 +333,8 @@ fn the_c_client_calls_the_rust_server() {
         wait_for_content(&client_dir.join("in"), &server_packet),
         "the C client holds no packet of the Rust server"
     );
-    assert_log(&server_dir, "rust-server.log", "BEGIN, binkd/");
-    assert_log(&client_dir, "c-client.log", "BEGIN, binkd/");
+    assert_begin_log(&server_dir, "rust-server.log");
+    assert_begin_log(&client_dir, "c-client.log");
     assert_log_line(&client_dir, "c-client.log", "rcvd msg NUL TIME", "-0300");
 }
 
@@ -348,6 +364,6 @@ fn the_c_client_calls_the_c_server() {
         wait_for_content(&client_dir.join("in"), &server_packet),
         "the C client holds no packet of the C server"
     );
-    assert_log(&server_dir, "c-server.log", "BEGIN, binkd/");
-    assert_log(&client_dir, "c-client.log", "BEGIN, binkd/");
+    assert_begin_log(&server_dir, "c-server.log");
+    assert_begin_log(&client_dir, "c-client.log");
 }

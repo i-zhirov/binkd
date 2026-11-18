@@ -45,9 +45,11 @@ crates are also a library for embedding in other programs.
 - **Testing**: A custom C harness (`tests/harness.h`) with the golden
   corpus in `tests/golden/`. The corpus is the shared oracle of the C and
   Rust implementations. Rust uses the built-in `#[test]` harness.
-- **Target Platform**: UNIX (Linux, macOS, BSD) and Windows NT and later. The
-  Rust port supports the Windows service mode; the tray icon is not supported.
-  The C code also targets OS/2, DOS, Amiga, and Windows 9x/Me.
+- **Target Platform**: UNIX (Linux, macOS, BSD) and Windows NT and
+  later. The Rust port supports the Windows service mode; the tray
+  icon is not supported. The C code also targets OS/2, DOS, Amiga,
+  and Windows 9x/Me. Linux, macOS, and Windows are CI-tested; BSD is
+  build-supported but not CI-tested.
 - **Project Type**: Other. A long-running network daemon with a library
   workspace. The C code is a flat program; the Rust workspace is a
   library workspace with a thin binary.
@@ -65,7 +67,7 @@ crates are also a library for embedding in other programs.
 
 ```text
 binkd/
-├── .github/workflows/ci.yml    # CI: Rust, C, interop, MSRV, Perl, OSes
+├── .github/workflows/ci.yml    # CI: Rust, C, interop, MSRV, Perl, macOS, Windows
 ├── AGENTS.md                   # this file
 ├── README.md                   # what binkd is, build and install
 ├── task.md                     # the Rust rewrite task statement
@@ -131,8 +133,12 @@ default. The C build is the reference and the oracle of the tests.
   `pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1`.
 - **Test the C and Rust interop** (needs the C binary): build the C
   reference, set `BINKD_C`, and run the tests that `tests/README.md` names.
-  The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10`
-  run the plain, proxy, rate limit, and protocol 1.0 matrices.
+  The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and
+  `interop-v10` run the plain, proxy, rate limit, and protocol 1.0
+  matrices on Ubuntu. The `interop-macos` job runs the base matrix on
+  macOS, and the `interop-windows` job runs the base protocol,
+  network, record, and binary matrix on Windows with the MinGW C
+  reference.
 - **Check the minimum supported Rust version** (needs the 1.85 toolchain):
   `cd rust && cargo +1.85 check --workspace`
 - **Lint (Rust)**: `cd rust && cargo clippy --workspace --all-targets`
@@ -383,6 +389,14 @@ fixes them):
   `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10` build the C
   reference and set the `BINKD_C*` variables. The tests and the build commands
   are in `tests/README.md`.
+- The `interop-macos` job builds the UNIX C reference and runs the
+  base protocol, network, record, config, CLI, daemon, and binary
+  tests. The `interop-windows` job builds the MinGW C reference and
+  runs the base protocol, network, record, and binary tests. The
+  config corpus, CLI, and daemon tests are not the Windows C oracle.
+  The proxy, rate-limit, and protocol 1.0 variants stay Ubuntu-only.
+  BSD is build-supported but not CI-tested, the record
+  `doc/decisions/platform-ci.md`.
 - The Windows target-gated tests cover the short-name and volume wrappers,
   the partition provider, the Windows feature set, and the Windows dump. They
   run in the `windows` CI job. The config corpus holds only successful dumps,
@@ -391,8 +405,10 @@ fixes them):
   The Windows job of CI runs it after the release build. The script installs a
   temporary service, checks the service states, the process, the busy and pid
   files, and the log, and removes the service and the temporary directory.
-- The CI runs the workspace suite on Linux, macOS, and Windows. The Unix-only
-  signal and shell cases carry `#[cfg(unix)]`.
+- The CI runs the workspace suite on Linux, macOS, and Windows. The
+  `interop-macos` and `interop-windows` jobs run the C↔Rust matrix;
+  BSD is not in CI. The Unix-only signal and shell cases carry
+  `#[cfg(unix)]`.
 - Run the C tests with AddressSanitizer when the change touches memory
   handling: `make -C tests CFLAGS="-O0 -g -fsanitize=address"`.
 - The corpus cases are text files in the repository, not generated data.

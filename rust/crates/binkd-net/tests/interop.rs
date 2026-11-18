@@ -388,7 +388,10 @@ async fn c_caller_to_rust_listener() {
     );
     // The log of the C client at the loglevel 10 holds the file frame of each
     // direction, the oracle of the frame log of the session of the port.
-    let log = std::fs::read_to_string(client_dir.join("c-client.log")).unwrap_or_default();
+    // The MinGW C log uses `\` separators; compare as `/`.
+    let log = std::fs::read_to_string(client_dir.join("c-client.log"))
+        .unwrap_or_default()
+        .replace('\\', "/");
     assert!(log.contains("sending ./outb/13b70064.cut as "), "{log}");
     assert!(log.contains("rcvd msg FILE "), "{log}");
     assert!(log.contains(".pkt 5000"), "{log}");

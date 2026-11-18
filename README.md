@@ -32,6 +32,9 @@ dynamic loader keywords.
 The C code is the reference and the oracle of the tests. It also builds the
 legacy platforms.
 
+CI builds and tests the C reference on Linux, macOS, and Windows; the
+Windows build uses MSYS2/MinGW64 and runs the base C↔Rust matrix.
+
 non-UNIX:
 
 1. Find in mkfls/ a subdirectory for your system/compiler, copy all files
@@ -103,9 +106,13 @@ behavior of the C code.
   rejects `aso`, `syslog`, `zlib-dll`, and `bzlib2-dll`.
 - OS/2, DOS, Amiga, and Windows 9x/Me are C-only platforms. The C code is the
   reference and the oracle of the tests.
+- Linux, macOS, and Windows are CI-tested. BSD is build-supported but
+  not CI-tested: the C reference and the Rust workspace build on BSD,
+  and no CI runner is configured. See
+  `doc/decisions/platform-ci.md`.
 
-The records are in `doc/decisions/`: `legacy-platforms.md` and
-`windows-support.md`.
+The records are in `doc/decisions/`: `legacy-platforms.md`,
+`windows-support.md`, `perl-hooks.md`, and `platform-ci.md`.
 
 ## More info
 

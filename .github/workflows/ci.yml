@@ -143,6 +143,77 @@ jobs:
           cargo test -p binkd-proto --test interop c_client_claims_freq_to_rust_server
           cargo test -p binkd-proto --test interop c_client_skips_the_request_of_rust_server
 
+  interop-macos:
+    runs-on: macos-latest
+    env:
+      BINKD_C: ${{ github.workspace }}/binkd
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build the C reference
+        run: |
+          cp mkfls/unix/* .
+          chmod +x mkinstalldirs
+          ./configure
+          make
+      - name: Run the C and Rust interop suite
+        run: |
+          cd rust
+          cargo test -p binkd-proto --test interop -- --test-threads=1
+          cargo test -p binkd-net --test interop -- --test-threads=1
+          cargo test -p binkd-proto --test record -- --test-threads=1
+          cargo test -p binkd-config --test dump_corpus
+          cargo test -p binkd-config --test reload_corpus
+          cargo test -p binkd --test cli
+          cargo test -p binkd --test daemon -- --test-threads=1
+      - name: Run the binary interop suite
+        run: cd rust && cargo test -p binkd --test interop_binary -- --test-threads=1
+
+  interop-windows:
+    runs-on: windows-latest
+    env:
+      BINKD_C: '${{ github.workspace }}\bin\mingw32-zlib-bzlib2\binkd-mingw-zlib-bzlib2.exe'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            make
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-binutils
+            mingw-w64-x86_64-zlib
+            mingw-w64-x86_64-bzip2
+      - name: Build the C reference
+        shell: msys2 {0}
+        run: |
+          make -f mkfls/nt95-mingw/Makefile \
+            CC=gcc ZLIB=1 BZLIB2=1 \
+            OUTDIR=bin/mingw32-zlib-bzlib2 \
+            CFLAGS='-std=gnu89 -mthreads -pipe -funsigned-char -Wall -Wno-char-subscripts -Wno-comment -O2 -s' \
+            LFLAGS='-static'
+          test -f bin/mingw32-zlib-bzlib2/binkd-mingw-zlib-bzlib2.exe
+      - name: Run the C and Rust interop suite
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          cd rust
+          cargo test -p binkd-proto --test interop -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p binkd-net --test interop -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p binkd-proto --test record -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Run the binary interop suite
+        shell: pwsh
+        run: |
+          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          cd rust
+          cargo test -p binkd --test interop_binary -- --test-threads=1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
   macos:
     runs-on: macos-latest
     steps:

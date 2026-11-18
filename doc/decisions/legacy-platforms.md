@@ -56,3 +56,6 @@ decision of `doc/decisions/windows-support.md`.
   the three knows the status.
 - A change of the core modules must not break the build of the three: the C code of
   the three builds from the same sources.
+- BSD is not a platform of this record: it is a supported UNIX
+  target of the Rust port. It is build-supported but not CI-tested,
+  the record `doc/decisions/platform-ci.md`.

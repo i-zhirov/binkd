@@ -393,9 +393,76 @@ cd rust
 BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary
 ```
 
-The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10`
-build the C reference and run the variants below. The `interop` job also runs
-the binary-level test.
+The binary interop test accepts `BEGIN, binkd/` and the Windows
+`BEGIN standalone, binkd/` line. It writes config paths with `/`,
+because the config tokenizer reads `\` as an escape.
+
+### The platform jobs
+
+The `interop` job builds the plain C reference on Ubuntu and runs
+the base matrix and the binary-level test.
+
+The `interop-macos` job builds the UNIX C reference on a macOS
+runner and runs the base matrix:
+
+```sh
+cp mkfls/unix/* .
+chmod +x mkinstalldirs
+./configure
+make
+cd rust
+BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
+BINKD_C=$PWD/../binkd cargo test -p binkd-net --test interop -- --test-threads=1
+BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test record -- --test-threads=1
+BINKD_C=$PWD/../binkd cargo test -p binkd-config --test dump_corpus
+BINKD_C=$PWD/../binkd cargo test -p binkd-config --test reload_corpus
+BINKD_C=$PWD/../binkd cargo test -p binkd --test cli
+BINKD_C=$PWD/../binkd cargo test -p binkd --test daemon -- --test-threads=1
+BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary -- --test-threads=1
+```
+
+The `interop-windows` job builds the C reference with MSYS2/MinGW64.
+From the repository root in a MINGW64 shell:
+
+```sh
+make -f mkfls/nt95-mingw/Makefile \
+  CC=gcc ZLIB=1 BZLIB2=1 \
+  OUTDIR=bin/mingw32-zlib-bzlib2 \
+  CFLAGS='-std=gnu89 -mthreads -pipe -funsigned-char -Wall -Wno-char-subscripts -Wno-comment -O2 -s' \
+  LFLAGS='-static'
+```
+
+The binary is
+`bin/mingw32-zlib-bzlib2/binkd-mingw-zlib-bzlib2.exe`. Set
+`BINKD_C` to that path and run the protocol, network, record, and
+binary tests with `--test-threads=1`. Add
+`C:\msys64\mingw64\bin` to `PATH` in the test step, so a toolchain
+DLL is found if the link is not fully static. The command-line
+`CFLAGS` replaces the makefile `CFLAGS +=` line, so the obsolete
+`-mno-cygwin` flag is not passed. `LFLAGS='-static'` links zlib and
+bzip2 into the executable.
+
+The Windows job does not run `dump_corpus`, `reload_corpus`, `cli`,
+or `daemon`: the C Windows build defines `AMIGADOS_4D_OUTBOUND`,
+accepts `aso`, and has a different feature set from the Rust
+Windows build. The Rust Windows parity tests stay in the `windows`
+job.
+
+### The special builds
+
+The special builds stay on Ubuntu. `interop-proxy` builds the proxy
+C binary and runs `proxy_interop`; `interop-bwlim` builds the
+rate-limit C binary and runs
+`rust_client_to_c_server_rate_limited`; `interop-v10` builds the
+protocol 1.0 C binary and runs
+`c_client_claims_freq_to_rust_server` and
+`c_client_skips_the_request_of_rust_server`. The macOS and Windows
+jobs leave `BINKD_C_PROXY`, `BINKD_C_BWLIM`, and `BINKD_C_V10`
+unset, so those tests skip.
+
+BSD is build-supported but not CI-tested. The C reference and the
+Rust workspace build on BSD, and no CI runner is configured. The
+record `doc/decisions/platform-ci.md` holds the matrix.
 
 The Rust test `crates/binkd-net/tests/proxy_interop.rs` runs the proxy matrix
 for the network layer. Set `BINKD_C_PROXY` to the path of a C binary that the

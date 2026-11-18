@@ -170,12 +170,13 @@ job or record the accepted absence, and update the docs:
 - run the full C and Rust suites, the Windows smoke test, and the CI
   matrix.
 
-- **Status:** Unplanned
+- **Status:** In Progress
 - **Depends on:** Slices 1–5
 - **Requirements:** Checklist items 1 and 4; design §3 success
   criteria, §4 test strategy, Phase 8
-- **Manual prerequisites:** GitHub CI; Windows and FreeBSD runners
-- **Plan:** —
+- **Manual prerequisites:** GitHub CI; a Windows runner for the C
+  reference and the smoke test
+- **Plan:** [plan](checklist-gaps-plan-modern-platform-ci-and-release.md)
 - **Done when:** the full matrix is green, every checklist item is
   accounted for, the platform differences are documented, and the
   `windows-smoke.ps1` run has passed on a real runner
