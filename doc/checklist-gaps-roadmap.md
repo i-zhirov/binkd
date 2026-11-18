@@ -4,7 +4,7 @@
 > slice with the `executing-plans` skill.
 
 - **Date**: 2026-11-15
-- **Status**: Approved
+- **Status**: Implemented
 - **Design**: [rust-rewrite-plan.md](rust-rewrite-plan.md), with the
   decisions [legacy-platforms.md](decisions/legacy-platforms.md) and
   [windows-support.md](decisions/windows-support.md)
@@ -170,7 +170,7 @@ job or record the accepted absence, and update the docs:
 - run the full C and Rust suites, the Windows smoke test, and the CI
   matrix.
 
-- **Status:** In Progress
+- **Status:** Implemented
 - **Depends on:** Slices 1–5
 - **Requirements:** Checklist items 1 and 4; design §3 success
   criteria, §4 test strategy, Phase 8

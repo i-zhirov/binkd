@@ -8,7 +8,7 @@
 > with the plan.
 
 - **Date**: 2026-11-18
-- **Status**: In Progress
+- **Status**: Implemented
 - **Design**: [rust-rewrite-plan.md](rust-rewrite-plan.md), with
   [legacy-platforms.md](decisions/legacy-platforms.md) and
   [windows-support.md](decisions/windows-support.md)
@@ -671,7 +671,7 @@ The interop coverage:
       git diff --check
       ```
 
-- [ ] **Task 5: Run the full verification and update the slice status**
+- [x] **Task 5: Run the full verification and update the slice status**
     - **Implements:** roadmap `modern-platform-ci-and-release`; design §3
       success criteria and Phase 8; the Definition Of Done.
     - **Run the local macOS C build and interop** from the repository root:
