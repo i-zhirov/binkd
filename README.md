@@ -1,5 +1,7 @@
 Binkd is a Fidonet mailer designed to operate via TCP/IP networks.
 
+[![CI](https://github.com/i-zhirov/binkd/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/i-zhirov/binkd/actions/workflows/ci.yml)
+
 As a FTN-compatible internet daemon, it makes possible efficient
 utilization of TCP/IP protocol suite as a transport layer in
 FTN-based (Fido Technology Network) networks.
