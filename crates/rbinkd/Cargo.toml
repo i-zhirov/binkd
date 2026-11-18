@@ -1,0 +1,45 @@
+[package]
+name = "rbinkd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The rbinkd mailer: the Rust reimplementation of binkd, its command line and daemon."
+
+[lib]
+# The library crate keeps the binkd name for the embedders and the
+# C-compatible API; the project and the executable are rbinkd.
+name = "binkd"
+
+[[bin]]
+name = "rbinkd"
+path = "src/main.rs"
+
+[features]
+# The hooks of Perl: the default build holds the crate not, the decision of
+# `doc/decisions/perl-hooks.md`.
+perl = ["dep:binkd-perl"]
+
+[target.'cfg(unix)'.dependencies]
+syslog = "=7.0.0"
+
+[target.'cfg(windows)'.dependencies]
+binkd-win = { path = "../binkd-win" }
+
+[dependencies]
+binkd-perl = { path = "../binkd-perl", optional = true }
+binkd-config = { path = "../binkd-config" }
+binkd-ftn = { path = "../binkd-ftn" }
+binkd-net = { path = "../binkd-net" }
+binkd-proto = { path = "../binkd-proto" }
+binkd-log = { path = "../binkd-log" }
+binkd-spool = { path = "../binkd-spool" }
+fs2 = "=0.4.3"
+time = { version = "=0.3.44", features = ["local-offset"] }
+tokio = { version = "=1.54.0", features = ["rt", "rt-multi-thread", "macros", "signal", "time", "io-std", "process"] }
+
+[dev-dependencies]
+tokio = { version = "=1.54.0", features = ["rt-multi-thread", "macros", "process"] }
+
+[lints]
+workspace = true

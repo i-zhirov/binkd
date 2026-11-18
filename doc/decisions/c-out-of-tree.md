@@ -1,6 +1,6 @@
 # Decision: the C implementation out of the tree
 
-Status: accepted and implemented. The Rust workspace in `rust/` is the only
+Status: accepted and implemented. The Rust workspace at the repository root is the only
 implementation in this repository and the default on UNIX and Windows. The C
 implementation lives upstream in `https://github.com/pgul/binkd`. The interop
 tests clone it at a pinned commit and apply `ci/upstream-c.patch`.
@@ -40,7 +40,7 @@ record `doc/decisions/legacy-platforms.md`.
 
 The repository takes option 2.
 
-- The Rust workspace in `rust/` is the only implementation in this tree and
+- The Rust workspace at the repository root is the only implementation in this tree and
   the default on UNIX and Windows NT and later.
 - The local C tree is removed: the C source, `mkfls/`, the platform
   directories, the C test harness, `Config.h`, and the Debian C packaging.
@@ -69,7 +69,7 @@ The repository takes option 2.
 - The configuration contract stays: the Rust parser reads the same config
   files and matches the upstream `-d` dump.
 - The documents name the upstream C source: `README.md`, `AGENTS.md`,
-  `tests/README.md`, `doc/rust-rewrite-plan.md`, `binkd.8`, and the record
+  `tests/README.md`, `doc/rust-rewrite-plan.md`, `rbinkd.8`, and the record
   `doc/decisions/platform-ci.md`.
 - BSD stays build-supported and not CI-tested for the Rust workspace and for
   the upstream C reference, the record `doc/decisions/platform-ci.md`.

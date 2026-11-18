@@ -26,10 +26,10 @@ $ErrorActionPreference = 'Stop'
 
 $repo = Split-Path -Parent $PSScriptRoot
 if (-not $Binary) {
-    $Binary = Join-Path $repo 'rust/target/release/binkd.exe'
+    $Binary = Join-Path $repo 'target/release/rbinkd.exe'
 }
 if (-not (Test-Path -LiteralPath $Binary)) {
-    throw "The binkd binary is missing: $Binary. Run cargo build --release -p binkd."
+    throw "The rbinkd binary is missing: $Binary. Run cargo build --release -p rbinkd."
 }
 $Binary = (Resolve-Path -LiteralPath $Binary).Path
 
@@ -65,13 +65,13 @@ function Assert-Contains {
     }
 }
 
-function Invoke-Binkd {
+function Invoke-Rbinkd {
     param([string[]]$Arguments)
     $output = & $Binary @Arguments 2>&1
     $code = $LASTEXITCODE
     $text = ($output | Out-String).Trim()
     if ($code -ne 0) {
-        throw "binkd $($Arguments -join ' ') exited with $code`n$text"
+        throw "rbinkd $($Arguments -join ' ') exited with $code`n$text"
     }
     return $text
 }
@@ -126,12 +126,12 @@ function Wait-NoProcess {
     param([int]$TimeoutSeconds = 30)
     $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
     while ([DateTime]::UtcNow -lt $deadline) {
-        if ($null -eq (Get-Process -Name binkd -ErrorAction SilentlyContinue)) {
+        if ($null -eq (Get-Process -Name rbinkd -ErrorAction SilentlyContinue)) {
             return
         }
         Start-Sleep -Milliseconds 250
     }
-    throw 'A binkd process is still running.'
+    throw 'An rbinkd process is still running.'
 }
 
 function Assert-NoBusy {
@@ -191,7 +191,7 @@ $installed = $false
 Push-Location $root
 try {
     Write-Step 'Install'
-    $output = Invoke-Binkd -Arguments @(
+    $output = Invoke-Rbinkd -Arguments @(
         '-t', 'install', '-S', $serviceName, '-c', 'binkd.conf'
     )
     $installed = $true
@@ -204,22 +204,22 @@ try {
         -Filter "Name='$serviceName'"
     Assert-True -Condition ($null -ne $service) `
         -Message 'The service is not in the service control manager.'
-    Assert-True -Condition ($service.PathName -like '*binkd.exe*') `
-        -Message "The service binary path is not binkd.exe: $($service.PathName)"
+    Assert-True -Condition ($service.PathName -like '*rbinkd.exe*') `
+        -Message "The service binary path is not rbinkd.exe: $($service.PathName)"
     $parameters = Get-ItemProperty `
         -LiteralPath "HKLM:\SYSTEM\CurrentControlSet\Services\$serviceName\Parameters"
     Assert-True -Condition ($parameters.path -eq $root) `
         -Message "The registry working directory is $($parameters.path), not $root."
 
     Write-Step 'Status'
-    $output = Invoke-Binkd -Arguments @(
+    $output = Invoke-Rbinkd -Arguments @(
         '-t', 'status', '-S', $serviceName
     )
     Assert-Contains -Text $output `
         -Expected "Service '$serviceName' is installed and is running."
 
     Write-Step 'Stop'
-    $output = Invoke-Binkd -Arguments @(
+    $output = Invoke-Rbinkd -Arguments @(
         '-t', 'stop', '-S', $serviceName
     )
     Assert-Contains -Text $output `
@@ -228,14 +228,14 @@ try {
     Assert-ServiceState -Name $serviceName -State 'Stopped'
     Wait-NoProcess
     Assert-NoBusy
-    $output = Invoke-Binkd -Arguments @(
+    $output = Invoke-Rbinkd -Arguments @(
         '-t', 'status', '-S', $serviceName
     )
     Assert-Contains -Text $output `
         -Expected "Service '$serviceName' is installed and is stopped."
 
     Write-Step 'Start'
-    $output = Invoke-Binkd -Arguments @(
+    $output = Invoke-Rbinkd -Arguments @(
         '-t', 'start', '-S', $serviceName
     )
     Assert-Contains -Text $output `
@@ -256,7 +256,7 @@ try {
     Assert-ServiceState -Name $serviceName -State 'Running'
 
     Write-Step 'Restart'
-    $output = Invoke-Binkd -Arguments @(
+    $output = Invoke-Rbinkd -Arguments @(
         '-t', 'restart', '-S', $serviceName
     )
     Assert-Contains -Text $output `
@@ -265,7 +265,7 @@ try {
     Assert-ServiceState -Name $serviceName -State 'Running'
 
     Write-Step 'Uninstall'
-    $output = Invoke-Binkd -Arguments @(
+    $output = Invoke-Rbinkd -Arguments @(
         '-t', 'uninstall', '-S', $serviceName
     )
     $installed = $false
@@ -273,7 +273,7 @@ try {
         -Expected "Service '$serviceName' uninstalled successfully."
     Wait-ServiceState -Name $serviceName -State 'Absent'
     Assert-ServiceState -Name $serviceName -State 'Absent'
-    $output = Invoke-Binkd -Arguments @(
+    $output = Invoke-Rbinkd -Arguments @(
         '-t', 'status', '-S', $serviceName
     )
     Assert-Contains -Text $output `

@@ -17,8 +17,8 @@
 
 ## Constraints
 
-- The test file is `rust/crates/binkd/tests/interop_binary.rs`.
-- The Rust binary path comes from `env!("CARGO_BIN_EXE_binkd")`.
+- The test file is `crates/rbinkd/tests/interop_binary.rs`.
+- The Rust binary path comes from `env!("CARGO_BIN_EXE_rbinkd")`.
 - The C binary path comes from `BINKD_C`; the tests skip when it is
   absent.
 - The server address is `2:5047/100@fidonet`; the client address is
@@ -36,9 +36,9 @@
 - [x] **Task 1: Add the binary harness and the two C/Rust directions**
     - **Implements:** checklist item 4; design §4 Level 4, the
       `Rust | C` and `C | Rust` rows; roadmap slice `binary-interop`
-    - **Create `rust/crates/binkd/tests/interop_binary.rs`**
+    - **Create `crates/rbinkd/tests/interop_binary.rs`**
         - `fn rust_binary() -> PathBuf` — returns
-          `env!("CARGO_BIN_EXE_binkd")`.
+          `env!("CARGO_BIN_EXE_rbinkd")`.
         - `fn c_binary() -> Option<PathBuf>` — reads `BINKD_C` and
           answers `None` when the file is absent.
         - `fn free_port() -> u16` — uses a process-unique atomic
@@ -85,21 +85,21 @@
         - `the_c_client_calls_the_rust_server` — Rust server and C
           client; the same assertions.
     - **Verify:**
-      `BINKD_C=/path/to/binkd cargo test -p binkd --test interop_binary`
+      `BINKD_C=/path/to/binkd cargo test -p rbinkd --test interop_binary`
 
 - [x] **Task 2: Add the C↔C baseline and the CI step**
     - **Implements:** checklist item 4; design §4 Level 4, the `C | C`
       row; roadmap slice `binary-interop`
-    - **Modify `rust/crates/binkd/tests/interop_binary.rs`**
+    - **Modify `crates/rbinkd/tests/interop_binary.rs`**
         - `the_c_client_calls_the_c_server` — starts the C server and
           runs the C client; asserts both inbound packets, both logs,
           and the client exit code 0.
     - **Modify `.github/workflows/ci.yml`**
         - Add a `Run the binary interop suite` step to the `interop`
           job, with `BINKD_C` set to the built C binary and
-          `cargo test -p binkd --test interop_binary`.
+          `cargo test -p rbinkd --test interop_binary`.
     - **Verify:**
-      `BINKD_C=/path/to/binkd cargo test -p binkd --test interop_binary`
+      `BINKD_C=/path/to/binkd cargo test -p rbinkd --test interop_binary`
       and review the `interop` job step.
 
 - [x] **Task 3: Document the binary matrix**
@@ -107,7 +107,7 @@
       slice `binary-interop`
     - **Modify `tests/README.md`**
         - In `## The interop tests`, add the
-          `crates/binkd/tests/interop_binary.rs` command and state that
+          `crates/rbinkd/tests/interop_binary.rs` command and state that
           it covers C server ↔ Rust client, Rust server ↔ C client, and
           C server ↔ C client.
         - In the matrix, change the `C | C` row from the C test suite
@@ -125,9 +125,9 @@
 ## Verification
 
 - Local, with the C reference:
-  `BINKD_C=/path/to/binkd cargo test -p binkd --test interop_binary`.
+  `BINKD_C=/path/to/binkd cargo test -p rbinkd --test interop_binary`.
 - Without `BINKD_C`, the test reports a skip and passes.
 - The full workspace still passes: `cargo test --workspace`.
 - Formatting and lint: `cargo fmt --all --check` and
-  `cargo clippy -p binkd --all-targets`.
+  `cargo clippy -p rbinkd --all-targets`.
 - CI: the `interop` job runs the new test with the built C binary.

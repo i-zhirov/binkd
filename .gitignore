@@ -2,7 +2,7 @@
 
 # Test build directories
 tests/build/
-rust/target/
+/target/
 
 # Upstream C checkout of the interop jobs
 /upstream-c/

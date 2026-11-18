@@ -158,7 +158,7 @@ The cases
 The cases of `crates/binkd-perl/tests/hooks.rs` call every hook and hold the
 mark of the script, the return values, the abort text, the new file names, the
 action, the rate limit, and the default of a missing sub. The port cases of
-`crates/binkd/tests/perl.rs` hold the call hooks and the reload, and the
+`crates/rbinkd/tests/perl.rs` hold the call hooks and the reload, and the
 session end to end.
 
 The state of the hooks is per thread or per interpreter: the recursion guards
@@ -219,7 +219,7 @@ listener and the client manager, the port of `perl_init(new_config, 0)` and of
 old script gets no second `config_loaded()`. A new config without a script
 drops the hooks. A strict build keeps the old config when the new script fails.
 The case `the_port_of_the_reload_of_the_script` of
-`crates/binkd/tests/perl.rs` holds the whole path.
+`crates/rbinkd/tests/perl.rs` holds the whole path.
 
 The last gaps of the port are closed:
 
@@ -245,5 +245,5 @@ The last gaps of the port are closed:
   code runs the interpreter of the current thread; the port chooses the master
   because a log line may come from any thread and a session clone belongs to
   one session. The case `the_on_log_hook_runs_on_the_master` of
-  `crates/binkd/tests/perl.rs` holds the choice: a session hook sets a global
+  `crates/rbinkd/tests/perl.rs` holds the choice: a session hook sets a global
   and logs, and the hook sees the master value.

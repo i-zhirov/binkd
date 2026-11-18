@@ -1,4 +1,4 @@
-# Plan: gradual rewrite of binkd in Rust
+# Plan: the rbinkd reimplementation of Binkd in Rust
 
 This document is the action plan for the Rust rewrite of binkd.
 It records the former state of the C code, the test strategy, the target
@@ -56,7 +56,6 @@ works with a small test config.
 The Rust build is the default of this tree:
 
 ```
-cd rust
 cargo build --workspace
 ```
 
@@ -142,13 +141,13 @@ Phase 1 is complete:
 
 - `tests/golden/` holds the golden corpus. The former C runner checked 223
   cases against the C code; the runner is not in this tree.
-- `rust/` holds the Cargo workspace. The Rust tests check the same corpus
+- The repository root holds the Cargo workspace. The Rust tests check the same corpus
   against the Rust code.
-- `rust/crates/binkd-ftn` holds the pure FTN logic: patterns, tokens,
+- `crates/binkd-ftn` holds the pure FTN logic: patterns, tokens,
   addresses, domains, CRAM-MD5, ZipCrypto, packet headers, and the pure
   helpers of `tools.c`.
-- `rust/crates/binkd-spool` holds the flow file code.
-- `rust/crates/binkd-corpus` holds the corpus reader of the tests.
+- `crates/binkd-spool` holds the flow file code.
+- `crates/binkd-corpus` holds the corpus reader of the tests.
 
 The Rust tests are the only suite in this tree. The upstream C implementation
 is the oracle only in the interop jobs, where the CI action clones and patches
@@ -338,24 +337,23 @@ The tests found these behaviours. The Rust port must reproduce them.
 
 ## 5. Target architecture
 
-The Rust code lives in a Cargo workspace in `rust/`. The upstream C code is
+The Rust code lives in the Cargo workspace at the repository root. The upstream C code is
 not in this tree, the decision of `doc/decisions/c-out-of-tree.md`. The
 workspace has one crate per module group and one binary crate.
 
 ```
-rust/
-  Cargo.toml               # workspace
-  crates/
-    binkd-ftn/             # pure FTN logic, no I/O, no unsafe
-    binkd-config/          # config model and parser
-    binkd-spool/           # queue, flow files, try files, busy flags
-    binkd-proto/           # binkp session, compression, crypt
-    binkd-net/             # listener, caller, proxy, SRV
-    binkd-log/             # log and binary log
-    binkd-srif/            # SRIF events
-    binkd/                 # binary: CLI, daemon, signals
-    binkd-corpus/           # test only: the golden corpus reader
-  examples/embed.rs        # library use example
+Cargo.toml                 # workspace
+Cargo.lock                 # resolved dependencies
+crates/
+  binkd-ftn/               # pure FTN logic, no I/O, no unsafe
+  binkd-config/            # config model and parser
+  binkd-spool/             # queue, flow files, try files, busy flags
+  binkd-proto/             # binkp session, compression, crypt
+  binkd-net/               # listener, caller, proxy, SRV
+  binkd-log/               # log and binary log
+  binkd-srif/              # SRIF events
+  rbinkd/                  # binary: CLI, daemon, signals
+  binkd-corpus/             # test only: the golden corpus reader
 ```
 
 `binkd-ftn`, `binkd-spool`, and `binkd-corpus` exist. The other crates
@@ -455,7 +453,7 @@ The local C tree and the harness are gone, the decision of
 
 Deliverables:
 
-- The Cargo workspace in `rust/` with `binkd-ftn`, `binkd-spool`, and
+- The Cargo workspace at the repository root with `binkd-ftn`, `binkd-spool`, and
   `binkd-corpus`.
 - The golden corpus in `tests/golden/`. The former C runner read the corpus;
   the Rust tests read it now.
@@ -1099,20 +1097,20 @@ Deliverables:
   pid file, the config reload, and the external program start. (done: the
   command line, the version text, the platform values, the paths that read the
   config, the startup order, the signals, the pid file, the config reload, and
-  the external program start; the cases of `crates/binkd/tests/cli.rs`,
-  `crates/binkd/tests/daemon.rs`, and `crates/binkd/tests/perl.rs` hold them)
+  the external program start; the cases of `crates/rbinkd/tests/cli.rs`,
+  `crates/rbinkd/tests/daemon.rs`, and `crates/rbinkd/tests/perl.rs` hold them)
 - The public library API and an example. (done: `binkd::Engine` holds the port
   of the managers of `server.c` and of `client.c`; `serve()` runs the listener
   and `poll()` calls the node named by the caller, one engine per instance, and
   the functions answer a value and never end the process; the example of
-  `crates/binkd/examples/embed.rs` parses a config and runs the server or the
-  client, and the case of `crates/binkd/tests/engine.rs` holds both roles)
+  `crates/rbinkd/examples/embed.rs` parses a config and runs the server or the
+  client, and the case of `crates/rbinkd/tests/engine.rs` holds both roles)
 - An integration test with the sample config. (done: the test of
-  `crates/binkd/tests/cli.rs` runs the binary of the port and the C oracle and
+  `crates/rbinkd/tests/cli.rs` runs the binary of the port and the C oracle and
   checks the text, the error text, and the exit code of every path)
 - The binary interop matrix: the C server with the Rust client, the Rust
   server with the C client, and the C server with the C client. (done: the
-  cases of `crates/binkd/tests/interop_binary.rs` start the real binaries and
+  cases of `crates/rbinkd/tests/interop_binary.rs` start the real binaries and
   the `interop` job of CI runs them)
 - The external program start: the port of `run()` of `run.c` runs the command of
   the SRIF `exec` event of `srif.c` in the shell of the system, the port of the
@@ -1211,7 +1209,7 @@ Deliverables:
   `binkd.c`. The tray icon is out of scope. (done: the `binkd-win` crate holds
   the commands and the dispatcher, the `-t` and `-S` switches are in the binary,
   and the cases of `crates/binkd-win/src/command.rs` and of
-  `crates/binkd/tests/cli.rs` hold the values; the Windows job runs the
+  `crates/rbinkd/tests/cli.rs` hold the values; the Windows job runs the
   [service smoke test](decisions/windows-support.md#windows-scm-smoke-test);
   the decision is `doc/decisions/windows-support.md`)
 
@@ -1242,9 +1240,9 @@ Exit criteria:
 
 - The Rust binary passes every level 4 scenario.
 - The example runs the server or the client of the engine in another program,
-  and `crates/binkd/tests/engine.rs` holds the two roles.
-- The command line options match `binkd.8`. (the options of the slice match the
-  C code and `binkd.8`: the switches, the usage text, and the exit codes of
+  and `crates/rbinkd/tests/engine.rs` holds the two roles.
+- The command line options match `rbinkd.8`. (the options of the slice match the
+  C code and `rbinkd.8`: the switches, the usage text, and the exit codes of
   `-h`, `-v`, `-vv`, `-d`, `-n`, and of the errors of the command line. The
   Windows `-T` switch is a known difference of the record
   `doc/decisions/windows-support.md`)
@@ -1266,7 +1264,7 @@ binary, `BINKD_C_PERL`, and the script `tests/perl/hooks.pl`: the config hooks
 `on_start`, the call hooks `on_call` and `on_error`, and the session hooks
 `on_handshake`, `after_handshake`, `before_send`, `after_sent`, `on_send`,
 `on_recv`, and `after_session`. (done: the six cases of
-`crates/binkd/tests/perl.rs` pass with the oracle of `--with-perl`)
+`crates/rbinkd/tests/perl.rs` pass with the oracle of `--with-perl`)
 
 The first hook is the hook of the log. `binkd-log` holds the trait `Hook` and
 the method `Log::set_hook()`, the port of the call of `perl_on_log()` in
@@ -1274,7 +1272,7 @@ the method `Log::set_hook()`, the port of the call of `perl_on_log()` in
 `LogHook`. The binary loads the script after the `BEGIN` line and installs the
 hook, the port of the block of `perl_init()` in `main()` of `binkd.c`. (done:
 the port changes the line of the `-n` switch in
-`crates/binkd/tests/perl.rs`)
+`crates/rbinkd/tests/perl.rs`)
 
 The XS helpers are done: `Log`, `aeq`, `arm`, `msg_send`, and `binkd_warn`.
 The shim registers them with `xs_init`, and it sets `binkd_warn` as the warn
@@ -1289,7 +1287,7 @@ points through `run_with_hooks()`. `binkd-net` calls `on_call()` and
 `on_error()`; `binkd` calls `on_start()`, `on_exit()`, `config_loaded()`, and
 `need_reload()`. The adapter `ProtoHook` shares the interpreter with
 `LogHook`. (done: the cases of `crates/binkd-perl/tests/hooks.rs` and the port
-cases of `crates/binkd/tests/perl.rs` pass)
+cases of `crates/rbinkd/tests/perl.rs` pass)
 
 The per-session clones are done: `Hooks::clone_for_session()` calls
 `perl_clone`, and `binkd_proto::Factory` gives one clone to every session. The
@@ -1367,7 +1365,7 @@ listener and the client manager, the port of `perl_init(new_config, 0)` and of
 old script gets no second `config_loaded()`. A new config without a script
 drops the hooks. A strict build keeps the old config when the new script fails.
 The case `the_port_of_the_reload_of_the_script` of
-`crates/binkd/tests/perl.rs` holds the whole path.
+`crates/rbinkd/tests/perl.rs` holds the whole path.
 
 The last gaps of the hooks are closed. `after_recv()` runs before the rename,
 so `$tmpfile` names the partial file and `$file` the real name, and the hook
@@ -1413,7 +1411,7 @@ Deliverables:
 The cutover is complete:
 
 - `README.md` names the Rust workspace as the only implementation and the
-  default, and `binkd.8` states the same.
+  default, and `rbinkd.8` states the same.
 - `doc/decisions/c-out-of-tree.md` is accepted and implemented, and
   `doc/decisions/legacy-platforms.md`, `doc/decisions/platform-ci.md`, and
   `doc/decisions/windows-support.md` name the upstream C source.
@@ -1452,7 +1450,7 @@ The list below holds the decisions that the plan needs before phase 4.
    and later is supported, the service mode is in scope, the tray icon is not,
    and Windows 9x/Me is out of scope.
 7. Minimum supported Rust version: 1.85, stated as `rust-version` in
-   `rust/Cargo.toml`. The dependency policy is in `AGENTS.md`. The free-space
+   `Cargo.toml`. The dependency policy is in `AGENTS.md`. The free-space
    provider of the binary pins `fs2 = "=0.4.3"`, and the local-offset provider
    of the binary pins `time = "=0.3.44"` with the `local-offset` feature. The
    Unix build of the binary pins `syslog = "=7.0.0"` as a target dependency,
@@ -1483,9 +1481,9 @@ The list below holds the decisions that the plan needs before phase 4.
 ## 9. Verification commands
 
 ```
-cd rust && cargo test --workspace         # the Rust tests and the corpus tests
-cd rust && cargo clippy --workspace --all-targets
-cd rust && cargo fmt --check
+cargo test --workspace         # the Rust tests and the corpus tests
+cargo clippy --workspace --all-targets
+cargo fmt --check
 ```
 
 The interop tests need the upstream C binary and the Rust tests. Build the
@@ -1493,7 +1491,7 @@ upstream C binary with the procedure in section 2.1. Set `BINKD_C` to its
 path. Build the Rust binary with:
 
 ```
-cargo build -p binkd
+cargo build -p rbinkd
 ```
 
 ## 10. Milestones

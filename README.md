@@ -1,14 +1,14 @@
-Binkd is a Fidonet mailer designed to operate via TCP/IP networks.
+rbinkd is a Rust reimplementation of the Binkd Fidonet mailer.
 
-[![CI](https://github.com/i-zhirov/binkd/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/i-zhirov/binkd/actions/workflows/ci.yml)
+[![CI](https://github.com/i-zhirov/rbinkd/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/i-zhirov/rbinkd/actions/workflows/ci.yml)
 
-As a FTN-compatible internet daemon, it makes possible efficient
+It is an FTN-compatible internet daemon and makes possible efficient
 utilization of TCP/IP protocol suite as a transport layer in
 FTN-based (Fido Technology Network) networks.
 
 ## Compiling
 
-The Rust workspace in `rust/` is the only implementation in this tree and the
+The Rust workspace in this repository is the only implementation and the
 default build. The C implementation lives upstream in
 `https://github.com/pgul/binkd`, the decision of
 `doc/decisions/c-out-of-tree.md`.
@@ -17,9 +17,12 @@ default build. The C implementation lives upstream in
 
 Build the binary:
 
-`cd rust && cargo build --release -p binkd`
+`cargo build --release -p rbinkd`
 
-The binary is `rust/target/release/binkd`.
+The binary is `target/release/rbinkd`. The project keeps the `binkd.conf`
+config name, the `BINKD_*` environment variables, the `binkd` protocol
+banner, and the `binkd-service` service name for compatibility with the
+upstream mailer.
 
 The Windows port supports Windows NT and later, including the service mode,
 the decision of `doc/decisions/windows-support.md`. The tray icon is not
@@ -59,7 +62,7 @@ UNIXes:
 3. Check out the pinned commit and apply the patch of this repository:
 
 `$ git checkout 5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba`
-`$ git apply /path/to/binkd/ci/upstream-c.patch`
+`$ git apply /path/to/rbinkd/ci/upstream-c.patch`
 
 4. Copy all files from mkfls/unix/ to the root of binkd sources:
 
@@ -94,14 +97,14 @@ UNIXes:
 1. Copy the sample config: `binkd.conf` on UNIX or `binkd.cfg` on Windows.
 2. Edit the config.
 3. Run the binary with the config as the last argument:
-   `rust/target/release/binkd binkd.conf`. An upstream C reference build runs
+   `target/release/rbinkd binkd.conf`. An upstream C reference build runs
    as `./binkd binkd.conf`.
 
 On Windows, install and control the service with the same binary:
 
 ```
-binkd -t install binkd.conf
-binkd -t start|stop|restart|status|uninstall
+rbinkd -t install binkd.conf
+rbinkd -t start|stop|restart|status|uninstall
 ```
 
 `-S name` sets the service name. The service mode holds the `nt/service.c`

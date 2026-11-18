@@ -87,7 +87,7 @@
 - [x] **Task 1: Add the log sink boundary**
     - **Implements:** design Phase 5 `binkd-log`; the `vLog()` syslog
       branch of `tools.c`; roadmap `syslog-sink`
-    - **Modify `rust/crates/binkd-log/src/log.rs`**
+    - **Modify `crates/binkd-log/src/log.rs`**
         - Add `pub trait Sink: Send + Sync` with
           `fn write(&self, level: Level, text: &str)`. The trait and its
           method have `///` docs naming the `vLog()` syslog branch.
@@ -112,18 +112,18 @@
             - `a_level_above_the_file_level_skips_the_sink` — the log
               level is `INFO`, a `DEBUG` message leaves the sink empty.
         - The fake sink is a local `Mutex<Vec<(Level, String)>>` value.
-    - **Modify `rust/crates/binkd-log/src/lib.rs`**
+    - **Modify `crates/binkd-log/src/lib.rs`**
         - Re-export `Sink` with the other log items.
-    - **Verify:** `cd rust && cargo test -p binkd-log`.
+    - **Verify:** `cargo test -p binkd-log`.
 
 - [x] **Task 2: Add the Unix syslog backend**
     - **Implements:** design Phase 6 and the `vLog()` syslog branch;
       roadmap `syslog-sink`
-    - **Modify `rust/crates/binkd/Cargo.toml`**
+    - **Modify `crates/rbinkd/Cargo.toml`**
         - Add `[target.'cfg(unix)'.dependencies]` with
           `syslog = "=7.0.0"`.
-        - Update `rust/Cargo.lock`.
-    - **Create `rust/crates/binkd/src/syslog.rs`** with `#[cfg(unix)]`
+        - Update `Cargo.lock`.
+    - **Create `crates/rbinkd/src/syslog.rs`** with `#[cfg(unix)]`
       at the module boundary in `lib.rs`:
         - `pub(crate) fn configure(log: &Log, facility: i32)` — a
           negative value calls `log.set_sink(None)`. A non-negative
@@ -166,16 +166,16 @@
             - `the_disabled_facility_removes_the_sink` — a fake sink on
               a `Log`, then `configure(&log, -1)`, then a message leaves
               the fake sink empty.
-    - **Modify `rust/crates/binkd/src/lib.rs`**
+    - **Modify `crates/rbinkd/src/lib.rs`**
         - Add `#[cfg(unix)] pub(crate) mod syslog;`.
-    - **Verify:** `cd rust && PATH=/usr/bin:$PATH cargo test -p binkd
-      syslog::tests` and `cargo +1.85 check -p binkd` and
-      `cargo check -p binkd --target x86_64-pc-windows-gnu`.
+    - **Verify:** `PATH=/usr/bin:$PATH cargo test -p rbinkd
+      syslog::tests` and `cargo +1.85 check -p rbinkd` and
+      `cargo check -p rbinkd --target x86_64-pc-windows-gnu`.
 
 - [x] **Task 3: Wire the config, the startup, and the reload**
     - **Implements:** design Phase 5 and 6; the config `syslog`
       directive of `readcfg.c`; roadmap `syslog-sink`
-    - **Modify `rust/crates/binkd-config/src/parser.rs`**
+    - **Modify `crates/binkd-config/src/parser.rs`**
         - Correct `syslog_arg()` — compare the facility name exactly,
           as the C `strcmp()` does. Map `auth` and `security` to 32,
           `authpriv` to 80, and `ftp` to 88. The current code lowercases
@@ -198,24 +198,24 @@
         - The tests use `Features::unix_default()`.
         - The tests state in a comment that the C parser rejects the
           line and no golden corpus case exists.
-    - **Modify `rust/crates/binkd/src/start.rs`**
+    - **Modify `crates/rbinkd/src/start.rs`**
         - After `log.init(...)`, call
           `crate::syslog::configure(log, config.syslog_facility)` under
           `#[cfg(unix)]`, before `Daemon::new(...)`, so the `BEGIN` line
           can reach syslog.
-    - **Modify `rust/crates/binkd/src/daemon.rs`**
+    - **Modify `crates/rbinkd/src/daemon.rs`**
         - In `reload_check()`, after `self.log.init(...)`, call
           `crate::syslog::configure(&self.log, config.syslog_facility)`
           under `#[cfg(unix)]`. A failed reload keeps the old config and
           leaves the old sink.
-    - **Modify `rust/crates/binkd/src/lib.rs`**
+    - **Modify `crates/rbinkd/src/lib.rs`**
         - Keep the module Unix-only. Windows has no backend.
-    - **Verify:** `cd rust && cargo test -p binkd-config
+    - **Verify:** `cargo test -p binkd-config
       the_syslog_facility_is_parsed`, `cargo test -p binkd-config
       the_syslog_keyword_shows_the_c_fallback`,
-      `cargo test -p binkd syslog::tests`,
-      `cargo check -p binkd --all-targets`, and
-      `cargo clippy -p binkd --all-targets -- -D warnings`.
+      `cargo test -p rbinkd syslog::tests`,
+      `cargo check -p rbinkd --all-targets`, and
+      `cargo clippy -p rbinkd --all-targets -- -D warnings`.
 
 - [x] **Task 4: Update the documents and run the full verification**
     - **Implements:** the documentation obligation of the design and the
@@ -247,11 +247,11 @@
         - After the full verification, set the plan and slice to
           `Status: Implemented`.
     - **Verify:**
-      `cd rust && cargo fmt --all --check`,
+      `cargo fmt --all --check`,
       `cargo clippy --workspace --all-targets`,
       `cargo test --workspace`,
       `cargo +1.85 check --workspace`,
-      `cargo check -p binkd --target x86_64-pc-windows-gnu`,
+      `cargo check -p rbinkd --target x86_64-pc-windows-gnu`,
       then `cd .. && make -C tests`, and `git diff --check`.
       When `BINKD_C` is set, run the existing interop suites.
 

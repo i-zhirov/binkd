@@ -75,11 +75,11 @@
     - **Implements:** roadmap `local-time-and-time-frame`; design §4.1
       log format; checklist item 1; the `safe_localtime()` behavior of
       `vLog()` and `__DATE__`
-    - **Modify `rust/crates/binkd/Cargo.toml`**
+    - **Modify `crates/rbinkd/Cargo.toml`**
         - Add `time = { version = "=0.3.44", features =
           ["local-offset"] }` to `[dependencies]`.
-        - Update `rust/Cargo.lock`.
-    - **Modify `rust/crates/binkd-log/src/log.rs`**
+        - Update `Cargo.lock`.
+    - **Modify `crates/binkd-log/src/log.rs`**
         - `DateTime.year: i32` — the local year, the port of
           `tm_year + 1900`.
         - `DateTime.offset_minutes: i32` — the local offset from UTC in
@@ -88,7 +88,7 @@
           and the year are local.
         - Update every `DateTime` literal in the crate. The fixed test
           time uses `year: 2020` and `offset_minutes: 0`.
-    - **Modify `rust/crates/binkd/src/platform.rs`**
+    - **Modify `crates/rbinkd/src/platform.rs`**
         - `now()` — use `time::OffsetDateTime::now_local()`. On an
           error, use `OffsetDateTime::now_utc()`. Fill `epoch` from
           `unix_timestamp()`, the civil fields from the local value,
@@ -103,22 +103,22 @@
         - Add `the_local_offset_of_now` — `now().offset_minutes` is in
           `-720..=840`, and `now().year` is in `1970..=9999`.
     - **Modify every `DateTime` literal outside the log crate**
-        - `rust/crates/binkd/src/platform.rs`
-        - `rust/crates/binkd-net/src/caller.rs`
-        - `rust/crates/binkd-net/src/listener.rs`
-        - `rust/crates/binkd-net/src/srif.rs`
-        - `rust/crates/binkd-net/tests/interop.rs`
-        - `rust/crates/binkd-net/tests/loopback.rs`
-        - `rust/crates/binkd-net/tests/proxy_interop.rs`
-        - `rust/crates/binkd-net/tests/srif.rs`
-        - `rust/crates/binkd-srif/src/engine.rs`
-        - `rust/crates/binkd/tests/daemon.rs`
-        - `rust/crates/binkd/tests/perl.rs`
-        - `rust/crates/binkd-perl/tests/on_log.rs`
+        - `crates/rbinkd/src/platform.rs`
+        - `crates/binkd-net/src/caller.rs`
+        - `crates/binkd-net/src/listener.rs`
+        - `crates/binkd-net/src/srif.rs`
+        - `crates/binkd-net/tests/interop.rs`
+        - `crates/binkd-net/tests/loopback.rs`
+        - `crates/binkd-net/tests/proxy_interop.rs`
+        - `crates/binkd-net/tests/srif.rs`
+        - `crates/binkd-srif/src/engine.rs`
+        - `crates/rbinkd/tests/daemon.rs`
+        - `crates/rbinkd/tests/perl.rs`
+        - `crates/binkd-perl/tests/on_log.rs`
         - The time `1_000_000_000` uses `year: 2001` and
           `offset_minutes: 0`. The time `0` uses `year: 1970` and
           `offset_minutes: 0`.
-    - **Modify `rust/crates/binkd/tests/cli.rs`**
+    - **Modify `crates/rbinkd/tests/cli.rs`**
         - Add `run_port_env(args, dir, env)` — run the port with the
           extra environment values.
         - Add `the_version_date_is_local` with `#[cfg(unix)]`: call
@@ -126,16 +126,16 @@
           skip and return. Run `-v` with `TZ=Etc/GMT+12` and with
           `TZ=Pacific/Kiritimati`. Parse the date with
           `version_shape()`, and assert that the two dates differ.
-    - **Verify:** `cd rust && cargo test -p binkd-log` and
-      `cargo test -p binkd platform::tests` and
-      `cargo test -p binkd --test cli the_version_date_is_local`.
-      Also run `cargo +1.85 check -p binkd`.
+    - **Verify:** `cargo test -p binkd-log` and
+      `cargo test -p rbinkd platform::tests` and
+      `cargo test -p rbinkd --test cli the_version_date_is_local`.
+      Also run `cargo +1.85 check -p rbinkd`.
 
 - [x] **Task 2: Add BannerTime and the tzoff offset rule**
     - **Implements:** design §4.1 log format; the `banner()` and
       `tz_off()` behavior of `protocol.c` and `tools.c`; roadmap
       `local-time-and-time-frame`
-    - **Create `rust/crates/binkd-proto/src/banner.rs`**
+    - **Create `crates/binkd-proto/src/banner.rs`**
         - `#[derive(Clone, Copy, Debug, PartialEq, Eq)]` on
           `pub struct BannerTime`.
         - `BannerTime` holds the fields `year: i32`, `month: u32`,
@@ -159,21 +159,21 @@
             - `the_time_text_of_zero` —
               `BannerTime::new(1970, 1, 1, 0, 0, 0, 0).text()` is
               `Thu,  1 Jan 1970 00:00:00 +0000`.
-    - **Modify `rust/crates/binkd-proto/src/lib.rs`**
+    - **Modify `crates/binkd-proto/src/lib.rs`**
         - Add `pub mod banner;`.
         - Re-export `BannerTime`.
-    - **Modify `rust/crates/binkd-proto/src/session.rs`**
+    - **Modify `crates/binkd-proto/src/session.rs`**
         - `SessionConfig.banner_time: Option<BannerTime>` — the fixed
           banner of the session. Add it after `inbound`.
     - **Modify the `SessionConfig` literals**
-        - `rust/crates/binkd-proto/src/record.rs`
-        - `rust/crates/binkd-proto/tests/session.rs`
-        - `rust/crates/binkd-proto/tests/record.rs`
-        - `rust/crates/binkd-proto/tests/interop.rs`
+        - `crates/binkd-proto/src/record.rs`
+        - `crates/binkd-proto/tests/session.rs`
+        - `crates/binkd-proto/tests/record.rs`
+        - `crates/binkd-proto/tests/interop.rs`
         - Use `banner_time: Some(BannerTime::new(2026, 11, 15, 9, 5,
           7, 0))` in the helpers. The `record` replay overrides this
           value from the recording.
-    - **Modify `rust/crates/binkd-net/src/session.rs`**
+    - **Modify `crates/binkd-net/src/session.rs`**
         - `session_config(config, node, crypt, trace, time: &DateTime)`
           — add the local session time.
         - Set `banner_time` to `BannerTime::new(time.year,
@@ -193,15 +193,15 @@
               the text ends with `+0001`. `tzoff` is `-90`; the text
               ends with `-0001`.
     - **Modify the `session_config()` call sites**
-        - `rust/crates/binkd-net/src/listener.rs` — pass `&now()`.
-        - `rust/crates/binkd-net/src/caller.rs` — pass `&now()`.
-        - `rust/crates/binkd-net/src/session.rs` tests — pass the
+        - `crates/binkd-net/src/listener.rs` — pass `&now()`.
+        - `crates/binkd-net/src/caller.rs` — pass `&now()`.
+        - `crates/binkd-net/src/session.rs` tests — pass the
           fixed `DateTime`.
-        - `rust/crates/binkd-net/tests/loopback.rs` — pass the fixed
+        - `crates/binkd-net/tests/loopback.rs` — pass the fixed
           `time()` to the direct call.
-        - `rust/crates/binkd/src/daemon.rs` — pass
+        - `crates/rbinkd/src/daemon.rs` — pass
           `&platform::now()`.
-        - `rust/crates/binkd/tests/daemon.rs` — pass the fixed
+        - `crates/rbinkd/tests/daemon.rs` — pass the fixed
           `DateTime` to the direct call.
     - **Modify `tests/golden/tools.tsv`**
         - Add `tz_off 59 => 0`, `tz_off -59 => 0`, `tz_off 90 => 1`,
@@ -209,37 +209,37 @@
           `tz_off -3599 => -59`.
         - The Rust corpus runner already dispatches `tz_off`; no Rust
           code change is needed.
-    - **Verify:** `cd rust && cargo test -p binkd-proto banner` and
+    - **Verify:** `cargo test -p binkd-proto banner` and
       `cargo test -p binkd-net the_banner_time` and
       `cargo test -p binkd-ftn --test corpus` and
-      `cargo check -p binkd --all-targets`.
+      `cargo check -p rbinkd --all-targets`.
       Also run `cd .. && make -C tests`.
 
 - [x] **Task 3: Send the TIME frame**
     - **Implements:** design §4 Level 2 session layer; the `banner()`
       behavior of `protocol.c`; roadmap `local-time-and-time-frame`
-    - **Modify `rust/crates/binkd-proto/src/session.rs`**
+    - **Modify `crates/binkd-proto/src/session.rs`**
         - In `handshake()`, after the `NDL` frame and before the `VER`
           frame, send `send_text2(Command::Nul, "TIME ", &text)` when
           `banner_time` is `Some`. Read the text before the await.
         - Do not change `handle_nul()`. The peer `TIME` stays ignored.
-    - **Modify `rust/crates/binkd-proto/src/frame.rs`**
+    - **Modify `crates/binkd-proto/src/frame.rs`**
         - `Frame::log_name()` — add `TIME` to the `NUL` kinds. The
           frame name is `NUL TIME`; the value is not part of the name.
         - Add a unit test that a `TIME` frame has the name
           `NUL TIME`.
-    - **Modify `rust/crates/binkd-proto/tests/session.rs`**
+    - **Modify `crates/binkd-proto/tests/session.rs`**
         - Add `the_time_frame_is_sent` — set `server_config.trace =
           true`, run a session, and assert that the server report
           holds a **sent** `NUL TIME` frame. Test the `sent` flag, not
           only the name; the peer frame is also in the report.
-    - **Modify `rust/crates/binkd-proto/tests/interop.rs`**
+    - **Modify `crates/binkd-proto/tests/interop.rs`**
         - Add `"TIME"` to the `NUL` kinds of `c_frames_sent()` and
           `c_frames_received()`.
         - The C frame sequence must match the Rust sequence with the
           new frame.
     - **Verify:**
-      `cd rust && cargo test -p binkd-proto --test session the_time_frame_is_sent`
+      `cargo test -p binkd-proto --test session the_time_frame_is_sent`
       and `cargo test -p binkd-proto --test interop`.
       The interop test needs the C binary:
       `BINKD_C=/path/to/binkd cargo test -p binkd-proto --test interop`.
@@ -248,7 +248,7 @@
     - **Implements:** design §4 test strategy; the recorded sessions and
       the C↔Rust binary suite; roadmap `local-time-and-time-frame`;
       checklist item 4
-    - **Modify `rust/crates/binkd-proto/src/record.rs`**
+    - **Modify `crates/binkd-proto/src/record.rs`**
         - `Recording.banner_time: Option<BannerTime>` — the fixed
           banner of the recording.
         - `Recording::new()` sets it to `None`.
@@ -258,7 +258,7 @@
         - `to_text()` writes the `# time` line after `# role`.
         - Add `banner_time_round_trip` — a recording with a
           `BannerTime` parses to the same value.
-    - **Modify `rust/crates/binkd-proto/tests/record.rs`**
+    - **Modify `crates/binkd-proto/tests/record.rs`**
         - `replay()` — set `config.banner_time =
           recording.banner_time`.
         - `write_the_recordings()` — set `side.banner_time =
@@ -272,7 +272,7 @@
           `cargo test -p binkd-proto --test record -- --ignored write_the_recordings`.
         - The files gain the `# time` line and the `TIME` bytes in both
           directions.
-    - **Modify `rust/crates/binkd/tests/interop_binary.rs`**
+    - **Modify `crates/rbinkd/tests/interop_binary.rs`**
         - Add `tzoff -3h` to the four generated configs.
         - Add `assert_log_line(dir, name, first, second)` — true when
           one log line holds both texts. The existing `assert_log()`
@@ -284,8 +284,8 @@
           `c-client.log` with `rcvd msg NUL TIME` and `-0300`.
         - The C↔C baseline keeps the same config values.
     - **Verify:**
-      `cd rust && cargo test -p binkd-proto --test record` and
-      `BINKD_C=/path/to/binkd cargo test -p binkd --test interop_binary`.
+      `cargo test -p binkd-proto --test record` and
+      `BINKD_C=/path/to/binkd cargo test -p rbinkd --test interop_binary`.
       Without `BINKD_C`, the C binary test skips.
 
 - [x] **Task 5: Wire the binary-log offset, update the docs, and run the
@@ -293,7 +293,7 @@
     - **Implements:** design §4.1 log format; the `BinLogStat()` and
       `tz_off()` behavior of `binlog.c` and `tools.c`; roadmap
       `local-time-and-time-frame`; the documentation obligation
-    - **Modify `rust/crates/binkd-log/src/binlog.rs`**
+    - **Modify `crates/binkd-log/src/binlog.rs`**
         - `write(config, stat, system_offset_minutes)` — compute
           `tz_minutes` as `system_offset_minutes` when
           `config.tzoff == -1`, else
@@ -341,11 +341,11 @@
           `Status: Implemented` and set this plan to
           `Status: Implemented`.
     - **Verify:**
-      `cd rust && cargo fmt --all --check`,
+      `cargo fmt --all --check`,
       `cargo clippy --workspace --all-targets`,
       `cargo test --workspace`,
       `cargo +1.85 check --workspace`,
-      `cargo check -p binkd --target x86_64-pc-windows-gnu`,
+      `cargo check -p rbinkd --target x86_64-pc-windows-gnu`,
       then `cd .. && make -C tests`, and `git diff --check`.
       When `BINKD_C` is set, also run the three interop suites.
 

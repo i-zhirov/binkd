@@ -19,9 +19,9 @@
 
 ## Project Overview
 
-binkd is a Fidonet mailer. It transfers FTN mail and files between
-FTN systems over TCP/IP with the binkp protocol. FTN node operators run
-it as a daemon next to their BSO spool. The Rust workspace in `rust/` is the
+rbinkd is a Rust reimplementation of the Binkd Fidonet mailer. It transfers FTN
+mail and files between FTN systems over TCP/IP with the binkp protocol. FTN node operators run
+it as a daemon next to their BSO spool. The Rust workspace in this repository is the
 only implementation in this repository and the default on UNIX and Windows.
 The C implementation is upstream in `https://github.com/pgul/binkd`, and this
 repository holds no C implementation, the decision of
@@ -33,7 +33,7 @@ in other programs.
 ## Technical Context
 
 - **Language/Version**: Rust edition 2021 with a minimum supported Rust
-  version of 1.85 (`rust-version` in `rust/Cargo.toml`). The upstream C
+  version of 1.85 (`rust-version` in `Cargo.toml`). The upstream C
   implementation is C89 with K&R-style function definitions, and this
   repository does not build it.
 - **Primary Dependencies**: Rust: `std` for the pure crates, `tokio`
@@ -66,39 +66,39 @@ in other programs.
   upstream C implementation is the reference and the oracle of the interop
   tests. The Rust port MUST NOT reproduce undefined behavior (see
   [Architecture](#architecture)). `binkd-ftn` MUST stay pure.
-- **Scale/Scope**: One binkd instance per FTN node. Up to `maxservers` and
+- **Scale/Scope**: One rbinkd instance per FTN node. Up to `maxservers` and
   `maxclients` concurrent sessions, 100 each by default. The config has
   about 100 keywords.
 
 ## Project Structure
 
 ```text
-binkd/
+rbinkd/
 ├── .github/workflows/ci.yml    # CI: Rust, interop, MSRV, Perl, macOS, Windows
 ├── .github/actions/upstream-c/ # clone and patch the upstream C reference
 ├── AGENTS.md                   # this file
-├── README.md                   # what binkd is, build and install
+├── README.md                   # what rbinkd is, build and install
 ├── task.md                     # the Rust rewrite task statement
+├── Cargo.toml                  # the workspace, forbids unsafe code
+├── Cargo.lock                  # the resolved dependencies
+├── crates/                     # the Rust crates of the implementation
+│   ├── binkd-ftn/              # pure FTN logic, no I/O, no globals
+│   ├── binkd-spool/            # BSO spool handling
+│   ├── binkd-config/           # config model and parser
+│   ├── binkd-proto/            # binkp frames and the session state machine
+│   ├── binkd-log/              # text and binary session logs
+│   ├── binkd-net/              # listen sockets and outgoing calls
+│   ├── binkd-srif/             # the SRIF interface and its event engine
+│   ├── binkd-corpus/           # test-only corpus reader
+│   ├── binkd-perl/             # optional Perl hooks (excluded)
+│   ├── binkd-win/              # Windows service and file-system FFI
+│   └── rbinkd/                 # the binary: CLI, daemon, signals
 ├── ci/upstream-c.patch         # the interop patch of the upstream C tree
 ├── doc/                        # protocol, config, rewrite, decisions
 ├── tests/                      # Rust tests, corpus, Windows smoke test
 │   ├── README.md               # how to run the tests, corpus format
 │   ├── golden/                 # corpus cases (Rust reads them)
 │   └── windows-smoke.ps1       # Windows service smoke test
-└── rust/                       # the Cargo workspace of the rewrite
-    ├── Cargo.toml              # workspace, forbids unsafe code
-    └── crates/
-        ├── binkd-ftn/          # pure FTN logic, no I/O, no globals
-        ├── binkd-spool/        # BSO spool handling
-        ├── binkd-config/       # config model and parser
-        ├── binkd-proto/        # binkp frames and the session state machine
-        ├── binkd-log/          # text and binary session logs
-        ├── binkd-net/          # listen sockets and outgoing calls
-        ├── binkd-srif/         # the SRIF interface and its event engine
-        ├── binkd-corpus/       # test-only corpus reader
-        ├── binkd-perl/         # optional Perl hooks (excluded)
-        ├── binkd-win/          # Windows service and file-system FFI
-        └── binkd/              # the binary: CLI, daemon, signals
 ```
 
 The upstream C modules are not in this tree. `doc/rust-rewrite-plan.md` maps
@@ -109,20 +109,19 @@ every upstream C module to its Rust crate.
 Prerequisites and install steps are in `README.md`. The Rust build is the
 default. The C reference is upstream, and the interop tests clone it.
 
-- **Build (Rust, default)**: `cd rust && cargo build --workspace`
-- **Test (Rust)**: `cd rust && cargo test --workspace`
+- **Build (Rust, default)**: `cargo build --workspace`
+- **Test (Rust)**: `cargo test --workspace`
 - **Test the Perl hooks** (needs the Perl C shim):
-  `cd rust/crates/binkd-perl && cargo test -- --test-threads=1`
+  `cd crates/binkd-perl && cargo test -- --test-threads=1`
 - **Test the Perl hooks of the binary**:
-  `cd rust && cargo test -p binkd --features perl -- --test-threads=1`
+  `cargo test -p rbinkd --features perl -- --test-threads=1`
 - **Check the Windows service** (needs the target):
-  `cd rust && cargo check -p binkd-win -p binkd --target x86_64-pc-windows-gnu`
+  `cargo check -p binkd-win -p rbinkd --target x86_64-pc-windows-gnu`
 - **Test the Windows parity** (needs Windows):
-  `cd rust && cargo test -p binkd-win && cargo test -p binkd-config`
+  `cargo test -p binkd-win && cargo test -p binkd-config`
   and the full workspace suite.
 - **Test the Windows service** (needs Windows, an administrator prompt, and
-  the release binary): `cd rust && cargo build --release -p binkd`, then
-  `cd ..` and
+  the release binary): `cargo build --release -p rbinkd`, then
   `pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1`.
 - **Test the C and Rust interop** (needs the upstream C binary): clone the
   upstream C reference at the pinned commit, apply `ci/upstream-c.patch`,
@@ -135,10 +134,10 @@ default. The C reference is upstream, and the interop tests clone it.
   reference. The `.github/actions/upstream-c` action holds the clone and the
   patch steps.
 - **Check the minimum supported Rust version** (needs the 1.85 toolchain):
-  `cd rust && cargo +1.85 check --workspace`
-- **Lint (Rust)**: `cd rust && cargo clippy --workspace --all-targets`
-- **Format check (Rust)**: `cd rust && cargo fmt --check`
-- **Format fix (Rust)**: `cd rust && cargo fmt`
+  `cargo +1.85 check --workspace`
+- **Lint (Rust)**: `cargo clippy --workspace --all-targets`
+- **Format check (Rust)**: `cargo fmt --check`
+- **Format fix (Rust)**: `cargo fmt`
 - **Build the upstream C reference**: clone
   `https://github.com/pgul/binkd`, check out
   `5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba`, apply `ci/upstream-c.patch`,
@@ -147,28 +146,28 @@ default. The C reference is upstream, and the interop tests clone it.
 - **Build the upstream C oracle with Perl** (the `BINKD_C_PERL` cases): use the
   upstream C steps with `./configure --with-perl`, then set `BINKD_C_PERL` to
   the path of the built `binkd`.
-- **Run (Rust)**: `./rust/target/debug/binkd binkd.conf`
-- **Version (Rust)**: `./rust/target/debug/binkd -v`
-- **Check the config (Rust)**: `./rust/target/debug/binkd -n binkd.conf`
-- **Dump the parsed config (Rust)**: `./rust/target/debug/binkd -d binkd.conf`
+- **Run (Rust)**: `./target/debug/rbinkd binkd.conf`
+- **Version (Rust)**: `./target/debug/rbinkd -v`
+- **Check the config (Rust)**: `./target/debug/rbinkd -n binkd.conf`
+- **Dump the parsed config (Rust)**: `./target/debug/rbinkd -d binkd.conf`
 - **Dump the version and the compile flags (Rust)**:
-  `./rust/target/debug/binkd -vv`
+  `./target/debug/rbinkd -vv`
 
 ## Contribution Instructions
 
 - You MUST verify your work with the Rust linter, formatter, and compiler.
 
   Use the following commands:
-    - `cd rust && cargo build --workspace` to check for type errors
-    - `cd rust && cargo clippy --workspace --all-targets` to run the linter
-    - `cd rust && cargo fmt --check` to check formatting
-    - `cd rust && cargo fmt` to fix formatting issues
+    - `cargo build --workspace` to check for type errors
+    - `cargo clippy --workspace --all-targets` to run the linter
+    - `cargo fmt --check` to check formatting
+    - `cargo fmt` to fix formatting issues
 
 - You MUST update the unit tests and the golden corpus for changed code.
   A new or changed behavior of a ported module needs a corpus case in
   `tests/golden/`, because the Rust tests read the corpus.
 
-- You MUST run the tests with `cd rust && cargo test --workspace` and make
+- You MUST run the tests with `cargo test --workspace` and make
   them pass.
 
 - You MUST keep the Rust implementation equivalent to the upstream C
@@ -183,9 +182,9 @@ default. The C reference is upstream, and the interop tests clone it.
   add one only with a reason and an exact version.
 
 - You MUST NOT use a Rust language feature that is newer than the minimum
-  supported Rust version. `rust-version` in `rust/Cargo.toml` states it; the
+  supported Rust version. `rust-version` in `Cargo.toml` states it; the
   current value is 1.85. Check a change with
-  `cd rust && cargo +1.85 check --workspace` when the 1.85 toolchain is
+  `cargo +1.85 check --workspace` when the 1.85 toolchain is
   installed.
 
 - When making changes to the project structure, ensure the Project Structure
@@ -200,7 +199,7 @@ default. The C reference is upstream, and the interop tests clone it.
 
 - Even when your task is to write or update a document (a plan, a README,
   or any Markdown file) rather than code, you MUST still run
-  `cd rust && cargo fmt --check` and the tests that the document
+  `cargo fmt --check` and the tests that the document
   describes.
 
 ## Code Guidelines
@@ -262,7 +261,7 @@ The codebase follows these principles:
 The layers of the Rust target, from top to bottom:
 
 ```text
-binkd (binary: CLI, daemon, signals, config reload)
+rbinkd (binary: CLI, daemon, signals, config reload)
      ↓
 binkd-net, binkd-proto, binkd-config, binkd-log, binkd-srif
      ↓
@@ -282,7 +281,7 @@ binkd-corpus (test-only corpus reader)
 Each layer calls the layer below it. No layer calls a layer above it.
 `binkd-ftn` is a leaf: it depends on `std` only. Today the workspace has
 `binkd-ftn`, `binkd-spool`, `binkd-config`, `binkd-proto`, `binkd-log`,
-`binkd-net`, `binkd-srif`, `binkd-corpus`, `binkd-win`, and `binkd`; the
+`binkd-net`, `binkd-srif`, `binkd-corpus`, `binkd-win`, and `rbinkd`; the
 optional `binkd-perl` is excluded from the workspace.
 
 The layers of the upstream C implementation, for reference:
@@ -314,17 +313,17 @@ port fixes them):
 
 ### Code Quality
 
-- **Rust style**: the rustfmt defaults. Run `cd rust && cargo fmt`.
-- **Static analysis**: `cd rust && cargo clippy --workspace --all-targets`
-  with the workspace lints in `rust/Cargo.toml`: `unsafe_code = "forbid"`
+- **Rust style**: the rustfmt defaults. Run `cargo fmt`.
+- **Static analysis**: `cargo clippy --workspace --all-targets`
+  with the workspace lints in `Cargo.toml`: `unsafe_code = "forbid"`
   and clippy `all = "warn"`. Do not weaken a workspace lint. The exceptions:
   `binkd-perl`, the crate of the FFI of the Perl hooks, holds
   `unsafe_code = "allow"`, the decision of `doc/decisions/perl-hooks.md`; the
   crate is optional and the default build holds it not, and a build that wants
-  the hooks names the feature `perl` of the `binkd` crate. The `binkd-win`
+  the hooks names the feature `perl` of the `rbinkd` crate. The `binkd-win`
   crate holds the second exception for the FFI of the Windows
   service, the decision of `doc/decisions/windows-support.md`; the crate is a
-  target-specific dependency of `binkd` and compiles on Windows only.
+  target-specific dependency of `rbinkd` and compiles on Windows only.
 - **Doc comments**: every public item of a Rust crate has a `///` comment
   and every module a `//!` comment. State the upstream C function that the
   port follows, for example "the port of `getw.c`".
@@ -365,10 +364,10 @@ port fixes them):
   the fallback, because the C parser `read_syslog_facility()` has an inverted
   argument check.
 - All tests MUST pass before a change is complete:
-  `cd rust && cargo test --workspace`.
+  `cargo test --workspace`.
 - The C and Rust interop suite runs the upstream C binary against the Rust
   session in both roles, and the Rust session against itself. The binary-level
-  test `crates/binkd/tests/interop_binary.rs` starts the real upstream C and
+  test `crates/rbinkd/tests/interop_binary.rs` starts the real upstream C and
   Rust binaries in both roles and runs the C server with the C client. The CI
   jobs `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10` build the
   upstream C reference and set the `BINKD_C*` variables. The tests and the
@@ -399,19 +398,19 @@ port fixes them):
 ### Dependency Management
 
 - **Pin all dependency versions explicitly.** `binkd-proto`, `binkd-net`, and
-  `binkd` depend on `tokio` with an exact version (`=1.54.0`) and the features
-  that each crate needs; `binkd` adds the `signal` feature for the handlers of
+  `rbinkd` depend on `tokio` with an exact version (`=1.54.0`) and the features
+  that each crate needs; `rbinkd` adds the `signal` feature for the handlers of
   the daemon, which `std` cannot install. `binkd-proto` depends on `flate2` with
   the pure Rust backend (`=1.1.10`, `rust_backend`) and on `bzip2` (`=0.6.1`).
-  `binkd` depends on `fs2` (`=0.4.3`) for the free space of the inbound
+  `rbinkd` depends on `fs2` (`=0.4.3`) for the free space of the inbound
   directories, and on `time` (`=0.3.44`) with the `local-offset` feature for
   the safe local offset of the logs, the `TIME` frame, and `-v`; the pure
-  crates use `std` only and do not use `time`. `binkd` also depends on
+  crates use `std` only and do not use `time`. `rbinkd` also depends on
   `syslog` (`=7.0.0`) as a Unix-only target dependency for the safe local
   syslog backend, and the Windows build compiles it not. The `binkd-win` crate
   depends on `windows-sys` (`=0.61.2`) with the features of the service
   control manager and `Win32_Storage_FileSystem` for the short-name and volume
-  wrappers; it is a target-specific dependency of `binkd` and the UNIX build
+  wrappers; it is a target-specific dependency of `rbinkd` and the UNIX build
   does not compile it. Add a dependency only with an exact version.
 - **Prefer vanilla solutions.** Use `std` when it solves the problem. The
   Rust port of a C module uses `std` only, apart from the async runtime of
@@ -438,7 +437,7 @@ named phase of `doc/rust-rewrite-plan.md`):
 ### Configuration & Documentation
 
 - **Runtime configuration**: the config file is the last argument
-  (`./binkd binkd.conf`). The samples are `binkd.conf` (UNIX) and
+  (`./rbinkd binkd.conf`). The samples are `binkd.conf` (UNIX) and
   `binkd.cfg` (DOS and Windows). The command line flags are in
   `binkd.txt`. The environment variables are `BINKD_LOG` (the log path)
   and `BINKD_ICON_FILE` (the Windows tray icon).

@@ -53,7 +53,7 @@ choices.
 ### Slice 1 — binary-interop
 
 Add the missing binary-to-binary C/Rust sessions and the C↔C baseline.
-The tests use `CARGO_BIN_EXE_binkd` for the Rust binary and `BINKD_C`
+The tests use `CARGO_BIN_EXE_rbinkd` for the Rust binary and `BINKD_C`
 for the C binary. They start the C server and the Rust client, the Rust
 server and the C client, and two C binaries. Each case exchanges one
 packet in each direction and asserts the inbound files, the `BEGIN` and

@@ -44,13 +44,13 @@ service mode is the Windows layer; the `binkd-win` crate holds it.
    `-T` switch. The command line of the port answers the unknown switch error
    for `-T`, and the release notes state the difference.
 4. The service mode lives in a new crate, `binkd-win`. The crate is a
-   target-specific dependency of `binkd` and compiles on Windows only. It holds
+   target-specific dependency of `rbinkd` and compiles on Windows only. It holds
    the safe Rust API of the service control manager over the `windows-sys` crate
    with an exact version. The crate alone holds `unsafe_code = "allow"` for the
    FFI of the Windows API; the rest of the workspace keeps `forbid`. This is the
    second exception of the workspace, beside `binkd-perl`, and the record
    `doc/decisions/perl-hooks.md` is the first.
-5. The `binkd` binary of Windows uses the crate. The binary parses `-t` and
+5. The `rbinkd` binary of Windows uses the crate. The binary parses `-t` and
    `-S` before the config, answers the service commands, and, when the service
    control manager starts it, runs the daemon and reports the service state. A
    service stop or restart reaches the daemon as the exit or the hangup event,
@@ -75,7 +75,7 @@ service mode is the Windows layer; the `binkd-win` crate holds it.
    the Windows part of `parseargs()`.
 2. The service control manager wrapper: open the manager, install, uninstall,
    start, stop, restart, query the status, and the service dispatcher.
-3. The service main of the `binkd` binary: the daemon start, the status
+3. The service main of the `rbinkd` binary: the daemon start, the status
    reports, and the stop and restart events.
 4. The registry records of the config path, the arguments, and the environment,
    the port of `store_data_into_registry()`.
@@ -86,7 +86,7 @@ service mode is the Windows layer; the `binkd-win` crate holds it.
 
 The crate `binkd-win` holds the pure command values and the service dispatcher,
 the port of `nt/service.c` and of the Windows part of `nt/w32tools.c`. It also
-holds the safe path and volume wrappers of the parity work. The `binkd` binary
+holds the safe path and volume wrappers of the parity work. The `rbinkd` binary
 parses `-t` and `-S` before the config, installs the service with the program
 and the arguments in the registry, and reports the service state. The Windows
 job of `.github/workflows/ci.yml` runs the check, the clippy, the workspace
@@ -155,16 +155,14 @@ directory.
 Run the script on a local Windows host in an administrator PowerShell:
 
 ```powershell
-cd rust
-cargo build --release -p binkd
-cd ..
+cargo build --release -p rbinkd
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1
 ```
 
 The script checks:
 
 - Install: the command returns 0, the service is running, the binary path is
-  `binkd.exe`, and the registry working directory is the test directory.
+  `rbinkd.exe`, and the registry working directory is the test directory.
 - Status: the running, stopped, and not-installed messages.
 - Stop: the service is stopped, the process is gone, the busy and pid files
   are absent, and the log holds `exitfunc()`.

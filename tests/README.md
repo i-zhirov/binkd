@@ -1,6 +1,6 @@
 # Tests of the Rust implementation
 
-The tests in `rust/` check the Rust code.
+The tests in `crates/` check the Rust code.
 The golden corpus in `golden/` holds the value cases.
 The Rust tests read the corpus.
 The upstream C implementation is the oracle only in the interop jobs.
@@ -8,7 +8,6 @@ The upstream C implementation is the oracle only in the interop jobs.
 ## Run the Rust tests
 
 ```
-cd rust
 cargo test --workspace
 ```
 
@@ -23,9 +22,7 @@ status, stop, start, restart, uninstall, the process, the busy and pid files,
 and the log. It removes the service and the temporary directory at the end.
 
 ```
-cd rust
-cargo build --release -p binkd
-cd ..
+cargo build --release -p rbinkd
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1
 ```
 
@@ -37,7 +34,6 @@ The parity tests are target-gated and run in the `windows` CI job. On a
 Windows host:
 
 ```
-cd rust
 cargo test -p binkd-win
 cargo test -p binkd-config
 cargo test --workspace
@@ -48,8 +44,7 @@ the Windows feature set, and the Windows `-d` dump. On another system the
 cross-target check is:
 
 ```
-cd rust
-cargo check -p binkd-win -p binkd-config -p binkd --target x86_64-pc-windows-gnu
+cargo check -p binkd-win -p binkd-config -p rbinkd --target x86_64-pc-windows-gnu
 ```
 
 ## Run the Perl tests
@@ -58,15 +53,14 @@ The hooks of Perl need the optional crate `binkd-perl` and the interpreter
 of the system:
 
 ```
-cd rust
-cargo test -p binkd --features perl --test perl
+cargo test -p rbinkd --features perl --test perl
 cd crates/binkd-perl
 cargo test
 ```
 
 The script `tests/perl/hooks.pl` holds every hook. The hook writes its name to
 the file of the environment `BINKD_PERL_MARK`, so a case holds the hooks that
-ran. The port cases of `crates/binkd/tests/perl.rs` hold the call hooks, the
+ran. The port cases of `crates/rbinkd/tests/perl.rs` hold the call hooks, the
 session hooks end to end, and the reload hooks. The oracle cases run against
 the upstream C binary when the environment names `BINKD_C_PERL`, a binary of
 `./configure --with-perl`.
@@ -114,12 +108,12 @@ rule that
 `the_port_of_the_removed_file_of_the_session_queue`,
 `the_port_of_the_removed_file_of_after_recv`,
 `the_port_of_the_queue_of_before_recv`, and
-`the_port_of_the_queue_of_after_sent` of `crates/binkd/tests/perl.rs` hold the
+`the_port_of_the_queue_of_after_sent` of `crates/rbinkd/tests/perl.rs` hold the
 script of the daemon that adds a file to the queue, the scripts that remove one
 in `before_send()` and `after_recv()`, and the scripts that delete `@queue` in
 `before_recv()` and `after_sent()` while the file still arrives.
 The case `the_port_of_the_reload_of_the_script` of
-`crates/binkd/tests/perl.rs` holds the reload of the script beside the new
+`crates/rbinkd/tests/perl.rs` holds the reload of the script beside the new
 config: the new script answers `config_loaded()`, a session uses it, the old
 script is not called again, and `on_start()` runs only for the script of the
 start. The case `the_hook_of_after_recv_runs_before_the_rename` of
@@ -130,7 +124,7 @@ the name. The case `the_after_recv_values_reach_the_script` of
 `the_where_of_the_error_follows_the_c_code` of
 `crates/binkd-net/src/caller.rs` holds the `$where` map of `on_error()`, and
 the oracle and port cases of the call hold `error where=1`. The case
-`the_on_log_hook_runs_on_the_master` of `crates/binkd/tests/perl.rs` holds the
+`the_on_log_hook_runs_on_the_master` of `crates/rbinkd/tests/perl.rs` holds the
 decision that `on_log()` runs on the master interpreter. The case
 `the_answerer_runs_on_handshake_after_the_adr` of
 `crates/binkd-proto/tests/session.rs` holds the order of `on_handshake()` for
@@ -268,7 +262,7 @@ checks are:
 ```sh
 cargo test -p binkd-spool inbound::tests
 cargo test -p binkd-spool --test spool_corpus
-cargo test -p binkd the_free_space
+cargo test -p rbinkd the_free_space
 ```
 
 ## The config corpus
@@ -293,7 +287,6 @@ upstream C binary, the test also runs it and checks that the expectation is
 current:
 
 ```
-cd rust
 BINKD_C=/path/to/binkd cargo test -p binkd-config --test dump_corpus
 ```
 
@@ -344,22 +337,21 @@ Set `BINKD_C` to the path of the binary and run every test that starts the C
 process:
 
 ```sh
-cd rust
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test interop
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-net --test interop
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test record
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-config --test dump_corpus
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-config --test reload_corpus
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test cli
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test daemon
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test interop
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-net --test interop
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test record
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-config --test dump_corpus
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-config --test reload_corpus
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test cli
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test daemon
 ```
 
 Without `BINKD_C` the tests report that they are skipped. Only the interop
 cases of the `binkd-proto` file need the C binary; the Rust side is the
-library, not the Rust binary. The cases of `crates/binkd/tests/engine.rs` hold
+library, not the Rust binary. The cases of `crates/rbinkd/tests/engine.rs` hold
 the two roles of the Rust library against each other.
 
-The binary-level test `crates/binkd/tests/interop_binary.rs` starts the real
+The binary-level test `crates/rbinkd/tests/interop_binary.rs` starts the real
 upstream C and Rust binaries. It runs the C server with the Rust client, the
 Rust server with the C client, and the C server with the C client. The
 generated configs fix `tzoff -3h`, and the test checks that the received `TIME`
@@ -368,8 +360,7 @@ the protocol interop suite holds the `NUL TIME` frame after `NDL` and before
 `VER` in the C and the Rust sequence:
 
 ```sh
-cd rust
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test interop_binary
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test interop_binary
 ```
 
 The binary interop test accepts `BEGIN, binkd/` and the Windows
@@ -391,15 +382,15 @@ cp mkfls/unix/* .
 chmod +x mkinstalldirs
 ./configure
 make
-cd ../rust
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test interop -- --test-threads=1
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-net --test interop -- --test-threads=1
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test record -- --test-threads=1
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-config --test dump_corpus
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-config --test reload_corpus
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test cli
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test daemon -- --test-threads=1
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test interop_binary -- --test-threads=1
+cd ..
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test interop -- --test-threads=1
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-net --test interop -- --test-threads=1
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test record -- --test-threads=1
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-config --test dump_corpus
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-config --test reload_corpus
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test cli
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test daemon -- --test-threads=1
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test interop_binary -- --test-threads=1
 ```
 
 The `interop-windows` job checks out the upstream C reference with the action
@@ -457,8 +448,8 @@ cp mkfls/unix/* .
 chmod +x mkinstalldirs
 ./configure --with-proxy --with-ntlm
 make
-cd ../rust
-BINKD_C_PROXY=$PWD/../upstream-c/binkd cargo test -p binkd-net --test proxy_interop
+cd ..
+BINKD_C_PROXY=$PWD/upstream-c/binkd cargo test -p binkd-net --test proxy_interop
 ```
 
 Without `BINKD_C_PROXY` the tests report that they are skipped. The corpus
@@ -475,8 +466,8 @@ cp mkfls/unix/* .
 chmod +x mkinstalldirs
 ./configure --with-bwlim
 make
-cd ../rust
-BINKD_C_BWLIM=$PWD/../upstream-c/binkd \
+cd ..
+BINKD_C_BWLIM=$PWD/upstream-c/binkd \
     cargo test -p binkd-proto --test interop \
     rust_client_to_c_server_rate_limited
 ```
@@ -492,8 +483,7 @@ its own end of the batch back until the C client answers the claim. Set
 with the `PRTCLVER` define of the upstream `Config.h`:
 
 ```sh
-cd rust
-BINKD_C_V10=$PWD/../upstream-c-v10/binkd cargo test -p binkd-proto --test interop
+BINKD_C_V10=$PWD/upstream-c-v10/binkd cargo test -p binkd-proto --test interop
 ```
 
 The build of that binary, in a second clone of the upstream tree:
@@ -563,15 +553,14 @@ AKA.
 The focused cases of the local clock, the `TIME` frame, and the binary log:
 
 ```sh
-cd rust
 cargo test -p binkd-log binlog::tests
 cargo test -p binkd-ftn --test corpus
 cargo test -p binkd-proto banner
 cargo test -p binkd-proto --test session the_time_frame_is_sent
 cargo test -p binkd-net the_banner_time
-cargo test -p binkd --test cli the_version_date_is_local
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test interop
-BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test interop_binary
+cargo test -p rbinkd --test cli the_version_date_is_local
+BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test interop
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test interop_binary
 ```
 
 ## Run the syslog tests
@@ -580,13 +569,12 @@ The focused cases of the log sink, the syslog backend, and the keyword. They
 need no live syslog daemon:
 
 ```sh
-cd rust
 cargo test -p binkd-log a_sink_receives_the_level_and_text
 cargo test -p binkd-log a_hook_rewrites_the_message_of_the_sink
 cargo test -p binkd-log a_suppressing_hook_leaves_the_sink_empty
 cargo test -p binkd-log a_nolog_mask_suppresses_the_sink
 cargo test -p binkd-log a_level_above_the_file_level_skips_the_sink
-cargo test -p binkd syslog::tests
+cargo test -p rbinkd syslog::tests
 cargo test -p binkd-config the_syslog_facility_is_parsed
 cargo test -p binkd-config the_syslog_facility_of_auth_and_authpriv
 cargo test -p binkd-config the_syslog_facility_is_case_sensitive
@@ -594,7 +582,7 @@ cargo test -p binkd-config the_mark_facility_is_rejected
 cargo test -p binkd-config the_syslog_keyword_shows_the_c_fallback
 ```
 
-The cases of `binkd-log` use a fake sink, and the cases of `binkd` cover the
+The cases of `binkd-log` use a fake sink, and the cases of `rbinkd` cover the
 facility and priority mapping. No live syslog daemon is required. No golden
 case parses a `syslog <name>` line; the dump holds only the fallback, because
 the upstream C parser `read_syslog_facility()` has an inverted argument check.
@@ -644,12 +632,12 @@ plan that adds those tests.
 ## Add a spool corpus case
 
 1. Write the case in `golden/spool/`.
-2. Run `cargo test` in `rust/` to check the case against the Rust code.
+2. Run `cargo test` in the workspace root to check the case against the Rust code.
 
 ## Add a corpus case
 
 1. Add the line to the file of the function in `golden/`.
-2. Run `cargo test` in `rust/` to check the case against the Rust code.
+2. Run `cargo test` in the workspace root to check the case against the Rust code.
 
 A new corpus file needs the `# crate:` header. The Rust test of the crate
 selects its cases by that name, so no case stays unchecked.

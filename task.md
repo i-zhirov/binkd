@@ -1,4 +1,4 @@
-# Binkd Rust rewrite
+# rbinkd Rust reimplementation
 
 There is an established code base in the repo.
 The task is to cover it with tests as much as possible. Then prepare a plan of gradual rewrite of it in an idiomatic Rust programming language.

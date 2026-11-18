@@ -92,10 +92,10 @@
     - **Implements:** design Phase 6 platform values; the `*N` call of
       `run_args()` of `srif.c`; the volume check of `check_config()` of
       `readcfg.c`; roadmap `windows-parity`
-    - **Modify `rust/crates/binkd-win/Cargo.toml`**
+    - **Modify `crates/binkd-win/Cargo.toml`**
         - Add the `Win32_Storage_FileSystem` feature to `windows-sys`.
           Keep the exact version `=0.61.2` and the existing features.
-    - **Create `rust/crates/binkd-win/src/storage.rs`**
+    - **Create `crates/binkd-win/src/storage.rs`**
         - Add `pub fn short_path(path: &Path) -> Result<String, u32>`:
           call `GetShortPathNameW` with a growing UTF-16 buffer; return
           the path as a `String`; return `GetLastError()` when the call
@@ -121,10 +121,10 @@
               on the same volume answer the same value.
             - `the_volume_serial_of_a_missing_path` — a missing path
               answers `None`.
-    - **Modify `rust/crates/binkd-win/src/lib.rs`**
+    - **Modify `crates/binkd-win/src/lib.rs`**
         - Add `#[cfg(windows)] pub mod storage;`.
-    - **Verify:** on Windows, `cd rust && cargo test -p binkd-win`;
-      elsewhere, `cd rust && cargo check -p binkd-win --target
+    - **Verify:** on Windows, `cargo test -p binkd-win`;
+      elsewhere, `cargo check -p binkd-win --target
       x86_64-pc-windows-gnu`.
     - **Implementation status:** done. The cross-target check and strict
       clippy pass locally. The Windows-runner test gate remains: the
@@ -133,7 +133,7 @@
 - [x] **Task 2: Add the partition provider and the volume checks**
     - **Implements:** the `check_config()` volume checks of `readcfg.c`;
       design Phase 6 Windows parity; roadmap `windows-parity`
-    - **Modify `rust/crates/binkd-config/src/parser.rs`**
+    - **Modify `crates/binkd-config/src/parser.rs`**
         - Add `pub type Partition = fn(&Path) -> Option<u64>` and return
           the type from the crate root.
         - Add `partition: Partition` to `Parser`; initialize it in
@@ -189,14 +189,14 @@
         - The config corpus holds only successful `-d` dumps. The new
           rejection cases are unit tests; record that exception in
           `tests/README.md` in Task 6.
-    - **Modify `rust/crates/binkd-config/src/reload.rs`**
+    - **Modify `crates/binkd-config/src/reload.rs`**
         - Add `partition: Partition` to `Reloader`, initialize it from
           the platform default, add `pub fn set_partition(...)`, and
           pass it to the parser in `check()`. This keeps a reload under
           the same check as the first parse.
-    - **Modify `rust/crates/binkd-config/src/lib.rs`**
+    - **Modify `crates/binkd-config/src/lib.rs`**
         - Re-export `parser::Partition`.
-    - **Verify:** `cd rust && cargo test -p binkd-config`.
+    - **Verify:** `cargo test -p binkd-config`.
     - **Implementation status:** done. The parser and reloader tests pass,
       and the Windows-target check and strict clippy pass. The binary
       installs the Windows provider in Task 4; the platform-neutral tests
@@ -205,7 +205,7 @@
 - [x] **Task 3: Add the short-name seam to the SRIF expansion**
     - **Implements:** the `*N` branch of `run_args()` of `srif.c`;
       design Phase 6 SRIF; roadmap `windows-parity`
-    - **Modify `rust/crates/binkd-srif/src/args.rs`**
+    - **Modify `crates/binkd-srif/src/args.rs`**
         - Add `pub type ShortName = fn(&str) -> Result<String, u32>`.
           The error is the Windows error code of a failed short-name
           query.
@@ -241,7 +241,7 @@
             - `the_short_name_is_absent_outside_windows` — `expand()` with
               no provider answers the name and reports no error; an
               invalid name with `*N` aborts, the C non-Windows branch.
-    - **Modify `rust/crates/binkd-srif/src/engine.rs`**
+    - **Modify `crates/binkd-srif/src/engine.rs`**
         - Add `pub short_name: Option<ShortName>` to `Context`.
         - Use `args::expand_with(command, filename, session,
           context.short_name)` in both command paths.
@@ -251,7 +251,7 @@
         - Add the field to every test `Context` with `None`; add a test
           that a failing provider logs the C text and runs the command
           with the long name.
-    - **Verify:** `cd rust && cargo test -p binkd-srif`.
+    - **Verify:** `cargo test -p binkd-srif`.
     - **Implementation status:** done. The expansion and engine tests pass,
       including the failed-lookup log. The `binkd-net` session contexts
       hold `None` until Task 4 passes the platform lookup.
@@ -260,7 +260,7 @@
   the binary**
     - **Implements:** the platform seam of the design; the `*N` call
       and the volume check; roadmap `windows-parity`
-    - **Modify `rust/crates/binkd-net/src/session.rs`**
+    - **Modify `crates/binkd-net/src/session.rs`**
         - Add `pub short_name: Option<ShortName>` to `SessionOptions`,
           default `None`, with `pub fn with_short_name(...)`. Use the
           `binkd-srif` alias, not a second function type.
@@ -268,18 +268,18 @@
           into a session without a platform dependency. The field is a
           public API extension; external struct literals must add it or
           use the builder. Record that in Task 6.
-    - **Modify `rust/crates/binkd-net/src/srif.rs`**
+    - **Modify `crates/binkd-net/src/srif.rs`**
         - Re-export `pub use binkd_srif::args::ShortName;`.
         - Add `short_name: Option<ShortName>` to `Events`; keep the
           `Events::new` signature and add
           `pub fn with_short_name(...)`; pass the field into the three
           `Context` values in `on_file`, `flush`, and `finish`.
-    - **Modify `rust/crates/binkd-net/src/caller.rs` and
-      `rust/crates/binkd-net/src/listener.rs`**
+    - **Modify `crates/binkd-net/src/caller.rs` and
+      `crates/binkd-net/src/listener.rs`**
         - Call `.with_short_name(options.short_name)` on each
           `Events::new` value. The listener and the caller are the
           normal session paths; the inetd path is not the only one.
-    - **Modify `rust/crates/binkd/src/platform.rs`**
+    - **Modify `crates/rbinkd/src/platform.rs`**
         - Import `binkd_net::srif::ShortName` and add
           `pub fn short_name() -> Option<ShortName>`: on Windows answer
           `Some(short_path)` that calls
@@ -293,12 +293,12 @@
           volume of a temporary directory; the Unix provider answers
           the device of a temporary directory; `short_name` is `None`
           outside Windows.
-    - **Modify `rust/crates/binkd/src/start.rs`**
+    - **Modify `crates/rbinkd/src/start.rs`**
         - After `Parser::new()`, call
           `parser.set_partition(platform::partition)` on every platform.
           The Unix value is the same as the parser default; the Windows
           value enables the check.
-    - **Modify `rust/crates/binkd/src/daemon.rs`**
+    - **Modify `crates/rbinkd/src/daemon.rs`**
         - In `session_options()`, set `short_name =
           platform::short_name()`.
         - Call `.with_short_name(platform::short_name())` on the inetd
@@ -306,11 +306,11 @@
         - In the daemon construction, call
           `reloader.set_partition(platform::partition)` after
           `Reloader::new`, so a reload uses the same provider.
-    - **Modify `rust/crates/binkd/src/engine.rs`**
+    - **Modify `crates/rbinkd/src/engine.rs`**
         - Set `short_name = platform::short_name()` in both
           `SessionOptions` values of `serve()` and `poll()`.
-    - **Verify:** `cd rust && cargo test -p binkd-net`,
-      `cargo test -p binkd`, `cargo check -p binkd --target
+    - **Verify:** `cargo test -p binkd-net`,
+      `cargo test -p rbinkd`, `cargo check -p rbinkd --target
       x86_64-pc-windows-gnu`, and the Windows tests in CI. Search for
       every production `Events::new` call and every production
       `SessionOptions` value; none may be left without
@@ -324,7 +324,7 @@
 - [x] **Task 5: Add the Windows feature set and the dump test**
     - **Implements:** the `Features` of `readcfg.c`; the parser, reload,
       and dump; roadmap `windows-parity`
-    - **Modify `rust/crates/binkd-config/src/keywords.rs`**
+    - **Modify `crates/binkd-config/src/keywords.rs`**
         - Add `pub fn windows_default() -> Features` with
           `zlib: true`, `https: true`, `bwlim: true`, `perl: false`,
           `amiga: false`, `zlibdl: false`, `syslog: false`.
@@ -337,7 +337,7 @@
               `bzlib2-dll`, and `perl-hooks` are absent.
             - `the_platform_default_follows_the_target` — the set matches
               the target.
-    - **Modify `rust/crates/binkd-config/src/parser.rs`**
+    - **Modify `crates/binkd-config/src/parser.rs`**
         - Replace `Features::unix_default()` with
           `Features::platform_default()` in `Parser::with_ports()`.
         - Add `#[cfg(unix)]` to the five `syslog` tests, including the
@@ -348,9 +348,9 @@
           the second parser that expects the rejection. On Windows the
           platform default has `bwlim = true`, so the plain-build
           rejection must state the set explicitly.
-    - **Modify `rust/crates/binkd-config/src/reload.rs`**
+    - **Modify `crates/binkd-config/src/reload.rs`**
         - Replace the default with `Features::platform_default()`.
-    - **Modify `rust/crates/binkd-config/src/dump.rs`**
+    - **Modify `crates/binkd-config/src/dump.rs`**
         - Keep `dump()` on `Features::unix_default()`. The golden
           corpus is the C Unix dump and holds the `syslog` line; a
           Windows default there would break the corpus. The binary uses
@@ -364,7 +364,7 @@
           `proxy`, `socks`, `limit-rate`, and `zlevel` lines are present;
           assert `aso`, `syslog`, `zlib-dll`, `bzlib2-dll`, and
           `perl-hooks` are absent.
-    - **Modify `rust/crates/binkd/tests/cli.rs`**
+    - **Modify `crates/rbinkd/tests/cli.rs`**
         - Gate the existing `dump_with_d` with `#[cfg(all(unix, not(feature
           = "perl")))]`; its fixture is the C Unix dump without the
           Perl lines.
@@ -375,8 +375,8 @@
         - Add a `#[cfg(windows)]` test for `-d`: assert the output holds
           `proxy`, `socks`, `limit-rate`, and `zlevel`, and omits
           `aso`, `syslog`, `zlib-dll`, and `bzlib2-dll`.
-    - **Modify `rust/crates/binkd/src/start.rs` and
-      `rust/crates/binkd/src/daemon.rs`**
+    - **Modify `crates/rbinkd/src/start.rs` and
+      `crates/rbinkd/src/daemon.rs`**
         - In `start.rs`, build one `let mut features =
           binkd_config::Features::platform_default()` before the parser;
           set `features.perl = cfg!(feature = "perl")`; pass it to the
@@ -393,8 +393,8 @@
           in `start.rs`. This avoids a break of the public constructor.
         - The reloader, the parser, the dump, and the binary then use
           one feature set.
-    - **Verify:** `cd rust && cargo test -p binkd-config`, the Windows
-      dump tests in CI, `cargo test -p binkd --test cli`,
+    - **Verify:** `cargo test -p binkd-config`, the Windows
+      dump tests in CI, `cargo test -p rbinkd --test cli`,
       `cargo clippy --workspace --all-targets -- -D warnings`, and the
       `cargo check --target x86_64-pc-windows-gnu` check for `binkd`.
     - **Implementation status:** done. The Unix parser, reloader, and
@@ -458,13 +458,13 @@
           that link. After the full verification, set the plan and
           slice to `Status: Implemented`.
     - **Verify:**
-      `cd rust && cargo fmt --all --check`,
+      `cargo fmt --all --check`,
       `cargo clippy --workspace --all-targets -- -D warnings`,
       `cargo test --workspace`,
-      `cargo test -p binkd --features perl -- --test-threads=1`
+      `cargo test -p rbinkd --features perl -- --test-threads=1`
       with `BINKD_C_PERL`,
       `cargo +1.85 check --workspace`,
-      `cargo check -p binkd --target x86_64-pc-windows-gnu`,
+      `cargo check -p rbinkd --target x86_64-pc-windows-gnu`,
       `cargo check -p binkd-win --target x86_64-pc-windows-gnu`,
       then `cd .. && make -C tests`, and `git diff --check`.
       On Windows, run `cargo test -p binkd-win`, `cargo test

@@ -24,11 +24,11 @@
 ## Constraints
 
 - No production code changes. The only code changes are test-only:
-   1. in `rust/crates/binkd/tests/interop_binary.rs`, a config path helper
+   1. in `crates/rbinkd/tests/interop_binary.rs`, a config path helper
       writes `/` separators, because the config tokenizer reads `\` as an
       escape, and the `BEGIN` assertion accepts both `BEGIN, binkd/` and
       the Windows `BEGIN standalone, binkd/` line;
-   2. in `rust/crates/binkd-net/tests/interop.rs`, the `sending
+   2. in `crates/binkd-net/tests/interop.rs`, the `sending
       ./outb/13b70064.cut as` assertion normalizes `\` to `/` before the
       comparison, because the MinGW C log writes `.\outb\...`.
 - No C source change, no dependency change, and no new workflow file. The
@@ -171,16 +171,15 @@ The interop coverage:
                   make
               - name: Run the C and Rust interop suite
                 run: |
-                  cd rust
-                  cargo test -p binkd-proto --test interop -- --test-threads=1
+                                    cargo test -p binkd-proto --test interop -- --test-threads=1
                   cargo test -p binkd-net --test interop -- --test-threads=1
                   cargo test -p binkd-proto --test record -- --test-threads=1
                   cargo test -p binkd-config --test dump_corpus
                   cargo test -p binkd-config --test reload_corpus
-                  cargo test -p binkd --test cli
-                  cargo test -p binkd --test daemon -- --test-threads=1
+                  cargo test -p rbinkd --test cli
+                  cargo test -p rbinkd --test daemon -- --test-threads=1
               - name: Run the binary interop suite
-                run: cd rust && cargo test -p binkd --test interop_binary -- --test-threads=1
+                run: cargo test -p rbinkd --test interop_binary -- --test-threads=1
           ```
         - The `interop` test file skips `rust_client_to_c_server_rate_limited`
           because `BINKD_C_BWLIM` is unset, and the two `c_client_*`
@@ -194,15 +193,14 @@ The interop coverage:
       chmod +x mkinstalldirs
       ./configure
       make
-      cd rust
-      BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
+            BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
       BINKD_C=$PWD/../binkd cargo test -p binkd-net --test interop -- --test-threads=1
       BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test record -- --test-threads=1
       BINKD_C=$PWD/../binkd cargo test -p binkd-config --test dump_corpus
       BINKD_C=$PWD/../binkd cargo test -p binkd-config --test reload_corpus
-      BINKD_C=$PWD/../binkd cargo test -p binkd --test cli
-      BINKD_C=$PWD/../binkd cargo test -p binkd --test daemon -- --test-threads=1
-      BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary -- --test-threads=1
+      BINKD_C=$PWD/../binkd cargo test -p rbinkd --test cli
+      BINKD_C=$PWD/../binkd cargo test -p rbinkd --test daemon -- --test-threads=1
+      BINKD_C=$PWD/../binkd cargo test -p rbinkd --test interop_binary -- --test-threads=1
       ```
       Review the YAML diff to confirm the job name and the `BINKD_C` value.
 
@@ -244,8 +242,7 @@ The interop coverage:
                 shell: pwsh
                 run: |
                   $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
-                  cd rust
-                  cargo test -p binkd-proto --test interop -- --test-threads=1
+                                    cargo test -p binkd-proto --test interop -- --test-threads=1
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
                   cargo test -p binkd-net --test interop -- --test-threads=1
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -255,8 +252,7 @@ The interop coverage:
                 shell: pwsh
                 run: |
                   $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
-                  cd rust
-                  cargo test -p binkd --test interop_binary -- --test-threads=1
+                                    cargo test -p rbinkd --test interop_binary -- --test-threads=1
                   if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ```
         - Do not add `dump_corpus`, `reload_corpus`, `cli`, or `daemon` to
@@ -265,7 +261,7 @@ The interop coverage:
         - The `-static` link and the `PATH` prepend are both present. The
           `PATH` line is a safety measure for a toolchain DLL and does not
           replace the static zlib and bzip2 link.
-    - **Modify `rust/crates/binkd/tests/interop_binary.rs`**
+    - **Modify `crates/rbinkd/tests/interop_binary.rs`**
         - Add `fn config_path(path: &Path) -> String` beside `write_config`.
           It returns `path.display().to_string().replace('\\', "/")` and has
           a doc comment that the config tokenizer reads `\` as an escape.
@@ -292,7 +288,7 @@ The interop coverage:
         - Do not change the packet assertions, the exit-code assertions,
           the `TIME` frame assertion, or the two-C-binaries flow. Only the
           log helper and the config path form change.
-    - **Modify `rust/crates/binkd-net/tests/interop.rs`**
+    - **Modify `crates/binkd-net/tests/interop.rs`**
         - In `c_caller_to_rust_listener`, read the C client log, normalize
           `\` to `/`, and then assert that it contains
           `sending ./outb/13b70064.cut as `. The MinGW C client writes
@@ -306,9 +302,8 @@ The interop coverage:
         OUTDIR=bin/mingw32-zlib-bzlib2 \
         CFLAGS='-std=gnu89 -mthreads -pipe -funsigned-char -Wall -Wno-char-subscripts -Wno-comment -O2 -s' \
         LFLAGS='-static' all | rg 'bin/mingw32-zlib-bzlib2/binkd-mingw-zlib-bzlib2.exe'
-      cd rust
-      cargo test -p binkd-net --test interop
-      cargo test -p binkd --test interop_binary
+            cargo test -p binkd-net --test interop
+      cargo test -p rbinkd --test interop_binary
       cargo fmt --check
       ```
       The `make -n` command confirms the exact output path. The tests without
@@ -564,15 +559,14 @@ The interop coverage:
           chmod +x mkinstalldirs
           ./configure
           make
-          cd rust
-          BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
+                    BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
           BINKD_C=$PWD/../binkd cargo test -p binkd-net --test interop -- --test-threads=1
           BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test record -- --test-threads=1
           BINKD_C=$PWD/../binkd cargo test -p binkd-config --test dump_corpus
           BINKD_C=$PWD/../binkd cargo test -p binkd-config --test reload_corpus
-          BINKD_C=$PWD/../binkd cargo test -p binkd --test cli
-          BINKD_C=$PWD/../binkd cargo test -p binkd --test daemon -- --test-threads=1
-          BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary -- --test-threads=1
+          BINKD_C=$PWD/../binkd cargo test -p rbinkd --test cli
+          BINKD_C=$PWD/../binkd cargo test -p rbinkd --test daemon -- --test-threads=1
+          BINKD_C=$PWD/../binkd cargo test -p rbinkd --test interop_binary -- --test-threads=1
           ```
 
           The `interop-windows` job builds the C reference with MSYS2/MinGW64.
@@ -680,21 +674,19 @@ The interop coverage:
       chmod +x mkinstalldirs
       ./configure
       make
-      cd rust
-      BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
+            BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
       BINKD_C=$PWD/../binkd cargo test -p binkd-net --test interop -- --test-threads=1
       BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test record -- --test-threads=1
       BINKD_C=$PWD/../binkd cargo test -p binkd-config --test dump_corpus
       BINKD_C=$PWD/../binkd cargo test -p binkd-config --test reload_corpus
-      BINKD_C=$PWD/../binkd cargo test -p binkd --test cli
-      BINKD_C=$PWD/../binkd cargo test -p binkd --test daemon -- --test-threads=1
-      BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary -- --test-threads=1
+      BINKD_C=$PWD/../binkd cargo test -p rbinkd --test cli
+      BINKD_C=$PWD/../binkd cargo test -p rbinkd --test daemon -- --test-threads=1
+      BINKD_C=$PWD/../binkd cargo test -p rbinkd --test interop_binary -- --test-threads=1
       cd ..
       ```
     - **Run the full local suites:**
       ```sh
-      cd rust
-      cargo test --workspace
+            cargo test --workspace
       cargo fmt --check
       cargo clippy --workspace --all-targets
       cd ..
@@ -703,8 +695,7 @@ The interop coverage:
     - **Run the Windows smoke test** on a Windows host with an
       administrator PowerShell:
       ```powershell
-      cd rust
-      cargo build --release -p binkd
+            cargo build --release -p rbinkd
       cd ..
       pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1
       ```
@@ -772,19 +763,17 @@ cp mkfls/unix/* .
 chmod +x mkinstalldirs
 ./configure
 make
-cd rust
 BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
 BINKD_C=$PWD/../binkd cargo test -p binkd-net --test interop -- --test-threads=1
 BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test record -- --test-threads=1
 BINKD_C=$PWD/../binkd cargo test -p binkd-config --test dump_corpus
 BINKD_C=$PWD/../binkd cargo test -p binkd-config --test reload_corpus
-BINKD_C=$PWD/../binkd cargo test -p binkd --test cli
-BINKD_C=$PWD/../binkd cargo test -p binkd --test daemon -- --test-threads=1
-BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary -- --test-threads=1
+BINKD_C=$PWD/../binkd cargo test -p rbinkd --test cli
+BINKD_C=$PWD/../binkd cargo test -p rbinkd --test daemon -- --test-threads=1
+BINKD_C=$PWD/../binkd cargo test -p rbinkd --test interop_binary -- --test-threads=1
 cd ..
 
 # Full Rust and C suites
-cd rust
 cargo test --workspace
 cargo fmt --check
 cargo clippy --workspace --all-targets
@@ -795,8 +784,7 @@ make -C tests
 The Windows runner commands:
 
 ```powershell
-cd rust
-cargo build --release -p binkd
+cargo build --release -p rbinkd
 cd ..
 pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1
 ```
