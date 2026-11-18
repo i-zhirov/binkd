@@ -1,7 +1,7 @@
 # Plan: gradual rewrite of binkd in Rust
 
 This document is the action plan for the Rust rewrite of binkd.
-It records the current state of the C code, the test strategy, the target
+It records the former state of the C code, the test strategy, the target
 architecture, and the port order.
 
 ## 1. Goal and constraints
@@ -18,24 +18,31 @@ The task adds two more requirements:
 - Replace modules one by one when necessary.
 - Make the final implementation usable as a library.
 
-The plan uses a differential test harness to hold the two implementations
-together. The C code stays the reference oracle until the Rust code passes
-every test. The Rust code replaces the C code module by module.
+The plan used a differential test harness to hold the two implementations
+together. The upstream C code was the reference oracle until the Rust code
+passed every test. The Rust code replaced the C code module by module. The
+local C tree is gone now, the decision of `doc/decisions/c-out-of-tree.md`;
+the upstream C code stays the reference of the interop tests.
 
 ## 2. Current state
 
 binkd is a Fidonet mailer. It moves FTN mail and files over TCP/IP
-with the binkp protocol. The code is C89 with K&R-style function
-definitions. The tree has about 27000 lines of C.
+with the binkp protocol. The upstream C implementation is C89 with K&R-style
+function definitions, and it has about 27000 lines of C. This repository now
+holds only the Rust workspace.
 
 ### 2.1 Build
 
-The project has no top-level Makefile. The build copies a platform
+The upstream C tree has no top-level Makefile. Its build copies a platform
 makefile from `mkfls/` into the source root.
 
-Build on a UNIX system:
+Build the upstream C reference on a UNIX system:
 
 ```
+git clone https://github.com/pgul/binkd.git upstream-c
+git -C upstream-c checkout 5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba
+git -C upstream-c apply "$PWD/ci/upstream-c.patch"
+cd upstream-c
 cp mkfls/unix/{Makefile*,configure*,install-sh,mkinstalldirs} .
 chmod +x mkinstalldirs
 ./configure
@@ -46,12 +53,20 @@ The plan was verified on macOS 14 with clang 21. The build produced a
 working `binkd` binary. The `-d` option dumps the parsed config and
 works with a small test config.
 
+The Rust build is the default of this tree:
+
+```
+cd rust
+cargo build --workspace
+```
+
 ### 2.2 Module map
 
-The table below lists the modules, their size, and the Rust crate that
-replaces each module. The sizes come from `wc -l`.
+The table below lists the upstream C modules, their size, and the Rust crate
+that replaces each module. The sizes come from `wc -l`. The files are in the
+upstream C source, not in this tree.
 
-| C module | Lines | Responsibility | Rust crate |
+| Upstream C module | Lines | Responsibility | Rust crate |
 | --- | --- | --- | --- |
 | `pmatch.c` | 143 | Shell-style wildcard match | `binkd-ftn` |
 | `getw.c` | 141 | Token parser with quotes and escapes | `binkd-ftn` |
@@ -92,7 +107,7 @@ replaces each module. The sizes come from `wc -l`.
 
 ### 2.3 Platform matrix
 
-The C code supports these targets:
+The upstream C implementation supports these targets:
 
 - UNIX with autoconf: Linux, macOS, BSD.
 - Windows: MinGW and MSVC, 32 and 64 bit.
@@ -101,9 +116,10 @@ The C code supports these targets:
 - Amiga with ixemul.
 
 The Rust port targets UNIX and Windows. OS/2, DOS, and Amiga are out of
-scope for the port, the decision of `doc/decisions/legacy-platforms.md`: the C
-code keeps the three systems, the reference and the build of the port. A system of
-the three that a maintainer asks for gets its own record and its own phase.
+scope for the port, the decision of `doc/decisions/legacy-platforms.md`: the
+upstream C implementation is the reference and the only build of the three.
+A system of the three that a maintainer asks for gets its own record and its
+own phase.
 
 The CI matrix covers Linux, macOS, and Windows. The `interop-macos`
 and `interop-windows` jobs run the C↔Rust base matrix; BSD is
@@ -112,25 +128,31 @@ build-supported but not CI-tested, the decision of
 
 ### 2.4 Test state
 
-The repository had no test suite. Only `snprintf.c` has a self-test with
-the `TEST_SNPRINTF` define.
+The upstream C repository had no test suite. Only `snprintf.c` has a
+self-test with the `TEST_SNPRINTF` define.
 
-Phase 0 is complete:
+Phase 0 is complete, as history:
 
-- `tests/` holds a unit test harness for the pure C modules.
-- The tests run with `make -C tests` and with AddressSanitizer.
+- The then-local C tree held a unit test harness for the pure C modules.
+- The harness ran with its `make` target and with AddressSanitizer.
+- The local C tree and the harness are gone, the decision of
+  `doc/decisions/c-out-of-tree.md`.
 
 Phase 1 is complete:
 
-- `tests/golden/` holds the golden corpus. The C runner in
-  `tests/test_corpus.c` checks 223 cases against the C code.
-- `rust/` holds the Cargo workspace. The tests check the same corpus
+- `tests/golden/` holds the golden corpus. The former C runner checked 223
+  cases against the C code; the runner is not in this tree.
+- `rust/` holds the Cargo workspace. The Rust tests check the same corpus
   against the Rust code.
 - `rust/crates/binkd-ftn` holds the pure FTN logic: patterns, tokens,
   addresses, domains, CRAM-MD5, ZipCrypto, packet headers, and the pure
   helpers of `tools.c`.
 - `rust/crates/binkd-spool` holds the flow file code.
 - `rust/crates/binkd-corpus` holds the corpus reader of the tests.
+
+The Rust tests are the only suite in this tree. The upstream C implementation
+is the oracle only in the interop jobs, where the CI action clones and patches
+it.
 
 ### 2.5 Observability surfaces
 
@@ -153,14 +175,15 @@ These surfaces are the oracles for the equivalence tests:
 
 The rewrite is complete when these conditions hold:
 
-- The Rust `binkd` binary passes every test of the C test suite.
+- The Rust `binkd` binary passes every corpus case and every interop test
+  against the upstream C implementation.
 - The Rust code parses every config file of the corpus and the `-d` dump
-  is byte-identical to the C dump.
-- The Rust code and the C code interoperate in both roles: Rust client
-  to C server, and C client to Rust server.
+  is byte-identical to the upstream C dump.
+- The Rust code and the upstream C code interoperate in both roles: Rust
+  client to C server, and C client to Rust server.
 - The Rust code reproduces the spool file effects for the fixtures.
 - The `binkd` crate exposes a library API for other programs.
-- The C test suite and the differential suite pass in CI.
+- The Rust suite and the interop suite pass in CI.
 
 ## 4. Test strategy
 
@@ -170,16 +193,17 @@ The plan uses four test levels. Each level pins one part of the behaviour.
 
 Unit tests check single functions.
 
-- The C suite in `tests/` pins the current behaviour of the pure
-  modules.
+- The former C suite in the local tree pinned the behaviour of the pure
+  modules. That tree is gone.
 - The Rust crates carry the same tests. The Rust tests must reproduce the
-  C results.
+  upstream C results.
 - The Rust tests use the golden corpus (level 2) for the shared cases.
 
 ### Level 2: golden corpus
 
-The corpus holds the cases in text files. Both implementations read the
-same files. A difference in one case fails the test.
+The corpus holds the cases in text files. The Rust tests read the files. The
+upstream C implementation is the oracle in the interop jobs. A difference in
+one case fails the test.
 
 Layout:
 
@@ -207,19 +231,19 @@ pmatch	*.pkt	12345.pkt	1	=>	1
 pmatch	*.pkt	12345.pkt.bad	1	=>	0
 ```
 
-The C runner in `tests/test_corpus.c` and the Rust tests read the same
-files. The runner of the C code rejects a file without a known crate name,
-so no case stays unchecked.
+The Rust tests of a crate read the files that its `# crate:` header names. The
+test selects its cases by that name, so no case stays unchecked.
 
 The corpus is the differential oracle. An in-process binding to the C code
-(`binkd-ffi`) is not necessary for the corpus tests. The plan adds
-`binkd-ffi` in phase 4 for randomized differential tests.
+(`binkd-ffi`) was planned but not added. The interop suite runs the real
+upstream C binary against the Rust code in both roles, so it supplies the
+differential coverage.
 
 ### Level 3: session replay
 
 A recorded session is a byte log of a real binkp session.
 
-- The C `binkd` records the log in a test mode.
+- The upstream C `binkd` records the log in a test mode.
 - The replay test drives a session over an in-memory duplex stream and
   compares every frame with the log.
 - The same log drives the Rust session code.
@@ -241,10 +265,11 @@ Each case uses a fixture spool. The test sends one packet in each
 direction and compares the spool directories after the session.
 
 The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and
-`interop-v10` build the C binary on Ubuntu and set `BINKD_C`,
-`BINKD_C_PROXY`, `BINKD_C_BWLIM`, and `BINKD_C_V10`. The
-`interop-macos` job builds the UNIX C reference on macOS and runs the
-base matrix with `BINKD_C`. The `interop-windows` job builds the
+`interop-v10` clone the upstream C reference on Ubuntu with
+`.github/actions/upstream-c`, apply `ci/upstream-c.patch`, build it, and set
+`BINKD_C`, `BINKD_C_PROXY`, `BINKD_C_BWLIM`, and `BINKD_C_V10`. The
+`interop-macos` job builds the upstream UNIX C reference on macOS and runs the
+base matrix with `BINKD_C`. The `interop-windows` job builds the upstream
 MinGW C reference and runs the base protocol, network, record, and
 binary matrix with `BINKD_C`; the proxy, rate-limit, and protocol
 1.0 variants stay Ubuntu-only. The `rust`, `macos`, and `windows`
@@ -313,9 +338,9 @@ The tests found these behaviours. The Rust port must reproduce them.
 
 ## 5. Target architecture
 
-The Rust code lives in a Cargo workspace in `rust/`. The C code stays in
-the root until the cutover. The workspace has one crate per module group
-and one binary crate.
+The Rust code lives in a Cargo workspace in `rust/`. The upstream C code is
+not in this tree, the decision of `doc/decisions/c-out-of-tree.md`. The
+workspace has one crate per module group and one binary crate.
 
 ```
 rust/
@@ -330,7 +355,6 @@ rust/
     binkd-srif/            # SRIF events
     binkd/                 # binary: CLI, daemon, signals
     binkd-corpus/           # test only: the golden corpus reader
-    binkd-ffi/              # test only: C reference bindings
   examples/embed.rs        # library use example
 ```
 
@@ -348,8 +372,6 @@ arrive in the later phases.
 - `binkd-spool` uses `std::fs`. The tests run on a temporary directory
   and compare the file system state. An in-memory file system would hide the
   behavior of the real code.
-- `binkd-ffi` exists for tests only. It links the C objects and
-  exposes them to the differential tests.
 
 ### 5.2 Library API
 
@@ -410,20 +432,24 @@ The difference has observable effects:
 
 ## 6. Port order
 
-Each phase ends with a working build and a green test suite. The C code
-stays the reference until the cutover.
+Each phase ends with a working build and a green test suite. The upstream C
+code was the reference until the cutover. The local C tree is gone now.
 
-### Phase 0: C test baseline (done)
+### Phase 0: C test baseline (done, historical)
 
 Deliverables:
 
-- `tests/` harness with 7 test programs and 488 checks.
+- A test harness with 7 test programs and 488 checks in the then-local C
+  tree.
 - `tests/README.md` with the run instructions.
 
 Exit criteria:
 
-- `make -C tests` passes.
-- The C build works on UNIX.
+- The `make` target of the C tests passed.
+- The C build worked on UNIX.
+
+The local C tree and the harness are gone, the decision of
+`doc/decisions/c-out-of-tree.md`.
 
 ### Phase 1: workspace, differential harness, pure core (done)
 
@@ -431,13 +457,14 @@ Deliverables:
 
 - The Cargo workspace in `rust/` with `binkd-ftn`, `binkd-spool`, and
   `binkd-corpus`.
-- The golden corpus in `tests/golden/`. The C runner reads the corpus.
+- The golden corpus in `tests/golden/`. The former C runner read the corpus;
+  the Rust tests read it now.
 - Rust ports of `pmatch.c`, `getw.c`, `crypt.c`, `md5b.c`,
   `ftnaddr.c`, `ftndom.c`, `readflo.c`, and the pure parts of `tools.c`.
 - A differential test that runs the Rust code on the corpus.
 
 The tests cover 215 cases of `binkd-ftn` and 8 cases of `binkd-spool`.
-The C runner covers the same 223 cases.
+The former C runner covered the same 223 cases.
 
 Exit criteria:
 
@@ -470,13 +497,12 @@ The port holds:
 - `binkd-spool::busy` holds the `.bsy` and `.csy` flags of the busy
   list, and `binkd-spool::inbound` holds the partial files, the rename,
   and the duplicate check of `inbound.c`.
-- `tests/golden/spool/` holds 12 cases. The C runner in
-  `tests/test_spool.c` and the Rust test in
-  `crates/binkd-spool/tests/spool_corpus.rs` read the same files.
+- `tests/golden/spool/` holds 12 cases. The former C runner and the Rust
+  test in `crates/binkd-spool/tests/spool_corpus.rs` read the same files.
 
-The C runner passed a relative temporary name to `check_pkthdr()`, so the C
-code could not open the packet file. The runner now passes the absolute path,
-and the corpus covers the good and the bad packet addresses.
+The former C runner passed a relative temporary name to `check_pkthdr()`, so
+the C code could not open the packet file. The runner passed the absolute path
+after the fix, and the corpus covers the good and the bad packet addresses.
 
 The session counters and the SRIF events of `inb_done()` stay with the
 protocol layer. The `defnode` DNS resolution of `get_node_info()` stays with
@@ -877,8 +903,8 @@ Progress:
   not follow RFC 2782 either. (done)
 - The port of the SRV lookup is testable: the settings of the resolver are a
   value, so `crates/binkd-net/tests/srv.rs` runs the lookup against a server of
-  the test on the loopback address. The C test suite holds no test of the SRV
-  lookup at all. (done)
+  the test on the loopback address. The former C test suite held no test of the
+  SRV lookup at all. (done)
 - The divergences of the SRV lookup, for the record:
     - The C code asks the services database of the system for a name, so a name
       that the port does not hold is an error for the port. The port holds the
@@ -901,10 +927,10 @@ Progress:
   (done)
 - The `-bw` option of a node and the rules of `limit-rate` are the port of the
   config: the option and the rules answer a plain resolution without the `BW_LIM`
-  build of the C code, the port of the `Features` of the port. The C corpus of the
-  tests holds no case of them, because the corpus runner of the C code holds the
-  plain build. The port covers them with the unit tests of the parser and with the
-  interop test of the rate limit. (done)
+  build of the C code, the port of the `Features` of the port. The corpus holds
+  no case of them, because the plain upstream C build of the interop jobs does
+  not hold the rate limit. The port covers them with the unit tests of the parser
+  and with the interop test of the rate limit. (done)
 - The divergences of the rate limit, for the record:
     - The C code reads the wall clock and it resets the meter when the clock steps
       back. The port reads a monotonic clock, so the time cannot step back.
@@ -955,7 +981,7 @@ Progress:
   file at once and delayed, the touch of a flag file that is there, the command at
   once and delayed, the SRIF exchange with a program of the test that answers the
   response file, the deferred exchange of the end of the batch, and the claims of the
-  peer. The C test suite holds no test of the SRIF events at all. (done)
+  peer. The former C test suite held no test of the SRIF events at all. (done)
 - The session wires the events, the port of option A of the plan: it takes a
   `Srif` value like the `files` and the `receive` closures, so `binkd-proto` never
   depends on `binkd-srif`. The port of `protocol.c` calls it at the four points of
@@ -966,7 +992,7 @@ Progress:
   events that wait. (done)
 - The tests of the wiring: a session of the port with a recording `Srif` sends a
   file, the answerer answers the file of the exchange, and the caller receives it.
-  The C test suite holds no such test. (done)
+  The former C test suite held no such test. (done)
 - `binkd-net::srif::Events` holds the real wiring, the port of the calls of
   `protocol.c` to `srif.c`: the engine of `binkd-srif` with the queue of the spool,
   the `Runner` that runs the external program, the port of `run()` of `run.c`, and
@@ -1356,44 +1382,49 @@ no remaining item of the plan.
 
 Legacy platforms: OS/2, DOS, and Amiga. The team accepted option 2 of the
 record `doc/decisions/legacy-platforms.md`: the Rust port does not support the
-three, and the C code stays as their reference and build. Windows 9x/Me is out
-of scope too, the record `doc/decisions/windows-support.md`.
+three, and the upstream C implementation is their reference and build.
+Windows 9x/Me is out of scope too, the record
+`doc/decisions/windows-support.md`.
 
-### Phase 8: cutover (in progress)
+### Phase 8: cutover (done)
 
 Deliverables:
 
-- The Rust binary is the default build on UNIX and on Windows NT and later.
-- The C code stays in the tree as the reference and the build of OS/2, DOS, and
-  Amiga, the decision of `doc/decisions/legacy-platforms.md`. The cutover does
-  not remove it.
-- The README, the man page, and the packaging files state the Rust default and
-  the known differences: the Windows tray icon, Windows 9x/Me, the C-only
-  legacy platforms, and the Windows keyword set (`aso`, `syslog`,
-  `zlib-dll`, and `bzlib2-dll` rejected; proxy, socks, and `limit-rate`
-  accepted).
-- CI runs both suites. The `interop`, `interop-proxy`,
-  `interop-bwlim`, and `interop-v10` jobs run the C and Rust matrix
-  on Ubuntu. The `interop-macos` job runs the base matrix on macOS,
-  and the `interop-windows` job runs the base protocol, network,
-  record, and binary matrix on Windows. The `macos` and `windows`
-  jobs run the workspace suite; the Windows job runs the parity tests
-  and the service smoke test. BSD is build-supported but not CI-tested.
+- The Rust workspace is the only implementation in this tree and the default
+  on UNIX and on Windows NT and later.
+- The local C tree is removed, the decision of
+  `doc/decisions/c-out-of-tree.md`. The upstream C implementation, pinned at
+  `5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba` and patched by
+  `ci/upstream-c.patch`, is the reference and the build of OS/2, DOS, Amiga,
+  and Windows 9x/Me.
+- The README, the man page, and the decision records state the Rust default
+  and the known differences: the Windows tray icon, Windows 9x/Me, the
+  upstream-C-only legacy platforms, and the Windows keyword set (`aso`,
+  `syslog`, `zlib-dll`, and `bzlib2-dll` rejected; proxy, socks, and
+  `limit-rate` accepted).
+- CI runs the Rust suite and the interop jobs. The `interop`, `interop-proxy`,
+  `interop-bwlim`, and `interop-v10` jobs clone and build the upstream C
+  reference on Ubuntu with `.github/actions/upstream-c`. The `interop-macos`
+  job runs the base matrix on macOS, and the `interop-windows` job runs the
+  base protocol, network, record, and binary matrix on Windows. The `macos`
+  and `windows` jobs run the workspace suite; the Windows job runs the parity
+  tests and the service smoke test. BSD is build-supported but not CI-tested.
 
-The cutover has started:
+The cutover is complete:
 
-- `README.md` names the Rust build as the default and the C build as the
-  reference.
-- `doc/decisions/legacy-platforms.md` and
-  `doc/decisions/windows-support.md` are accepted.
-- `.github/workflows/ci.yml` runs the Rust suite, the C suite, the C
-  and Rust interop jobs on Ubuntu, the `interop-macos` and
-  `interop-windows` jobs, the MSRV check, the Perl hooks with the C
-  oracle, the macOS workspace suite, and the Windows workspace,
-  parity, and service smoke tests.
+- `README.md` names the Rust workspace as the only implementation and the
+  default, and `binkd.8` states the same.
+- `doc/decisions/c-out-of-tree.md` is accepted and implemented, and
+  `doc/decisions/legacy-platforms.md`, `doc/decisions/platform-ci.md`, and
+  `doc/decisions/windows-support.md` name the upstream C source.
+- `.github/workflows/ci.yml` runs the Rust suite, the interop jobs that clone
+  the upstream C reference, the MSRV check, the Perl hooks with the upstream C
+  oracle, the macOS workspace suite, and the Windows workspace, parity, and
+  service smoke tests. No job builds a local C tree.
 
-The Windows service mode is implemented. The man page and the packaging files
-follow the release process.
+The Windows service mode is implemented. The Debian packaging and the
+upstream release files stay in the upstream C tree. The release notes state
+the port status and the known differences.
 
 Exit criteria:
 
@@ -1409,7 +1440,7 @@ The list below holds the decisions that the plan needs before phase 4.
    `perlhooks.c` in Rust over a minimal C shim of the Perl C API.
 2. Legacy platforms: settled in `doc/decisions/legacy-platforms.md`. The team
    accepted option 2: the Rust port does not support OS/2, DOS, and Amiga, and
-   the C code stays as their reference and build.
+   the upstream C implementation is their reference and build.
 3. Log text: is the message text part of the contract?
    The plan assumes no. The log line format is a contract.
 4. Error exit codes: the C code calls `exit(1)` on a level 0 log message.
@@ -1430,6 +1461,11 @@ The list below holds the decisions that the plan needs before phase 4.
    `MetadataExt::volume_serial_number` is nightly-only on every current stable
    release. The `binkd-config` provider keeps the crate free of a Windows
    dependency.
+8. C out of tree: settled in `doc/decisions/c-out-of-tree.md`. The Rust
+   workspace is the only implementation in this tree. The local C tree is
+   removed, and the upstream C reference is pinned at
+   `5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba` and patched by
+   `ci/upstream-c.patch` for the interop tests.
 
 ## 8. Risks
 
@@ -1447,15 +1483,14 @@ The list below holds the decisions that the plan needs before phase 4.
 ## 9. Verification commands
 
 ```
-make -C tests                           # the C tests and the C corpus runner
-make -C tests clean                      # remove the test build
 cd rust && cargo test --workspace         # the Rust tests and the corpus tests
 cd rust && cargo clippy --workspace --all-targets
+cd rust && cargo fmt --check
 ```
 
-The interop tests arrive in phase 4. They need the C binary and the Rust
-binary. Build the C binary with the procedure in section 2.1. Build the
-Rust binary with:
+The interop tests need the upstream C binary and the Rust tests. Build the
+upstream C binary with the procedure in section 2.1. Set `BINKD_C` to its
+path. Build the Rust binary with:
 
 ```
 cargo build -p binkd
@@ -1466,7 +1501,7 @@ cargo build -p binkd
 The milestones follow the phases. Each milestone is a mergeable state.
 
 1. Milestone 1: phase 0 and phase 1 (done). The Rust pure core matches
-   the C code on the corpus.
+   the upstream C code on the corpus.
 2. Milestone 2: phase 2 and phase 3. The Rust code reads and writes
    the spool and parses every config.
 3. Milestone 3: phase 4. The Rust code runs a binkp session with the C
@@ -1474,6 +1509,7 @@ The milestones follow the phases. Each milestone is a mergeable state.
 4. Milestone 4: phase 5 and phase 6 (done). The Rust binary runs as a daemon
    and as a library on UNIX and Windows, and the Windows service mode is in
    place.
-5. Milestone 5: phase 7 and phase 8. Phase 7 is done. The Rust code is the
-   default on UNIX and on Windows NT and later. The C code stays as the
-   reference and the legacy build.
+5. Milestone 5: phase 7 and phase 8 (done). The Rust workspace is the only
+   implementation in this tree and the default on UNIX and on Windows NT and
+   later. The upstream C implementation is the reference and the legacy
+   build.

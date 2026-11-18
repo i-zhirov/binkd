@@ -7,8 +7,8 @@ safe file-system helpers of the Windows build.
 
 ## Context
 
-The C code holds the Windows layer in `nt/` and in the `WIN32` blocks of
-`binkd.c`:
+The upstream C code holds the Windows layer in `nt/` and in the `WIN32`
+blocks of `binkd.c`:
 
 - `nt/service.c`: the service control manager. It holds install, uninstall,
   start, stop, restart, and status, the control events, and the service
@@ -57,15 +57,15 @@ service mode is the Windows layer; the `binkd-win` crate holds it.
    the port of the `CTRL_SERVICESTOP_EVENT` and `CTRL_SERVICERESTART_EVENT` of
    `nt/breaksig.c`. The service cleanup removes the busy flags and the pid file
    and ends the interpreter, the port of `exitfunc()`.
-6. The C code of `nt/` stays in the tree as the reference of the port, the
-   decision of `doc/decisions/legacy-platforms.md`. The port does not link the C
-   service module.
+6. The upstream C code of `nt/` is the reference of the port, the records
+   `doc/decisions/c-out-of-tree.md` and `doc/decisions/legacy-platforms.md`.
+   This tree holds no C code, and the port does not link the C service module.
 7. The pure parts of the service mode get unit tests: the parse of `-t` and
    `-S`, the service command, and the service name. The service control manager
    itself has a Windows CI job that runs the
-   [smoke test](#windows-scm-smoke-test). The C code stays the oracle of the
-   service commands by its source, and the release notes state the smoke test
-   result.
+   [smoke test](#windows-scm-smoke-test). The upstream C code stays the oracle
+   of the service commands by its source, and the release notes state the smoke
+   test result.
 8. The release notes state the Windows differences: no tray icon, no `-T`
    switch, and no Windows 9x/Me.
 
@@ -95,8 +95,9 @@ The target-gated parity tests are in the same workspace suite.
 
 ## CI coverage
 
-The `interop-windows` job of `.github/workflows/ci.yml` builds the C
-Windows reference with MSYS2/MinGW64 and runs the base C↔Rust
+The `interop-windows` job of `.github/workflows/ci.yml` checks out the
+upstream C reference with `.github/actions/upstream-c`, builds the C Windows
+reference with MSYS2/MinGW64, and runs the base C↔Rust
 protocol, network, record, and binary tests. The build command, the
 output path, and the limits of the job are in
 `doc/decisions/platform-ci.md`. The job does not run the config
@@ -188,8 +189,9 @@ the binary version, and the result in the release notes.
 ## Consequences
 
 - The Rust binary is the default on Windows NT and later, the same as on UNIX.
-- The tree keeps the C Windows service and tray code as the reference, and the
-  `nt/` layer stays for the platforms that the C code alone supports.
+- The upstream C tree keeps the C Windows service and tray code as the
+  reference, and the `nt/` layer stays upstream for the platforms that the C
+  code alone supports. This tree holds no C code.
 - The workspace holds a second exception of `unsafe_code` for the Windows FFI.
   The crate is small, and a review of the crate covers the whole unsafe surface.
 - A user of the C `-T` switch and of the tray icon gets a known difference. The
@@ -197,5 +199,5 @@ the binary version, and the result in the release notes.
 - The Windows build accepts the proxy and rate-limit keywords, and refuses
   `aso`, `syslog`, `zlib-dll`, and `bzlib2-dll`. The record names the C
   differences above.
-- Windows 9x/Me stays a C-only platform, the decision of
+- Windows 9x/Me stays an upstream-C-only platform, the decision of
   `doc/decisions/legacy-platforms.md`.

@@ -1,9 +1,8 @@
 //! Pure FTN logic of binkd.
 //!
 //! The crate holds no I/O and no global state. The functions follow the C
-//! implementation in the parent directory. The tests in `tests/corpus.rs`
-//! check the Rust code against the same golden corpus as the C code in
-//! `tests/test_corpus.c`.
+//! implementation in the upstream C tree. The tests in `tests/corpus.rs`
+//! check the Rust code against the golden corpus.
 
 #![forbid(unsafe_code)]
 

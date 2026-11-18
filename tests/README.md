@@ -1,38 +1,9 @@
-# Tests of the C implementation
+# Tests of the Rust implementation
 
-The tests in this directory check the C code.
+The tests in `rust/` check the Rust code.
 The golden corpus in `golden/` holds the value cases.
-The C runner in `test_corpus.c` and the Rust tests in `rust/` read the
-same corpus, so the corpus is the equivalence oracle.
-
-## Requirements
-
-- A C compiler (`cc`).
-- A UNIX system. The tests define `HAVE_FORK` and `UNIX` and use the
-  same feature defines as the autoconf build.
-
-## Run the C tests
-
-```
-make -C tests
-```
-
-The command builds each test program and runs it. A test program prints
-`ok` or `FAIL` for its checks and the exit code of the make command shows
-the result.
-
-Remove the build directory:
-
-```
-make -C tests clean
-```
-
-Run the tests with AddressSanitizer:
-
-```
-make -C tests clean
-make -C tests CFLAGS="-O0 -g -fsanitize=address -fno-omit-frame-pointer"
-```
+The Rust tests read the corpus.
+The upstream C implementation is the oracle only in the interop jobs.
 
 ## Run the Rust tests
 
@@ -41,8 +12,8 @@ cd rust
 cargo test --workspace
 ```
 
-The Rust tests read the same corpus. A difference in one case fails the
-test with the file name and the line number.
+The Rust tests read the corpus. A difference in one case fails the test with
+the file name and the line number.
 
 ## Run the Windows service smoke test
 
@@ -96,8 +67,8 @@ cargo test
 The script `tests/perl/hooks.pl` holds every hook. The hook writes its name to
 the file of the environment `BINKD_PERL_MARK`, so a case holds the hooks that
 ran. The port cases of `crates/binkd/tests/perl.rs` hold the call hooks, the
-session hooks end to end, and the reload hooks. The cases of the C oracle run
-when the environment names the binary `BINKD_C_PERL` of
+session hooks end to end, and the reload hooks. The oracle cases run against
+the upstream C binary when the environment names `BINKD_C_PERL`, a binary of
 `./configure --with-perl`.
 
 The cases of `crates/binkd-perl/tests/hooks.rs` call every hook and hold the
@@ -127,13 +98,15 @@ values, the traffic, and the compression counters. The cases
 `%opt`, `$traf_mail`, `$traf_file`, `$z_send`, `$z_recv`, and `@queue` in the
 script, the values that the script writes back into `@queue`, the deletion of
 an entry in `before_send()` and `after_recv()`, and the deletion in
-`before_recv()` and `after_sent()` that the C code does not apply. The cases
+`before_recv()` and `after_sent()` that the upstream C code does not apply.
+The cases
 `the_hook_rebuilds_the_session_files`,
 `the_hook_removes_a_file_from_the_session`, and
 `the_hook_removes_a_file_of_after_recv` of
 `crates/binkd-proto/tests/session.rs` hold the files that the session rebuilds
 and drops from the queue. The case
-`the_session_does_not_refresh_the_queue_of_before_recv` holds the C rule that
+`the_session_does_not_refresh_the_queue_of_before_recv` holds the upstream C
+rule that
 `before_recv()` does not refresh the queue, and
 `the_session_does_not_refresh_the_queue_of_after_sent` holds the same rule for
 `after_sent()`. The port cases
@@ -204,21 +177,20 @@ A field escapes these characters:
 The text `<null>` means a NULL value. Lines that start with `#` are
 comments. Empty lines are ignored.
 
-The runners of the C tests and the Rust tests set these environment
-variables for the `%VAR%` cases of `getword`:
+The Rust test runner sets these environment variables for the `%VAR%` cases
+of `getword`:
 
 - `BINKD_TEST_VAR=value`
 - `BINKD_TEST_LOWER=lower`
 
 The `ftn.tsv` file uses a fixed domain table and a fixed AKA. The table is
-in the header of the file and in `init_tables()` of `test_corpus.c`. The
-Rust test uses the same table.
+in the header of the file, and the Rust test uses the same table.
 
 ## The spool corpus
 
 The spool cases live in `tests/golden/spool/`. A case sets up a spool, runs
 the operations, and compares the output with the lines after the `---` line.
-The C runner creates the case directory in a temporary directory, so the case
+The test creates the case directory in a temporary directory, so the case
 files hold relative paths only.
 
 The lines before `---` are:
@@ -286,9 +258,9 @@ The lines after `---` are the output of the operations:
 | `text <path> <text>` | The text of a file. |
 | `exists <path> <0\|1>` | The file exists. |
 
-A case must not hold two queue entries with the same sort key. The C code
-keeps the `readdir()` order there, and that order is not the same on every
-file system. The Rust port keeps the same order as the C code.
+A case must not hold two queue entries with the same sort key. The upstream
+C code keeps the `readdir()` order there, and that order is not the same on
+every file system. The Rust port keeps the same order as the upstream C code.
 
 The `inbound_minfree` case runs the non-negative `minfree` path. The focused
 checks are:
@@ -304,20 +276,21 @@ cargo test -p binkd the_free_space
 The config cases live in `tests/golden/config/`. A case is a config file
 `<name>.conf` and the expected `-d` dump `<name>.expect`.
 
-The C binary makes the expectations:
+The upstream C binary makes the expectations:
 
 ```
 cd tests/golden/config
 binkd -d <name>.conf > <name>.expect
 ```
 
-The configs use relative paths, so the C binary runs in the case directory. The
-directories of the cases (`in`, `outb`, `box`, `inbox`, `bbox`) are in the
-repository, and the `include` fragments live in `parts/`.
+The configs use relative paths, so the upstream C binary runs in the case
+directory. The directories of the cases (`in`, `outb`, `box`, `inbox`,
+`bbox`) are in the repository, and the `include` fragments live in `parts/`.
 
 The Rust test `crates/binkd-config/tests/dump_corpus.rs` parses each case and
-compares the dump with the expectation. When the `BINKD_C` variable names the C
-binary, the test also runs it and checks that the expectation is current:
+compares the dump with the expectation. When the `BINKD_C` variable names the
+upstream C binary, the test also runs it and checks that the expectation is
+current:
 
 ```
 cd rust
@@ -333,13 +306,14 @@ format has no expected-error case.
 A reload case is a config file `<name>.conf` and a changed variant
 `<name>.changed`. The Rust test copies the corpus into a temporary directory,
 loads the case, writes the variant over the case file, and runs the reload. It
-compares the dump of the new config with `<name>.changed.expect`. The C binary made that
-expectation with `binkd -d <name>.conf` on the changed file.
+compares the dump of the new config with `<name>.changed.expect`. The upstream
+C binary made that expectation with `binkd -d <name>.conf` on the changed
+file.
 
 The test also checks that a check without the `-C` option does nothing, that a
 second check sees no change, and that a broken file keeps the old config.
 
-To check the reload of the C daemon by hand:
+To check the reload of the upstream C daemon by hand:
 
 ```
 cd tests/golden/config
@@ -350,11 +324,16 @@ grep "Reloading configuration" <log>
 
 ## The interop tests
 
-The interop tests run the C binary and the Rust code against each other over
-the loopback address, in both roles. They are the back-to-back suite of the
-plan. Build the plain C reference with zlib and bzip2 first:
+The interop tests run the upstream C binary and the Rust code against each
+other over the loopback address, in both roles. They are the back-to-back
+suite of the plan. Clone the upstream C reference, check out the pinned
+commit, apply the patch, and build the plain reference with zlib and bzip2:
 
 ```sh
+git clone https://github.com/pgul/binkd.git upstream-c
+git -C upstream-c checkout 5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba
+git -C upstream-c apply "$PWD/ci/upstream-c.patch"
+cd upstream-c
 cp mkfls/unix/* .
 chmod +x mkinstalldirs
 ./configure
@@ -366,31 +345,31 @@ process:
 
 ```sh
 cd rust
-BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop
-BINKD_C=$PWD/../binkd cargo test -p binkd-net --test interop
-BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test record
-BINKD_C=$PWD/../binkd cargo test -p binkd-config --test dump_corpus
-BINKD_C=$PWD/../binkd cargo test -p binkd-config --test reload_corpus
-BINKD_C=$PWD/../binkd cargo test -p binkd --test cli
-BINKD_C=$PWD/../binkd cargo test -p binkd --test daemon
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test interop
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-net --test interop
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test record
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-config --test dump_corpus
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-config --test reload_corpus
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test cli
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test daemon
 ```
 
-Without `BINKD_C` the tests report that they are skipped. Only the C tests of
-the `binkd-proto` file need the C binary; the Rust side is the library, not the
-Rust binary. The cases of `crates/binkd/tests/engine.rs` hold the two roles of
-the Rust library against each other.
+Without `BINKD_C` the tests report that they are skipped. Only the interop
+cases of the `binkd-proto` file need the C binary; the Rust side is the
+library, not the Rust binary. The cases of `crates/binkd/tests/engine.rs` hold
+the two roles of the Rust library against each other.
 
 The binary-level test `crates/binkd/tests/interop_binary.rs` starts the real
-C and Rust binaries. It runs the C server with the Rust client, the Rust
-server with the C client, and the C server with the C client. The generated
-configs fix `tzoff -3h`, and the test checks that the received `TIME` line of
-the C server and of the C client carries `-0300`. The frame test of the
-protocol interop suite holds the `NUL TIME` frame after `NDL` and before
+upstream C and Rust binaries. It runs the C server with the Rust client, the
+Rust server with the C client, and the C server with the C client. The
+generated configs fix `tzoff -3h`, and the test checks that the received `TIME`
+line of the C server and of the C client carries `-0300`. The frame test of
+the protocol interop suite holds the `NUL TIME` frame after `NDL` and before
 `VER` in the C and the Rust sequence:
 
 ```sh
 cd rust
-BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test interop_binary
 ```
 
 The binary interop test accepts `BEGIN, binkd/` and the Windows
@@ -399,30 +378,33 @@ because the config tokenizer reads `\` as an escape.
 
 ### The platform jobs
 
-The `interop` job builds the plain C reference on Ubuntu and runs
-the base matrix and the binary-level test.
+The `interop` job checks out the upstream C reference with
+`.github/actions/upstream-c`, builds the plain binary, and runs the base
+matrix and the binary-level test.
 
-The `interop-macos` job builds the UNIX C reference on a macOS
-runner and runs the base matrix:
+The `interop-macos` job checks out the upstream C reference with the action
+and builds the UNIX binary on a macOS runner:
 
 ```sh
+cd upstream-c
 cp mkfls/unix/* .
 chmod +x mkinstalldirs
 ./configure
 make
-cd rust
-BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop -- --test-threads=1
-BINKD_C=$PWD/../binkd cargo test -p binkd-net --test interop -- --test-threads=1
-BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test record -- --test-threads=1
-BINKD_C=$PWD/../binkd cargo test -p binkd-config --test dump_corpus
-BINKD_C=$PWD/../binkd cargo test -p binkd-config --test reload_corpus
-BINKD_C=$PWD/../binkd cargo test -p binkd --test cli
-BINKD_C=$PWD/../binkd cargo test -p binkd --test daemon -- --test-threads=1
-BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary -- --test-threads=1
+cd ../rust
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test interop -- --test-threads=1
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-net --test interop -- --test-threads=1
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test record -- --test-threads=1
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-config --test dump_corpus
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-config --test reload_corpus
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test cli
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test daemon -- --test-threads=1
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test interop_binary -- --test-threads=1
 ```
 
-The `interop-windows` job builds the C reference with MSYS2/MinGW64.
-From the repository root in a MINGW64 shell:
+The `interop-windows` job checks out the upstream C reference with the action
+and builds it with MSYS2/MinGW64. From the `upstream-c` directory in a MINGW64
+shell:
 
 ```sh
 make -f mkfls/nt95-mingw/Makefile \
@@ -433,7 +415,7 @@ make -f mkfls/nt95-mingw/Makefile \
 ```
 
 The binary is
-`bin/mingw32-zlib-bzlib2/binkd-mingw-zlib-bzlib2.exe`. Set
+`upstream-c/bin/mingw32-zlib-bzlib2/binkd-mingw-zlib-bzlib2.exe`. Set
 `BINKD_C` to that path and run the protocol, network, record, and
 binary tests with `--test-threads=1`. Add
 `C:\msys64\mingw64\bin` to `PATH` in the test step, so a toolchain
@@ -450,7 +432,8 @@ job.
 
 ### The special builds
 
-The special builds stay on Ubuntu. `interop-proxy` builds the proxy
+The special builds stay on Ubuntu and use the action
+`.github/actions/upstream-c`. `interop-proxy` builds the proxy
 C binary and runs `proxy_interop`; `interop-bwlim` builds the
 rate-limit C binary and runs
 `rust_client_to_c_server_rate_limited`; `interop-v10` builds the
@@ -460,37 +443,40 @@ protocol 1.0 C binary and runs
 jobs leave `BINKD_C_PROXY`, `BINKD_C_BWLIM`, and `BINKD_C_V10`
 unset, so those tests skip.
 
-BSD is build-supported but not CI-tested. The C reference and the
+BSD is build-supported but not CI-tested. The upstream C reference and the
 Rust workspace build on BSD, and no CI runner is configured. The
 record `doc/decisions/platform-ci.md` holds the matrix.
 
 The Rust test `crates/binkd-net/tests/proxy_interop.rs` runs the proxy matrix
-for the network layer. Set `BINKD_C_PROXY` to the path of a C binary that the
-`configure` script built with `--with-proxy` and `--with-ntlm`:
+for the network layer. Set `BINKD_C_PROXY` to the path of an upstream C binary
+that the `configure` script built with `--with-proxy` and `--with-ntlm`:
 
 ```sh
+cd upstream-c
 cp mkfls/unix/* .
 chmod +x mkinstalldirs
 ./configure --with-proxy --with-ntlm
 make
-cd rust
-BINKD_C_PROXY=$PWD/../binkd cargo test -p binkd-net --test proxy_interop
+cd ../rust
+BINKD_C_PROXY=$PWD/../upstream-c/binkd cargo test -p binkd-net --test proxy_interop
 ```
 
 Without `BINKD_C_PROXY` the tests report that they are skipped. The corpus
-tests need the plain build of the C binary, so keep the two builds apart.
+tests need the plain build of the upstream C binary, so keep the two builds
+apart.
 
 The Rust test `crates/binkd-proto/tests/interop.rs` runs a transfer of the port
-against the C server with the rate limit. Set `BINKD_C_BWLIM` to the path of a C
-binary that the `configure` script built with `--with-bwlim`:
+against the C server with the rate limit. Set `BINKD_C_BWLIM` to the path of an
+upstream C binary that the `configure` script built with `--with-bwlim`:
 
 ```sh
+cd upstream-c
 cp mkfls/unix/* .
 chmod +x mkinstalldirs
 ./configure --with-bwlim
 make
-cd rust
-BINKD_C_BWLIM=$PWD/../binkd \
+cd ../rust
+BINKD_C_BWLIM=$PWD/../upstream-c/binkd \
     cargo test -p binkd-proto --test interop \
     rust_client_to_c_server_rate_limited
 ```
@@ -502,30 +488,30 @@ The interop test `c_client_claims_freq_to_rust_server` of
 version 1.0 against the listener of the port: the C client claims a FREQ, the
 external program of the port answers the file of the exchange, and the port holds
 its own end of the batch back until the C client answers the claim. Set
-`BINKD_C_V10` to the path of a C binary that the `make` command built with the
-`PRTCLVER` define of `Config.h`:
+`BINKD_C_V10` to the path of an upstream C binary that the `make` command built
+with the `PRTCLVER` define of the upstream `Config.h`:
 
 ```sh
 cd rust
-BINKD_C_V10=/path/to/binkd-v10 cargo test -p binkd-proto --test interop
+BINKD_C_V10=$PWD/../upstream-c-v10/binkd cargo test -p binkd-proto --test interop
 ```
 
-The build of that binary:
+The build of that binary, in a second clone of the upstream tree:
 
 ```sh
 make CFLAGS='-O2 -DPRTCLVER=\"1.0\"'
 ```
 
 Without `BINKD_C_V10` the test reports that it is skipped. The plain build
-advertises the version 1.1, and the C code holds its own end of the batch back
-for a peer of the version 1.0 only, so the test needs the build of the version
-1.0.
+advertises the version 1.1, and the upstream C code holds its own end of the
+batch back for a peer of the version 1.0 only, so the test needs the build of
+the version 1.0.
 
 The Rust test `crates/binkd-net/tests/srv.rs` runs the SRV lookup of the port
 against a server of the test on the loopback address. The test needs no C binary,
-because the C code asks the resolver library of the system. The test supplies the
-settings of the resolver, so it exercises the query, the records of the answer, and
-the fallback.
+because the upstream C code asks the resolver library of the system. The test
+supplies the settings of the resolver, so it exercises the query, the records
+of the answer, and the fallback.
 
 The matrix of `doc/rust-rewrite-plan.md`:
 
@@ -541,10 +527,10 @@ stream depend on the version of the library. The unit tests of
 `crates/binkd-proto/src/compress.rs` cover a round trip of both methods, and
 the interop tests cover the C and the Rust streams against each other.
 
-The C client needs the poll file in the outbound directory of the domain. `-P`
-alone adds the poll and starts the daemon, which never exits; pass `-P <node>`
-and `-p` in one call so the daemon creates the poll, runs the clients, and
-exits.
+The upstream C client needs the poll file in the outbound directory of the
+domain. `-P` alone adds the poll and starts the daemon, which never exits; pass
+`-P <node>` and `-p` in one call so the daemon creates the poll, runs the
+clients, and exits.
 
 ## The recorded sessions
 
@@ -566,10 +552,11 @@ covers the full batch: the banner, the login, the file of the caller, and the
 carries the `#[ignore]` attribute: run it after a change of the banner, of a frame,
 or of the flow of the batch, then commit the files.
 
-The replay of a live session of the C binary runs with `BINKD_C`: the test records
-the C client that polls the Rust server, then replays the bytes. The answerer of
-that recording must hold the address that the C client calls, because the C code
-abandons a session of a remote without the called AKA.
+The replay of a live session of the upstream C binary runs with `BINKD_C`: the
+test records the C client that polls the Rust server, then replays the bytes.
+The answerer of that recording must hold the address that the C client calls,
+because the upstream C code abandons a session of a remote without the called
+AKA.
 
 ## Run the local time tests
 
@@ -583,8 +570,8 @@ cargo test -p binkd-proto banner
 cargo test -p binkd-proto --test session the_time_frame_is_sent
 cargo test -p binkd-net the_banner_time
 cargo test -p binkd --test cli the_version_date_is_local
-BINKD_C=$PWD/../binkd cargo test -p binkd-proto --test interop
-BINKD_C=$PWD/../binkd cargo test -p binkd --test interop_binary
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd-proto --test interop
+BINKD_C=$PWD/../upstream-c/binkd cargo test -p binkd --test interop_binary
 ```
 
 ## Run the syslog tests
@@ -608,10 +595,10 @@ cargo test -p binkd-config the_syslog_keyword_shows_the_c_fallback
 ```
 
 The cases of `binkd-log` use a fake sink, and the cases of `binkd` cover the
-facility and priority mapping. No live syslog daemon is required. No golden C
+facility and priority mapping. No live syslog daemon is required. No golden
 case parses a `syslog <name>` line; the dump holds only the fallback, because
-the C parser `read_syslog_facility()` has an inverted argument check. The Rust
-parser and dump cases are the only coverage of the keyword.
+the upstream C parser `read_syslog_facility()` has an inverted argument check.
+The Rust parser and dump cases are the only coverage of the keyword.
 
 ## What the corpus covers
 
@@ -654,50 +641,15 @@ The corpus does not cover the modules that need the network, the process
 managers, or the config parser. See `doc/rust-rewrite-plan.md` for the
 plan that adds those tests.
 
-## What the C tests cover without the corpus
-
-| Test program | Modules | Checks |
-| --- | --- | --- |
-| `test_corpus` | All of the above | The corpus cases |
-| `test_spool` | `ftnq.c`, `ftnnode.c` | The spool corpus cases |
-| `test_crypt` | `crypt.c` | CRC table, round trip, key stream |
-| `test_md5` | `md5b.c` | NULL arguments, a new challenge |
-
-The invariant tests hold the cases that a table cannot express.
-
-## How the tests link
-
-The Makefile compiles each real module from the parent directory into
-`build/`. `stubs.c` supplies the parts of binkd that need the full
-daemon:
-
-- `inetd_flag` and `mypid` for the logger and the CRAM generator.
-- `ext_rand` for the CRAM generator.
-- `mask_test()` returns `NULL`, so the logger does not filter messages.
-
-`harness.c` calls `InitLog(0, 0, "", NULL)`, so the tests stay silent.
-
 ## Add a spool corpus case
 
 1. Write the case in `golden/spool/`.
-2. Run `make -C tests` to check the case against the C code.
-3. Run `cargo test` in `rust/` to check the case against the Rust code.
+2. Run `cargo test` in `rust/` to check the case against the Rust code.
 
 ## Add a corpus case
 
 1. Add the line to the file of the function in `golden/`.
-2. Run `make -C tests` to check the case against the C code.
-3. Run `cargo test` in `rust/` to check the case against the Rust code.
+2. Run `cargo test` in `rust/` to check the case against the Rust code.
 
-A new corpus file needs the `# crate:` header. The C runner rejects a file
-without a known crate name, so no case stays unchecked.
-
-## Add a C test
-
-1. Write `test_<module>.c` with a `main()` that calls `test_init()`,
-   the test functions, and `test_finish("<name>")`.
-2. Add the name to `TESTS` in `Makefile`.
-3. Add the module source file name to `MODULES` in `Makefile` when the
-   test needs a module that no other test links.
-4. Use `CHECK`, `CHECK_INT`, `CHECK_STR`, `CHECK_NULL`, and
-   `CHECK_NOT_NULL` from `harness.h` for the checks.
+A new corpus file needs the `# crate:` header. The Rust test of the crate
+selects its cases by that name, so no case stays unchecked.

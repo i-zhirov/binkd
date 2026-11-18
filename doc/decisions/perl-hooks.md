@@ -16,11 +16,11 @@ the crate only with the feature `perl`, so the default build holds no FFI and no
 `perl_on_send()`, `perl_on_recv()`, `perl_setup_rlimit()`, `perl_need_reload()`,
 `perl_config_loaded()`, and `perl_on_exit()`.
 
-The C code links the hooks only with `./configure --with-perl`, whose default
-is no. The oracle of the C tests holds no Perl: `make -C tests` builds without
-it, no test of `tests/` names a hook, and no case of the corpus names a hook.
-The port builds an oracle with the hooks: `./configure --with-perl` answers
-`Compilation flags: clang, zlib, bzlib2, perl.`
+The upstream C code links the hooks only with `./configure --with-perl`, whose
+default is no. The oracle of the interop cases is an upstream build with the
+hooks: `./configure --with-perl` answers
+`Compilation flags: clang, zlib, bzlib2, perl.` The former C test suite built
+without the hooks, and no case of the corpus names a hook.
 
 ## Options
 

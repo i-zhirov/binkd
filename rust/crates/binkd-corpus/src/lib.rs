@@ -1,8 +1,8 @@
 //! The golden corpus reader for the tests.
 //!
-//! The corpus is in `tests/golden/` of the repository. The C runner in
-//! `tests/test_corpus.c` reads the same files, so the corpus holds the
-//! two implementations together.
+//! The corpus is in `tests/golden/` of the repository. The Rust tests read
+//! the files; the upstream C implementation is used only by the interop
+//! jobs.
 //!
 //! A case line has these fields, separated by a tab:
 //!

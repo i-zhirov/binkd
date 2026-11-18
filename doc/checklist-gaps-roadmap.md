@@ -1,7 +1,8 @@
 # Closing the binkd Checklist Gaps Roadmap
 
 > Each slice gets its own plan, written when the slice starts. Execute a
-> slice with the `executing-plans` skill.
+> slice with the `executing-plans` skill. The C tree named in the completed
+> slices is now upstream; see `doc/decisions/c-out-of-tree.md`.
 
 - **Date**: 2026-11-15
 - **Status**: Implemented

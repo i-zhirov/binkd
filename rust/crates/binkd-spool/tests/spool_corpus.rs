@@ -1,8 +1,8 @@
 //! The differential test of the spool layer against the golden corpus.
 //!
-//! The C runner in `tests/test_spool.c` checks the same cases against the C
-//! implementation. A case sets up a spool, runs the operations, and compares
-//! the output with the lines after `---`.
+//! The upstream C implementation is checked by the C↔Rust interop jobs; the
+//! corpus is the Rust value oracle. A case sets up a spool, runs the
+//! operations, and compares the output with the lines after `---`.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -482,7 +482,7 @@ impl Runner {
                     time: args[3].parse().unwrap_or(0),
                     start: 0,
                 };
-                // The C runner reads the real free space; the test supplies
+                // The upstream C implementation reads the real free space; the test supplies
                 // enough for the non-negative `minfree` cases.
                 let free = binkd_spool::inbound::FreeSpace {
                     inbound: u64::MAX,

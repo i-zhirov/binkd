@@ -22,43 +22,50 @@
 binkd is a Fidonet mailer. It transfers FTN mail and files between
 FTN systems over TCP/IP with the binkp protocol. FTN node operators run
 it as a daemon next to their BSO spool. The Rust workspace in `rust/` is the
-default implementation on UNIX and Windows. The C code stays in the tree as the
-reference and the build of OS/2, DOS, Amiga, and Windows 9x/Me. The Rust
-crates are also a library for embedding in other programs.
+only implementation in this repository and the default on UNIX and Windows.
+The C implementation is upstream in `https://github.com/pgul/binkd`, and this
+repository holds no C implementation, the decision of
+`doc/decisions/c-out-of-tree.md`. The optional Perl FFI shim remains C.
+The upstream C implementation is the reference and the only build of OS/2,
+DOS, Amiga, and Windows 9x/Me. The Rust crates are also a library for embedding
+in other programs.
 
 ## Technical Context
 
-- **Language/Version**: C (C89, K&R-style function definitions) for the
-  reference implementation. Rust edition 2021 with a minimum supported Rust
-  version of 1.85 (`rust-version` in `rust/Cargo.toml`).
-- **Primary Dependencies**: C: zlib, bzip2, and Perl (all optional),
-  pthreads, libresolv, and libutil. Rust: `std` for the pure crates, `tokio`
+- **Language/Version**: Rust edition 2021 with a minimum supported Rust
+  version of 1.85 (`rust-version` in `rust/Cargo.toml`). The upstream C
+  implementation is C89 with K&R-style function definitions, and this
+  repository does not build it.
+- **Primary Dependencies**: Rust: `std` for the pure crates, `tokio`
   for the session and the daemon, `flate2` and `bzip2` for the compression,
   `fs2` for the free space of the binary, `time` for the safe local offset
   of the logs, the `TIME` frame, and `-v`, and `syslog` for the local syslog
   backend of the Unix binary. The optional `binkd-perl` crate holds the Perl C
   shim. The `binkd-win` crate holds the Windows service and file-system FFI
-  and `windows-sys`.
+  and `windows-sys`. The upstream C implementation has its own dependencies:
+  zlib, bzip2, and Perl (all optional), pthreads, libresolv, and libutil.
 - **Storage**: The local file system. The BSO spool directories, the
   `.flo`, `.try`, `.hld`, and `.bsy` files, the inbound directory, the
   binary session logs, and the config file. No database.
-- **Testing**: A custom C harness (`tests/harness.h`) with the golden
-  corpus in `tests/golden/`. The corpus is the shared oracle of the C and
-  Rust implementations. Rust uses the built-in `#[test]` harness.
+- **Testing**: The Rust workspace uses the built-in `#[test]` harness and the
+  golden corpus in `tests/golden/`. The corpus is the oracle of the Rust
+  implementation. The upstream C implementation is the oracle only in the
+  interop jobs.
 - **Target Platform**: UNIX (Linux, macOS, BSD) and Windows NT and
   later. The Rust port supports the Windows service mode; the tray
-  icon is not supported. The C code also targets OS/2, DOS, Amiga,
-  and Windows 9x/Me. Linux, macOS, and Windows are CI-tested; BSD is
-  build-supported but not CI-tested.
+  icon is not supported. The upstream C implementation also targets OS/2,
+  DOS, Amiga, and Windows 9x/Me. Linux, macOS, and Windows are CI-tested; BSD
+  is build-supported but not CI-tested.
 - **Project Type**: Other. A long-running network daemon with a library
-  workspace. The C code is a flat program; the Rust workspace is a
-  library workspace with a thin binary.
+  workspace. The Rust workspace is a library workspace with a thin binary.
+  The upstream C implementation is a flat program.
 - **Performance Goals**: N/A, not documented. The code limits the transfer
   rate with the `limit-rate` directive.
 - **Constraints**: The Rust code MUST keep full functional equivalence with
-  the C code and MUST read the same config files. The C code is the reference
-  and the oracle of the tests. The Rust port MUST NOT reproduce undefined
-  behavior (see [Architecture](#architecture)). `binkd-ftn` MUST stay pure.
+  the upstream C implementation and MUST read the same config files. The
+  upstream C implementation is the reference and the oracle of the interop
+  tests. The Rust port MUST NOT reproduce undefined behavior (see
+  [Architecture](#architecture)). `binkd-ftn` MUST stay pure.
 - **Scale/Scope**: One binkd instance per FTN node. Up to `maxservers` and
   `maxclients` concurrent sessions, 100 each by default. The config has
   about 100 keywords.
@@ -67,31 +74,17 @@ crates are also a library for embedding in other programs.
 
 ```text
 binkd/
-├── .github/workflows/ci.yml    # CI: Rust, C, interop, MSRV, Perl, macOS, Windows
+├── .github/workflows/ci.yml    # CI: Rust, interop, MSRV, Perl, macOS, Windows
+├── .github/actions/upstream-c/ # clone and patch the upstream C reference
 ├── AGENTS.md                   # this file
 ├── README.md                   # what binkd is, build and install
 ├── task.md                     # the Rust rewrite task statement
-├── binkd.c                     # C entry point: CLI, startup, signals
-├── protocol.c                  # C binkp 1.0/1.1 session state machine
-├── server.c, client.c           # C listen sockets and outgoing calls
-├── ftnq.c, bsy.c, inbound.c    # C queue, busy flags, inbound files
-├── readcfg.c                   # C config parser and reload
-├── ftnaddr.c, ftndom.c         # C FTN addresses and domains
-├── ftnnode.c                   # C node table
-├── tools.c, xalloc.c           # C helpers and allocation wrappers
-├── pmatch.c, getw.c            # C wildcard match and tokenizer
-├── crypt.c, md5b.c             # C ZipCrypto and MD5
-├── compress.c                  # C zlib and bzip2 wrappers
-├── perlhooks.c                 # C Perl hook bridge
-├── unix/, nt/, os2/, dos/, amiga/  # C platform layers
-├── mkfls/                      # per-platform makefiles and configure
+├── ci/upstream-c.patch         # the interop patch of the upstream C tree
 ├── doc/                        # protocol, config, rewrite, decisions
-├── tests/                      # C tests, corpus, Windows smoke test
+├── tests/                      # Rust tests, corpus, Windows smoke test
 │   ├── README.md               # how to run the tests, corpus format
-│   ├── golden/                 # corpus cases (C and Rust read them)
-│   ├── windows-smoke.ps1       # Windows service smoke test
-│   ├── test_corpus.c           # the C runner of the corpus
-│   └── test_crypt.c, test_md5.c # C invariant tests
+│   ├── golden/                 # corpus cases (Rust reads them)
+│   └── windows-smoke.ps1       # Windows service smoke test
 └── rust/                       # the Cargo workspace of the rewrite
     ├── Cargo.toml              # workspace, forbids unsafe code
     └── crates/
@@ -108,13 +101,13 @@ binkd/
         └── binkd/              # the binary: CLI, daemon, signals
 ```
 
-The other C files at the root are the remaining modules of the mailer.
-`doc/rust-rewrite-plan.md` maps every C module to its Rust crate.
+The upstream C modules are not in this tree. `doc/rust-rewrite-plan.md` maps
+every upstream C module to its Rust crate.
 
 ## Build And Test Commands
 
 Prerequisites and install steps are in `README.md`. The Rust build is the
-default. The C build is the reference and the oracle of the tests.
+default. The C reference is upstream, and the interop tests clone it.
 
 - **Build (Rust, default)**: `cd rust && cargo build --workspace`
 - **Test (Rust)**: `cd rust && cargo test --workspace`
@@ -131,37 +124,35 @@ default. The C build is the reference and the oracle of the tests.
   the release binary): `cd rust && cargo build --release -p binkd`, then
   `cd ..` and
   `pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1`.
-- **Test the C and Rust interop** (needs the C binary): build the C
-  reference, set `BINKD_C`, and run the tests that `tests/README.md` names.
+- **Test the C and Rust interop** (needs the upstream C binary): clone the
+  upstream C reference at the pinned commit, apply `ci/upstream-c.patch`,
+  build it, set `BINKD_C`, and run the tests that `tests/README.md` names.
   The CI jobs `interop`, `interop-proxy`, `interop-bwlim`, and
   `interop-v10` run the plain, proxy, rate limit, and protocol 1.0
   matrices on Ubuntu. The `interop-macos` job runs the base matrix on
   macOS, and the `interop-windows` job runs the base protocol,
   network, record, and binary matrix on Windows with the MinGW C
-  reference.
+  reference. The `.github/actions/upstream-c` action holds the clone and the
+  patch steps.
 - **Check the minimum supported Rust version** (needs the 1.85 toolchain):
   `cd rust && cargo +1.85 check --workspace`
 - **Lint (Rust)**: `cd rust && cargo clippy --workspace --all-targets`
 - **Format check (Rust)**: `cd rust && cargo fmt --check`
 - **Format fix (Rust)**: `cd rust && cargo fmt`
-- **Build (C reference)**:
-    - `cp mkfls/unix/* .`
-    - `chmod +x mkinstalldirs`
-    - `./configure`
-    - `make`
-- **Build the C oracle with Perl** (the `BINKD_C_PERL` cases): use the C
-  reference steps with `./configure --with-perl`, then set `BINKD_C_PERL` to
+- **Build the upstream C reference**: clone
+  `https://github.com/pgul/binkd`, check out
+  `5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba`, apply `ci/upstream-c.patch`,
+  then run `cp mkfls/unix/* .`, `chmod +x mkinstalldirs`, `./configure`,
+  and `make` in the clone.
+- **Build the upstream C oracle with Perl** (the `BINKD_C_PERL` cases): use the
+  upstream C steps with `./configure --with-perl`, then set `BINKD_C_PERL` to
   the path of the built `binkd`.
-- **Test (C)**: `make -C tests`
-- **Test (C) with AddressSanitizer**:
-  `make -C tests CFLAGS="-O0 -g -fsanitize=address -fno-omit-frame-pointer"`
 - **Run (Rust)**: `./rust/target/debug/binkd binkd.conf`
 - **Version (Rust)**: `./rust/target/debug/binkd -v`
 - **Check the config (Rust)**: `./rust/target/debug/binkd -n binkd.conf`
 - **Dump the parsed config (Rust)**: `./rust/target/debug/binkd -d binkd.conf`
 - **Dump the version and the compile flags (Rust)**:
   `./rust/target/debug/binkd -vv`
-- **Run (C reference)**: `./binkd binkd.conf`
 
 ## Contribution Instructions
 
@@ -175,18 +166,17 @@ default. The C build is the reference and the oracle of the tests.
 
 - You MUST update the unit tests and the golden corpus for changed code.
   A new or changed behavior of a ported module needs a corpus case in
-  `tests/golden/`, because both the C runner and the Rust tests read the
-  same files.
+  `tests/golden/`, because the Rust tests read the corpus.
 
-- You MUST run the tests with `make -C tests` and
-  `cd rust && cargo test --workspace` and make them pass.
+- You MUST run the tests with `cd rust && cargo test --workspace` and make
+  them pass.
 
-- You MUST keep the C and Rust implementations equivalent. A behavior
-  change in one implementation needs the same change in the other and a
-  corpus case that covers it.
+- You MUST keep the Rust implementation equivalent to the upstream C
+  implementation. A behavior change needs the same behavior in the upstream C
+  implementation and a corpus or interop case that covers it.
 
-- You MUST NOT edit `HISTORY`, the `PATCHLEVEL` value in `Config.h`, or
-  `mkfls/unix/binkd.spec`. The release process updates them.
+- The upstream C release process updates the `HISTORY`, `PATCHLEVEL`, and
+  spec files of the upstream C tree. This repository holds no copy of them.
 
 - You MUST NOT add an external Rust dependency without a reason. The
   dependencies are the ones of [Dependency Management](#dependency-management);
@@ -218,8 +208,8 @@ default. The C build is the reference and the oracle of the tests.
 ### System Design
 
 Design for a long-running network daemon with an embeddable library
-core. The C code runs as a daemon; the Rust workspace is a library with a
-thin binary.
+core. The upstream C implementation runs as a daemon; the Rust workspace is a
+library with a thin binary.
 
 - The daemon runs as a long-lived process. Clean up sockets, spool
   temporary files, `.bsy` flags, and child processes on shutdown. Do not
@@ -252,7 +242,7 @@ The codebase follows these principles:
 - **Separation of Concerns** — each module handles one aspect of the
   mailer: the protocol, the spool, the config, or the platform.
 - **Single Responsibility Principle** — every file, function, and type has
-  one reason to change. One C file maps to one Rust module.
+  one reason to change. One upstream C file maps to one Rust module.
 - **Dependency Direction** — dependencies point downward only, from the
   binary to the pure core. A lower layer never calls a higher one.
 - **Explicit Boundaries** — a module interface is intentional. Do not reach
@@ -267,7 +257,7 @@ The codebase follows these principles:
   first-class. Less critical in the pure core, which has no log; the daemon
   layers own the log and the session log.
 - **Keep It Boring** — prefer well-understood patterns over clever ones.
-  The Rust port follows the C code function by function.
+  The Rust port follows the upstream C code function by function.
 
 The layers of the Rust target, from top to bottom:
 
@@ -295,7 +285,7 @@ Each layer calls the layer below it. No layer calls a layer above it.
 `binkd-net`, `binkd-srif`, `binkd-corpus`, `binkd-win`, and `binkd`; the
 optional `binkd-perl` is excluded from the workspace.
 
-The layers of the C code, for reference:
+The layers of the upstream C implementation, for reference:
 
 | Layer | Responsibility | Examples |
 | --- | --- | --- |
@@ -308,8 +298,8 @@ The layers of the C code, for reference:
 | Utilities | Strings, match, tokens | `tools.c`, `pmatch.c` |
 | Platform | OS abstraction and ports | `sys.h`, `unix/`, `nt/` |
 
-**Known exclusions** (the C code violates the rules above; the Rust port
-fixes them):
+**Known exclusions** (the upstream C code violates the rules above; the Rust
+port fixes them):
 
 - `binkd.c` does engine work in `main`: the inetd session, the pid file,
   and the Perl and zlib initialization.
@@ -324,10 +314,6 @@ fixes them):
 
 ### Code Quality
 
-- **C style**: 2-space indentation, the opening brace on its own line for
-  functions and blocks, and a space before the parenthesis in a call
-  (`Log (0, ...)`). No C linter or formatter is configured. Do not
-  reformat C code that you do not change.
 - **Rust style**: the rustfmt defaults. Run `cd rust && cargo fmt`.
 - **Static analysis**: `cd rust && cargo clippy --workspace --all-targets`
   with the workspace lints in `rust/Cargo.toml`: `unsafe_code = "forbid"`
@@ -340,28 +326,26 @@ fixes them):
   service, the decision of `doc/decisions/windows-support.md`; the crate is a
   target-specific dependency of `binkd` and compiles on Windows only.
 - **Doc comments**: every public item of a Rust crate has a `///` comment
-  and every module a `//!` comment. State the C function that the port
-  follows, for example "the port of `getw.c`".
+  and every module a `//!` comment. State the upstream C function that the
+  port follows, for example "the port of `getw.c`".
 - **Error handling**: a library function returns `Option` or `Result` and
   never calls `panic!`, `exit()`, or a fatal log. `panic!` in a test or for
   an unreachable state is acceptable. The binary maps an error to the exit
   code and the log output.
 - **Naming**: Rust uses snake_case functions, PascalCase types, and
-  `binkd-*` crate names. Keep the C names in the port-mapping comments,
-  so a reader can find the source function.
+  `binkd-*` crate names. Keep the upstream C names in the port-mapping
+  comments, so a reader can find the source function.
 - **Imports**: Rust uses `use crate::...` and module paths. A test-only
   crate is a `[dev-dependencies]` entry, for example `binkd-corpus`.
 
 ### Testing
 
-- The C tests live in `tests/` as `test_*.c` and link the real modules
-  against `tests/stubs.c` and `tests/harness.c`.
 - The golden corpus lives in `tests/golden/*.tsv`. It is the single source
-  of truth for the value cases. The C runner and the Rust tests read the
-  same files, so a difference in one case fails one side.
-- Every new or changed behavior of a ported module needs a corpus case. A
-  case must pass in both runners. Do not delete a case to make a test pass:
-  a failing case is a behavior change.
+  of truth for the value cases. The Rust tests read the files. The upstream C
+  implementation is the oracle only in the interop jobs, where the
+  `.github/actions/upstream-c` action clones and patches it.
+- Every new or changed behavior of a ported module needs a corpus case. Do
+  not delete a case to make a test pass: a failing case is a behavior change.
 - Rust unit tests live next to the code in a `#[cfg(test)] mod tests`
   block. The corpus tests live in `crates/*/tests/corpus.rs`.
 - The Rust crates have no mocks. A function under test is pure, and the
@@ -380,18 +364,18 @@ fixes them):
   keyword. No golden C case parses a `syslog <name>` line; the dump holds only
   the fallback, because the C parser `read_syslog_facility()` has an inverted
   argument check.
-- All tests MUST pass before a change is complete: `make -C tests` and
+- All tests MUST pass before a change is complete:
   `cd rust && cargo test --workspace`.
-- The C and Rust interop suite runs the C binary against the Rust session in
-  both roles, and the Rust session against itself. The binary-level test
-  `crates/binkd/tests/interop_binary.rs` starts the real C and Rust binaries
-  in both roles and runs the C server with the C client. The CI jobs
-  `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10` build the C
-  reference and set the `BINKD_C*` variables. The tests and the build commands
-  are in `tests/README.md`.
-- The `interop-macos` job builds the UNIX C reference and runs the
+- The C and Rust interop suite runs the upstream C binary against the Rust
+  session in both roles, and the Rust session against itself. The binary-level
+  test `crates/binkd/tests/interop_binary.rs` starts the real upstream C and
+  Rust binaries in both roles and runs the C server with the C client. The CI
+  jobs `interop`, `interop-proxy`, `interop-bwlim`, and `interop-v10` build the
+  upstream C reference and set the `BINKD_C*` variables. The tests and the
+  build commands are in `tests/README.md`.
+- The `interop-macos` job builds the upstream UNIX C reference and runs the
   base protocol, network, record, config, CLI, daemon, and binary
-  tests. The `interop-windows` job builds the MinGW C reference and
+  tests. The `interop-windows` job builds the upstream MinGW C reference and
   runs the base protocol, network, record, and binary tests. The
   config corpus, CLI, and daemon tests are not the Windows C oracle.
   The proxy, rate-limit, and protocol 1.0 variants stay Ubuntu-only.
@@ -406,11 +390,9 @@ fixes them):
   temporary service, checks the service states, the process, the busy and pid
   files, and the log, and removes the service and the temporary directory.
 - The CI runs the workspace suite on Linux, macOS, and Windows. The
-  `interop-macos` and `interop-windows` jobs run the C↔Rust matrix;
-  BSD is not in CI. The Unix-only signal and shell cases carry
-  `#[cfg(unix)]`.
-- Run the C tests with AddressSanitizer when the change touches memory
-  handling: `make -C tests CFLAGS="-O0 -g -fsanitize=address"`.
+  `interop-macos` and `interop-windows` jobs run the C↔Rust matrix with the
+  upstream C reference; BSD is not in CI. The Unix-only signal and shell cases
+  carry `#[cfg(unix)]`.
 - The corpus cases are text files in the repository, not generated data.
   The format is documented in `tests/README.md`.
 
@@ -445,13 +427,13 @@ fixes them):
 **Rationale**: fewer, well-vetted dependencies reduce the security, the
 supply-chain, and the maintenance cost.
 
-**Known exclusions** (the C code; the Rust port replaces them in the named
-phase of `doc/rust-rewrite-plan.md`):
+**Known exclusions** (the upstream C code; the Rust port replaces them in the
+named phase of `doc/rust-rewrite-plan.md`):
 
-- The C code links zlib and bzip2 (`compress.c`) and loads them at run
+- The upstream C code links zlib and bzip2 (`compress.c`) and loads them at run
   time on Windows (`zlibdl.c`).
-- The C code links the Perl interpreter (`perlhooks.c`).
-- The C code carries vendored OpenSSL code for NTLM (`ntlm/`).
+- The upstream C code links the Perl interpreter (`perlhooks.c`).
+- The upstream C code carries vendored OpenSSL code for NTLM (`ntlm/`).
 
 ### Configuration & Documentation
 
@@ -462,13 +444,14 @@ phase of `doc/rust-rewrite-plan.md`):
   and `BINKD_ICON_FILE` (the Windows tray icon).
 - **The config format is a contract.** A change to a directive needs a
   corpus case in `tests/golden/config/` and a comparison of the `-d` dump with
-  the C dump of `binkd -d`.
+  the upstream C dump of `binkd -d`.
 - **Update the documents that the change touches**: `README.md` for the
   build and the links, `tests/README.md` for the test suite and the corpus
   format, and `doc/rust-rewrite-plan.md` for the port status and the
   module map.
-- **Do not edit `HISTORY`, the `PATCHLEVEL` value in `Config.h`, or
-  `mkfls/unix/binkd.spec`.** The release process updates them.
+- **The release process** updates the `HISTORY`, the `PATCHLEVEL` value in
+  `Config.h`, and the spec file of the upstream C tree. This repository holds
+  no copy of them.
 - **No secrets in the repository.** The node passwords live in the
   `passwords` file and the config of the node. Test configs use example
   hosts and example passwords.
@@ -508,10 +491,11 @@ humans and AI agents that consume project documentation.
 ### Other
 
 - **Commit messages**: a short imperative subject line and an optional body
-  with the reason. The release bot writes the `Auto increase patchlevel` and
-  `Auto update HISTORY` commits; do not write such a commit.
-- **Port mapping comments**: every ported function states the C source
+  with the reason. The upstream C release bot writes the `Auto increase
+  patchlevel` and `Auto update HISTORY` commits in the upstream tree; do not
+  write such a commit here.
+- **Port mapping comments**: every ported function states the upstream C source
   function that it follows, for example "the port of `ftnaddr.c`".
-- **Log format**: keep the log line format of `vLog()` in `tools.c` stable.
-  Scripts parse the log. The message text is not a contract; the `-d` config
-  dump is.
+- **Log format**: keep the log line format of `vLog()` in the upstream
+  `tools.c` stable. Scripts parse the log. The message text is not a contract;
+  the `-d` config dump is.

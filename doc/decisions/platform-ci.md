@@ -1,20 +1,22 @@
 # Decision: the platform CI matrix
 
-Status: accepted. The base C and Rust interop matrix runs on Linux,
-macOS, and Windows. BSD is build-supported but not CI-tested.
+Status: accepted and implemented. The base C and Rust interop matrix runs on
+Linux, macOS, and Windows. BSD is build-supported but not CI-tested. The C
+implementation comes from the upstream tree, the record
+`doc/decisions/c-out-of-tree.md`.
 
 ## Context
 
-The C code is the reference and the oracle of the tests. The Rust
-workspace is the default build. The CI must run the C and Rust
-suites on the systems that the port supports, and it must state the
-systems that it does not run.
+The upstream C implementation is the reference and the oracle of the interop
+tests. The Rust workspace is the default build. The CI must run the Rust suite
+and the C and Rust interop suite on the systems that the port supports, and it
+must state the systems that it does not run.
 
 The existing jobs `interop`, `interop-proxy`, `interop-bwlim`, and
 `interop-v10` run on Ubuntu. The `macos` and `windows` jobs run the
 Rust workspace suite, and the `windows` job runs the parity tests
-and the service smoke test. Neither of those two jobs builds the C
-reference.
+and the service smoke test. The `interop-macos` and `interop-windows` jobs
+build the upstream C reference; the workspace jobs do not.
 
 The repository holds no accepted GitHub runner action for FreeBSD.
 A third-party action would add a dependency of the CI on a project
@@ -41,11 +43,11 @@ The platform matrix:
 
 | Platform | Jobs | C build | Rust suite |
 | --- | --- | --- | --- |
-| Linux | `rust`, `msrv`, `c`, `perl`, `interop`, `interop-proxy`, `interop-bwlim`, `interop-v10` | plain and variants | yes |
-| macOS | `macos`, `interop-macos` | UNIX plain | yes |
-| Windows | `windows`, `interop-windows` | MinGW plain | yes |
+| Linux | `rust`, `msrv`, `perl`, `interop`, `interop-proxy`, `interop-bwlim`, `interop-v10` | upstream plain and variants | yes |
+| macOS | `macos`, `interop-macos` | upstream UNIX plain | yes |
+| Windows | `windows`, `interop-windows` | upstream MinGW plain | yes |
 | BSD | none | build-supported | build-supported |
-| OS/2, DOS, Amiga, Windows 9x/Me | none | C only | no |
+| OS/2, DOS, Amiga, Windows 9x/Me | none | upstream C only | no |
 
 The interop coverage:
 
@@ -61,10 +63,11 @@ The interop coverage:
 
 ## The Windows C build
 
-The `interop-windows` job installs `make`,
+The `interop-windows` job checks out the upstream C reference with
+`.github/actions/upstream-c`. It installs `make`,
 `mingw-w64-x86_64-gcc`, `mingw-w64-x86_64-binutils`,
 `mingw-w64-x86_64-zlib`, and `mingw-w64-x86_64-bzip2` in the MINGW64
-environment. It builds:
+environment. In the `upstream-c` directory it builds:
 
 ```sh
 make -f mkfls/nt95-mingw/Makefile \
@@ -81,8 +84,9 @@ would otherwise append `-binkd-zlib-bzlib2`. The command-line
 `-mno-cygwin` flag is not passed. `LFLAGS='-static'` links `libz.a`
 and `libbz2.a` into the executable.
 
-`BINKD_C` is
-`${{ github.workspace }}\bin\mingw32-zlib-bzlib2\binkd-mingw-zlib-bzlib2.exe`.
+`BINKD_C` is the path
+`bin\mingw32-zlib-bzlib2\binkd-mingw-zlib-bzlib2.exe` in the `upstream-c`
+directory.
 The PowerShell test step adds `C:\msys64\mingw64\bin` to `PATH` as
 a safety measure for a toolchain DLL.
 
@@ -124,7 +128,7 @@ skip.
 
 ## Consequences
 
-- The C reference builds on Linux, macOS, and Windows in CI.
+- The upstream C reference builds on Linux, macOS, and Windows in CI.
 - The base C↔Rust matrix runs on the three systems.
 - The proxy, rate-limit, and protocol 1.0 variants stay Ubuntu-only.
 - BSD is build-supported and not CI-tested. The README, the tests

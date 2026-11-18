@@ -1,7 +1,7 @@
 //! The differential test of the spool layer against the golden corpus.
 //!
-//! The C runner in `tests/test_corpus.c` checks the same corpus against
-//! the C implementation.
+//! The upstream C implementation is checked by the C↔Rust interop jobs; the
+//! corpus is the Rust value oracle.
 
 use std::io::Cursor;
 

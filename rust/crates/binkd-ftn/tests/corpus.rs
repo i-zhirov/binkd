@@ -1,7 +1,7 @@
 //! The differential test against the golden corpus.
 //!
-//! The C runner in `tests/test_corpus.c` checks the same corpus against
-//! the C implementation. A case that passes there must pass here.
+//! The upstream C implementation is checked by the C↔Rust interop jobs; the
+//! corpus is the Rust value oracle.
 
 use binkd_corpus::{check, encode_field, hex_decode, hex_decode_prefix, hex_encode};
 use binkd_ftn::addr::FtnAddr;
@@ -287,7 +287,7 @@ fn inb_case(v: i64) -> InbCase {
 
 #[test]
 fn corpus() {
-    // The C runner sets the same values for the %VAR% cases.
+    // The upstream C behavior sets the same values for the %VAR% cases.
     std::env::set_var("BINKD_TEST_VAR", "value");
     std::env::set_var("BINKD_TEST_LOWER", "lower");
     let checks = check("binkd-ftn", run_case);
@@ -301,7 +301,7 @@ fn the_encoder_matches_the_runner() {
     assert_eq!(encode_field(b"a\\b"), "a\\x5cb");
 }
 
-// The corpus of the C runner covers the value cases. These tests pin the
+// The shared golden corpus covers the value cases. These tests pin the
 // shapes that a table cannot express.
 #[test]
 fn cases_exist() {

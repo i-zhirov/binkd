@@ -8,9 +8,10 @@ FTN-based (Fido Technology Network) networks.
 
 ## Compiling
 
-The Rust workspace in `rust/` is the default build. The C code stays in the
-tree as the reference and the build of OS/2, DOS, Amiga, and Windows 9x/Me,
-the decision of `doc/decisions/legacy-platforms.md`.
+The Rust workspace in `rust/` is the only implementation in this tree and the
+default build. The C implementation lives upstream in
+`https://github.com/pgul/binkd`, the decision of
+`doc/decisions/c-out-of-tree.md`.
 
 ### Rust (default)
 
@@ -27,15 +28,18 @@ proxy, socks, and `limit-rate` keywords. It rejects `aso`, `syslog`,
 `zlib-dll`, and `bzlib2-dll`; the C Windows build accepts `aso` and the
 dynamic loader keywords.
 
-### C reference
+### Upstream C reference
 
-The C code is the reference and the oracle of the tests. It also builds the
-legacy platforms.
+This tree does not hold the C implementation. The interop tests clone the
+upstream C reference at a pinned commit and apply `ci/upstream-c.patch`. The
+upstream C implementation is also the only build of OS/2, DOS, Amiga, and
+Windows 9x/Me, the decision of `doc/decisions/legacy-platforms.md`.
 
-CI builds and tests the C reference on Linux, macOS, and Windows; the
-Windows build uses MSYS2/MinGW64 and runs the base C↔Rust matrix.
+CI builds and tests the upstream C reference on Linux, macOS, and Windows; the
+Windows build uses MSYS2/MinGW64 and runs the base C↔Rust matrix. The
+`.github/actions/upstream-c` action holds the clone and the patch steps.
 
-non-UNIX:
+The upstream C tree builds the non-UNIX systems:
 
 1. Find in mkfls/ a subdirectory for your system/compiler, copy all files
    to the root of the sources.
@@ -44,7 +48,7 @@ non-UNIX:
 
 UNIXes:
 
-1. Clone the repo:
+1. Clone the upstream repository:
 
 `$ git clone https://github.com/pgul/binkd`
 
@@ -52,16 +56,21 @@ UNIXes:
 
 `$ cd binkd`
 
-3. Copy all files from mkfls/unix/ to the root of binkd sources:
+3. Check out the pinned commit and apply the patch of this repository:
+
+`$ git checkout 5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba`
+`$ git apply /path/to/binkd/ci/upstream-c.patch`
+
+4. Copy all files from mkfls/unix/ to the root of binkd sources:
 
 `cp mkfls/unix/* .`
 
-4. Run configure and make:
+5. Run configure and make:
 
 `$ ./configure`
 `$ make`
 
-5. When finished, the following instructions will be displayed offering various
+6. When finished, the following instructions will be displayed offering various
    options for you:
 
 ```
@@ -85,8 +94,8 @@ UNIXes:
 1. Copy the sample config: `binkd.conf` on UNIX or `binkd.cfg` on Windows.
 2. Edit the config.
 3. Run the binary with the config as the last argument:
-   `rust/target/release/binkd binkd.conf` for the Rust default, or
-   `./binkd binkd.conf` for the C reference build.
+   `rust/target/release/binkd binkd.conf`. An upstream C reference build runs
+   as `./binkd binkd.conf`.
 
 On Windows, install and control the service with the same binary:
 
@@ -96,23 +105,26 @@ binkd -t start|stop|restart|status|uninstall
 ```
 
 `-S name` sets the service name. The service mode holds the `nt/service.c`
-behavior of the C code.
+behavior of the upstream C code.
 
 ## Port status
 
-- The Rust binary is the default on UNIX and Windows NT and later.
+- The Rust workspace is the only implementation in this tree and the default
+  on UNIX and Windows NT and later.
 - The Windows service mode is implemented; the tray icon is not supported.
 - The Windows build accepts the proxy, socks, and `limit-rate` keywords and
   rejects `aso`, `syslog`, `zlib-dll`, and `bzlib2-dll`.
-- OS/2, DOS, Amiga, and Windows 9x/Me are C-only platforms. The C code is the
-  reference and the oracle of the tests.
+- OS/2, DOS, Amiga, and Windows 9x/Me are upstream-C-only platforms. This tree
+  does not hold the C implementation. The upstream C implementation is the
+  reference and the oracle of the interop tests.
 - Linux, macOS, and Windows are CI-tested. BSD is build-supported but
-  not CI-tested: the C reference and the Rust workspace build on BSD,
-  and no CI runner is configured. See
+  not CI-tested: the Rust workspace and the upstream C reference build
+  on BSD, and no CI runner is configured. See
   `doc/decisions/platform-ci.md`.
 
-The records are in `doc/decisions/`: `legacy-platforms.md`,
-`windows-support.md`, `perl-hooks.md`, and `platform-ci.md`.
+The records are in `doc/decisions/`: `c-out-of-tree.md`,
+`legacy-platforms.md`, `windows-support.md`, `perl-hooks.md`, and
+`platform-ci.md`.
 
 ## More info
 
@@ -135,7 +147,8 @@ The records are in `doc/decisions/`: `legacy-platforms.md`,
 * [Russian manual for binkd 0.9.9](http://binkd.grumbler.org/binkd-ug-ru.htm.win.ru) © Stas Degteff (`2:5080/102@fidonet`)
 * [FAQ](http://binkd.grumbler.org/binkdfaq.shtml)
 
-**Unit tests:** see [tests/README.md](tests/README.md) for the C and Rust test suites.
+**Unit tests:** see [tests/README.md](tests/README.md) for the Rust test
+suite and the golden corpus.
 
 **Rust rewrite plan:** see [doc/rust-rewrite-plan.md](doc/rust-rewrite-plan.md).
 
