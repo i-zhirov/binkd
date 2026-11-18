@@ -144,7 +144,7 @@ jobs:
           cargo test -p binkd-proto --test interop c_client_skips_the_request_of_rust_server
 
   interop-macos:
-    runs-on: macos-latest
+    runs-on: macos-15
     env:
       BINKD_C: ${{ github.workspace }}/binkd
     steps:
@@ -215,7 +215,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
   macos:
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
