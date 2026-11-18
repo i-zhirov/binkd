@@ -1,0 +1,31 @@
+name: Check out the upstream C reference
+description: Clone the pinned upstream binkd C tree and apply the interop compatibility patch.
+
+inputs:
+  repository:
+    description: The upstream C repository.
+    required: false
+    default: https://github.com/pgul/binkd.git
+  revision:
+    description: The upstream commit or tag to check out.
+    required: false
+    default: 5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba
+  path:
+    description: The checkout directory, relative to the workspace.
+    required: false
+    default: upstream-c
+  patch:
+    description: The compatibility patch, relative to the workspace.
+    required: false
+    default: ci/upstream-c.patch
+
+runs:
+  using: composite
+  steps:
+    - name: Clone and patch the upstream C reference
+      shell: bash
+      run: |
+        workspace="$(pwd)"
+        git clone "${{ inputs.repository }}" "${{ inputs.path }}"
+        git -C "${{ inputs.path }}" checkout "${{ inputs.revision }}"
+        git -C "${{ inputs.path }}" apply "$workspace/${{ inputs.patch }}"

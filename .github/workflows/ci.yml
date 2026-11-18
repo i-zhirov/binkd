@@ -25,13 +25,6 @@ jobs:
       - name: Check the minimum supported Rust version
         run: cd rust && cargo +1.85.0 check --workspace
 
-  c:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Test the C reference
-        run: make -C tests
-
   perl:
     runs-on: ubuntu-latest
     steps:
@@ -41,15 +34,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Test the Perl hooks of the crate
         run: cd rust/crates/binkd-perl && cargo test -- --test-threads=1
+      - uses: ./.github/actions/upstream-c
       - name: Build the C oracle
         run: |
+          cd upstream-c
           cp mkfls/unix/* .
           chmod +x mkinstalldirs
           ./configure --with-perl
           make
       - name: Test the hooks with the C oracle
         env:
-          BINKD_C_PERL: ${{ github.workspace }}/binkd
+          BINKD_C_PERL: ${{ github.workspace }}/upstream-c/binkd
         run: |
           cd rust
           cargo test -p binkd --features perl -- --test-threads=1
@@ -61,15 +56,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the C compression headers
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
+      - uses: ./.github/actions/upstream-c
       - name: Build the C reference
         run: |
+          cd upstream-c
           cp mkfls/unix/* .
           chmod +x mkinstalldirs
           ./configure
           make
       - name: Run the C and Rust interop suite
         env:
-          BINKD_C: ${{ github.workspace }}/binkd
+          BINKD_C: ${{ github.workspace }}/upstream-c/binkd
         run: |
           cd rust
           cargo test -p binkd-proto --test interop
@@ -81,7 +78,7 @@ jobs:
           cargo test -p binkd --test daemon
       - name: Run the binary interop suite
         env:
-          BINKD_C: ${{ github.workspace }}/binkd
+          BINKD_C: ${{ github.workspace }}/upstream-c/binkd
         run: cd rust && cargo test -p binkd --test interop_binary
 
   interop-proxy:
@@ -91,15 +88,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the C compression headers
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
+      - uses: ./.github/actions/upstream-c
       - name: Build the C reference with the proxy
         run: |
+          cd upstream-c
           cp mkfls/unix/* .
           chmod +x mkinstalldirs
           ./configure --with-proxy --with-ntlm
           make
       - name: Run the proxy interop suite
         env:
-          BINKD_C_PROXY: ${{ github.workspace }}/binkd
+          BINKD_C_PROXY: ${{ github.workspace }}/upstream-c/binkd
         run: cd rust && cargo test -p binkd-net --test proxy_interop
 
   interop-bwlim:
@@ -109,15 +108,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the C compression headers
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
+      - uses: ./.github/actions/upstream-c
       - name: Build the C reference with the rate limit
         run: |
+          cd upstream-c
           cp mkfls/unix/* .
           chmod +x mkinstalldirs
           ./configure --with-bwlim
           make
       - name: Run the rate limit interop test
         env:
-          BINKD_C_BWLIM: ${{ github.workspace }}/binkd
+          BINKD_C_BWLIM: ${{ github.workspace }}/upstream-c/binkd
         run: |
           cd rust
           cargo test -p binkd-proto --test interop rust_client_to_c_server_rate_limited
@@ -129,15 +130,17 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the C compression headers
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
+      - uses: ./.github/actions/upstream-c
       - name: Build the C reference of protocol 1.0
         run: |
+          cd upstream-c
           cp mkfls/unix/* .
           chmod +x mkinstalldirs
           ./configure
           make CFLAGS='-O2 -DPRTCLVER=\"1.0\"'
       - name: Run the protocol 1.0 interop tests
         env:
-          BINKD_C_V10: ${{ github.workspace }}/binkd
+          BINKD_C_V10: ${{ github.workspace }}/upstream-c/binkd
         run: |
           cd rust
           cargo test -p binkd-proto --test interop c_client_claims_freq_to_rust_server
@@ -146,12 +149,14 @@ jobs:
   interop-macos:
     runs-on: macos-15-intel
     env:
-      BINKD_C: ${{ github.workspace }}/binkd
+      BINKD_C: ${{ github.workspace }}/upstream-c/binkd
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+      - uses: ./.github/actions/upstream-c
       - name: Build the C reference
         run: |
+          cd upstream-c
           cp mkfls/unix/* .
           chmod +x mkinstalldirs
           ./configure
@@ -172,7 +177,7 @@ jobs:
   interop-windows:
     runs-on: windows-latest
     env:
-      BINKD_C: '${{ github.workspace }}\bin\mingw32-zlib-bzlib2\binkd-mingw-zlib-bzlib2.exe'
+      BINKD_C: '${{ github.workspace }}\upstream-c\bin\mingw32-zlib-bzlib2\binkd-mingw-zlib-bzlib2.exe'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -186,9 +191,11 @@ jobs:
             mingw-w64-x86_64-binutils
             mingw-w64-x86_64-zlib
             mingw-w64-x86_64-bzip2
+      - uses: ./.github/actions/upstream-c
       - name: Build the C reference
         shell: msys2 {0}
         run: |
+          cd upstream-c
           make -f mkfls/nt95-mingw/Makefile \
             CC=gcc ZLIB=1 BZLIB2=1 \
             OUTDIR=bin/mingw32-zlib-bzlib2 \

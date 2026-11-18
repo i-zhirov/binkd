@@ -1,0 +1,71 @@
+diff --git a/Config.h b/Config.h
+index 5ee17ca..b06e645 100644
+--- a/Config.h
++++ b/Config.h
+@@ -52,7 +52,9 @@
+ 
+ /* Please, no spaces here! */
+ #define PRTCLNAME "binkp"
++#ifndef PRTCLVER			    /* Can be defined in Makefile */
+ #define PRTCLVER "1.1"
++#endif
+ #define MYNAME "binkd"
+ #define MAJOR 1
+ #define MINOR 1
+diff --git a/binkd.c b/binkd.c
+index bbf2edb..9a4b7a6 100644
+--- a/binkd.c
++++ b/binkd.c
+@@ -637,7 +637,10 @@ int main (int argc, char *argv[])
+   }
+ 
+   if (no_flag)
++  {
+     Log (0, "Exit on option '-n'");
++    exit (0);
++  }
+ 
+   if (inetd_flag)
+   {
+diff --git a/md5b.c b/md5b.c
+index ec6ff6b..e945505 100644
+--- a/md5b.c
++++ b/md5b.c
+@@ -35,6 +35,7 @@ documentation and/or software.
+ #include "sys.h"
+ #include "iphdr.h"
+ #include "protoco2.h"
++#define PROTOTYPES 1
+ #include "md5b.h"
+ #include "tools.h"
+ #include "server.h"
+diff --git a/mkfls/unix/configure b/mkfls/unix/configure
+index 9c17e03..8cb04ec 100755
+--- a/mkfls/unix/configure
++++ b/mkfls/unix/configure
+@@ -5275,8 +5275,8 @@ int
+ main ()
+ {
+ 
+-  BZ2_bzBuffToBuffCompress(0, (unsigned long*) 0, "", 0, 6, 0, 0);
+-  BZ2_bzBuffToBuffDecompress(0, (unsigned long*) 0, "", 0, 0, 0);
++  BZ2_bzBuffToBuffCompress(0, (unsigned int*) 0, "", 0, 6, 0, 0);
++  BZ2_bzBuffToBuffDecompress(0, (unsigned int*) 0, "", 0, 0, 0);
+ 
+   ;
+   return 0;
+diff --git a/mkfls/unix/configure.in b/mkfls/unix/configure.in
+index c9e5486..5798ff9 100644
+--- a/mkfls/unix/configure.in
++++ b/mkfls/unix/configure.in
+@@ -504,8 +504,8 @@ if test ".$do_bzip2" != ".no" ; then
+ #endif
+ ],
+ [
+-  BZ2_bzBuffToBuffCompress(0, (unsigned long*) 0, "", 0, 6, 0, 0);
+-  BZ2_bzBuffToBuffDecompress(0, (unsigned long*) 0, "", 0, 0, 0);
++  BZ2_bzBuffToBuffCompress(0, (unsigned int*) 0, "", 0, 6, 0, 0);
++  BZ2_bzBuffToBuffDecompress(0, (unsigned int*) 0, "", 0, 0, 0);
+ ],
+ 	    found_bzlib2="$bzlib2_path", found_bzlib2=no
+ 	  )

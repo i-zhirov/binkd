@@ -3,3 +3,6 @@
 # Test build directories
 tests/build/
 rust/target/
+
+# Upstream C checkout of the interop jobs
+/upstream-c/
