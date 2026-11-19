@@ -47,6 +47,8 @@ in other programs.
   the `windows-original` feature. The upstream C implementation
   has its own dependencies:
   zlib, bzip2, and Perl (all optional), pthreads, libresolv, and libutil.
+- **Versioning**: Semantic Versioning with one workspace version. Release
+  tags are `vMAJOR.MINOR.PATCH`; see `doc/release.md`.
 - **Storage**: The local file system. The BSO spool directories, the
   `.flo`, `.try`, `.hld`, and `.bsy` files, the inbound directory, the
   binary session logs, and the config file. No database.
@@ -78,6 +80,7 @@ in other programs.
 ```text
 rbinkd/
 ├── .github/workflows/ci.yml    # CI: Rust, interop, MSRV, Perl, macOS, Windows
+├── .github/workflows/release.yml # tag release builds and GitHub Release
 ├── .github/actions/upstream-c/ # clone and patch the upstream C reference
 ├── AGENTS.md                   # this file
 ├── README.md                   # what rbinkd is, build and install
@@ -97,12 +100,14 @@ rbinkd/
 │   ├── rbinkd-win-ffi/          # optional raw Windows calls (excluded)
 │   └── rbinkd/                 # the binary: CLI, daemon, signals
 ├── ci/upstream-c.patch         # the interop patch of the upstream C tree
+├── ci/package-release.sh       # package one Unix release archive
 ├── doc/                        # user and developer documentation
 │   ├── README.md               # documentation index
 │   ├── compatibility.md        # drop-in behavior and limitations
 │   ├── configuration.md        # configuration guide
 │   ├── operations.md           # running and service guide
 │   ├── development.md          # build, tests, and runtime design
+│   ├── release.md              # versioning and release process
 │   └── perl.md                 # optional Perl hooks and safety
 ├── tests/                      # Rust tests, corpus, Windows smoke test
 │   ├── README.md               # how to run the tests, corpus format
@@ -151,6 +156,11 @@ default. The C reference is upstream, and the interop tests clone it.
 - **Lint (Rust)**: `cargo clippy --workspace --all-targets`
 - **Format check (Rust)**: `cargo fmt --check`
 - **Format fix (Rust)**: `cargo fmt`
+- **Check the workflows**: `actionlint .github/workflows/*.yml`
+- **Check the release script**: `shellcheck ci/package-release.sh`
+- **Package a host release**:
+  `ci/package-release.sh v0.1.0 $(rustc -vV | sed -n 's/^host: //p')
+  target/release/rbinkd dist`
 - **Build the upstream C reference**: clone
   `https://github.com/pgul/binkd`, check out
   `5a84e8596a96ca8b1f4ec69d9a608cd264aa06ba`, apply `ci/upstream-c.patch`,
@@ -470,9 +480,12 @@ supply-chain, and the maintenance cost.
   build and the links, `tests/README.md` for the test suite and the corpus
   format, `doc/README.md` for the documentation links, and
   `doc/development.md` for the workspace layout and runtime design.
-- **The release process** updates the `HISTORY`, the `PATCHLEVEL` value in
-  `Config.h`, and the spec file of the upstream C tree. This repository holds
-  no copy of them.
+- **The Rust release process** is in `doc/release.md`. It updates the
+  workspace version, commits it, and pushes a `vMAJOR.MINOR.PATCH` tag. The
+  tag runs `.github/workflows/release.yml`; the regular CI ignores release
+  tags. The upstream C release process updates the `HISTORY`, the
+  `PATCHLEVEL` value in `Config.h`, and the spec file of the upstream C tree;
+  this repository holds no copy of them.
 - **No secrets in the repository.** The node passwords live in the
   `passwords` file and the config of the node. Test configs use example
   hosts and example passwords.

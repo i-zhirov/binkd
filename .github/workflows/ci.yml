@@ -2,6 +2,8 @@ name: CI
 
 on:
   push:
+    branches: ["**"]
+    tags-ignore: ["v*"]
   pull_request:
 
 jobs:
@@ -16,6 +18,8 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Check the format
         run: cargo fmt --check
+      - name: Check the release script
+        run: shellcheck ci/package-release.sh
 
   msrv:
     runs-on: ubuntu-latest
