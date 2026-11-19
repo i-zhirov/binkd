@@ -409,7 +409,7 @@ BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test interop_binary -- --te
 ```
 
 The `interop-windows` job checks out the upstream C reference with the action
-and builds it with MSYS2/MinGW64. From the `upstream-c` directory in a MINGW64
+and builds it with MSYS2/UCRT64. From the `upstream-c` directory in a UCRT64
 shell:
 
 ```sh
@@ -424,7 +424,7 @@ The binary is
 `upstream-c/bin/mingw32-zlib-bzlib2/binkd-mingw-zlib-bzlib2.exe`. Set
 `BINKD_C` to that path and run the protocol, network, record, and
 binary tests with `--test-threads=1`. Add
-`C:\msys64\mingw64\bin` to `PATH` in the test step, so a toolchain
+`C:\msys64\ucrt64\bin` to `PATH` in the test step, so a toolchain
 DLL is found if the link is not fully static. The command-line
 `CFLAGS` replaces the makefile `CFLAGS +=` line, so the obsolete
 `-mno-cygwin` flag is not passed. `LFLAGS='-static'` links zlib and

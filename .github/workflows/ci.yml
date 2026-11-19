@@ -179,16 +179,16 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
-      - uses: msys2/setup-msys2@v2
+      - uses: msys2/setup-msys2@v2.33.0
         with:
-          msystem: MINGW64
+          msystem: UCRT64
           update: true
           install: >-
             make
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-binutils
-            mingw-w64-x86_64-zlib
-            mingw-w64-x86_64-bzip2
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-binutils
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-bzip2
       - uses: ./.github/actions/upstream-c
       - name: Build the C reference
         shell: msys2 {0}
@@ -203,7 +203,7 @@ jobs:
       - name: Run the C and Rust interop suite
         shell: pwsh
         run: |
-          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
           cargo test -p rbinkd-proto --test interop -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test -p rbinkd-net --test interop -- --test-threads=1
@@ -213,7 +213,7 @@ jobs:
       - name: Run the binary interop suite
         shell: pwsh
         run: |
-          $env:PATH = "C:\msys64\mingw64\bin;$env:PATH"
+          $env:PATH = "C:\msys64\ucrt64\bin;$env:PATH"
           cargo test -p rbinkd --test interop_binary -- --test-threads=1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
