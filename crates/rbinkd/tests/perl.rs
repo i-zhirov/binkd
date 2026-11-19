@@ -11,13 +11,13 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use binkd_config::model::Config;
-use binkd_ftn::addr::FtnAddr;
-use binkd_ftn::domain::{DomainTable, FtnDomain};
-use binkd_ftn::node::NodeSpec;
-use binkd_log::{DateTime, Log};
-use binkd_net::{Caller, SessionOptions};
-use binkd_proto::SendFile;
+use rbinkd_config::model::Config;
+use rbinkd_ftn::addr::FtnAddr;
+use rbinkd_ftn::domain::{DomainTable, FtnDomain};
+use rbinkd_ftn::node::NodeSpec;
+use rbinkd_log::{DateTime, Log};
+use rbinkd_net::{Caller, SessionOptions};
+use rbinkd_proto::SendFile;
 
 /// Builds the config of the caller of the session.
 fn client_config(dir: &Path, aka: &str, port: u16) -> Config {
@@ -105,7 +105,7 @@ fn the_oracle_of_the_perl_hook_of_the_start() {
     let Some(oracle) = oracle() else {
         return;
     };
-    let dir = std::env::temp_dir().join(format!("binkd-perl-start-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-start-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     let text = run_oracle(&oracle, &dir, true, &["-p", "-P", "2:5047/13"]);
     assert!(text.contains("start"), "{text}");
@@ -120,7 +120,7 @@ fn the_oracle_of_the_perl_hook_of_the_call() {
     let Some(oracle) = oracle() else {
         return;
     };
-    let dir = std::env::temp_dir().join(format!("binkd-perl-call-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-call-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     let text = run_oracle(&oracle, &dir, true, &["-p", "-P", "2:5047/13"]);
     assert!(text.contains("call"), "{text}");
@@ -134,7 +134,7 @@ fn the_oracle_of_the_perl_hook_of_the_error() {
     let Some(oracle) = oracle() else {
         return;
     };
-    let dir = std::env::temp_dir().join(format!("binkd-perl-error-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-error-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     let text = run_oracle(&oracle, &dir, true, &["-p", "-P", "2:5047/13"]);
     assert!(text.contains("call"), "{text}");
@@ -152,7 +152,7 @@ fn the_oracle_of_the_perl_hooks_of_the_config() {
     let Some(oracle) = oracle() else {
         return;
     };
-    let dir = std::env::temp_dir().join(format!("binkd-perl-config-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-config-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     let text = run_oracle(&oracle, &dir, false, &["-n"]);
     assert!(text.contains("config_loaded"), "{text}");
@@ -166,7 +166,7 @@ async fn the_oracle_of_the_perl_hooks_of_the_session() {
     let Some(oracle) = oracle() else {
         return;
     };
-    let dir = std::env::temp_dir().join(format!("binkd-perl-session-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-session-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -223,7 +223,7 @@ async fn the_oracle_of_the_perl_hooks_of_the_session() {
     let mut client = client_config(&client_dir, "2:5047/13@fidonet", port);
     let packet = vec![b'c'; 300];
     fs::write(client_dir.join("outb").join("13b70064.cut"), &packet).unwrap();
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let files = vec![SendFile {
         netname: "13b70064.cut".to_string(),
         path: Some(client_dir.join("outb").join("13b70064.cut")),
@@ -291,7 +291,7 @@ fn the_oracle_of_the_perl_hook_changes_the_line_of_the_log() {
     let Some(oracle) = oracle() else {
         return;
     };
-    let dir = std::env::temp_dir().join(format!("binkd-perl-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -342,7 +342,7 @@ fn the_oracle_of_the_perl_hook_changes_the_line_of_the_log() {
 #[cfg(feature = "perl")]
 #[test]
 fn the_port_of_the_perl_hook_changes_the_line_of_the_log() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-port-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-port-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -397,7 +397,7 @@ fn kill(signal: &str, pid: u32) -> bool {
 #[cfg(feature = "perl")]
 #[test]
 fn the_port_of_the_perl_hooks_of_the_call() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-port-call-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-port-call-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -450,7 +450,7 @@ fn the_port_of_the_perl_hooks_of_the_call() {
 #[cfg(feature = "perl")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_on_log_hook_runs_on_the_master() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-on-log-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-on-log-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -527,7 +527,7 @@ async fn the_on_log_hook_runs_on_the_master() {
     }
     fs::write(client_dir.join("outb").join("13b70064.cut"), vec![b'c'; 10]).unwrap();
     let mut client = client_config(&client_dir, "2:5047/13@fidonet", port);
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
@@ -570,7 +570,7 @@ async fn the_on_log_hook_runs_on_the_master() {
 #[cfg(feature = "perl")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_port_of_the_perl_hooks_of_the_session() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-port-session-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-port-session-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -624,7 +624,7 @@ async fn the_port_of_the_perl_hooks_of_the_session() {
     let mut client = client_config(&client_dir, "2:5047/13@fidonet", port);
     let packet = vec![b'c'; 300];
     fs::write(client_dir.join("outb").join("13b70064.cut"), &packet).unwrap();
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let files = vec![SendFile {
         netname: "13b70064.cut".to_string(),
         path: Some(client_dir.join("outb").join("13b70064.cut")),
@@ -693,7 +693,7 @@ async fn the_port_of_the_perl_hooks_of_the_session() {
 #[cfg(feature = "perl")]
 #[test]
 fn the_port_of_the_perl_hook_of_the_reload() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-port-reload-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-port-reload-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -779,7 +779,7 @@ fn the_port_of_the_perl_hook_of_the_reload() {
 #[cfg(feature = "perl")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_port_of_the_perl_clones_of_two_sessions() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-clones-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-clones-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -850,8 +850,8 @@ async fn the_port_of_the_perl_clones_of_two_sessions() {
     let path_b = dir.join("client-b").join("outb").join("13b70064.cut");
     fs::write(&path_a, &packet_a).unwrap();
     fs::write(&path_b, &packet_b).unwrap();
-    let _ = binkd_spool::queue::Queue::scan(&mut client_a.spool, 1_000_000_000);
-    let _ = binkd_spool::queue::Queue::scan(&mut client_b.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client_a.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client_b.spool, 1_000_000_000);
     let send_a = vec![SendFile {
         netname: "13b70064.cut".to_string(),
         path: Some(path_a),
@@ -912,7 +912,7 @@ async fn the_port_of_the_perl_clones_of_two_sessions() {
 #[cfg(feature = "perl")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_port_of_the_rebuilt_session_queue() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-port-queue-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-port-queue-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -991,7 +991,7 @@ async fn the_port_of_the_rebuilt_session_queue() {
         std::thread::sleep(Duration::from_millis(20));
     }
     let mut client = client_config(&dir, "2:5047/13@fidonet", port);
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
@@ -1036,7 +1036,7 @@ async fn the_port_of_the_rebuilt_session_queue() {
 #[cfg(feature = "perl")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_port_of_the_removed_file_of_the_session_queue() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-port-remove-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("rbinkd-perl-port-remove-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -1110,7 +1110,7 @@ async fn the_port_of_the_removed_file_of_the_session_queue() {
         std::thread::sleep(Duration::from_millis(20));
     }
     let mut client = client_config(&dir, "2:5047/13@fidonet", port);
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
@@ -1161,7 +1161,7 @@ async fn the_port_of_the_removed_file_of_the_session_queue() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_port_of_the_queue_of_before_recv() {
     let dir = std::env::temp_dir().join(format!(
-        "binkd-perl-port-before-recv-{}",
+        "rbinkd-perl-port-before-recv-{}",
         std::process::id()
     ));
     let _ = fs::remove_dir_all(&dir);
@@ -1233,7 +1233,7 @@ async fn the_port_of_the_queue_of_before_recv() {
     let path = dir.join("outb").join("13b70064.cut");
     fs::write(&path, &content).unwrap();
     let mut client = client_config(&dir, "2:5047/13@fidonet", port);
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let files = vec![SendFile {
         netname: "13b70064.cut".to_string(),
         path: Some(path),
@@ -1292,8 +1292,10 @@ async fn the_port_of_the_queue_of_before_recv() {
 #[cfg(feature = "perl")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_port_of_the_removed_file_of_after_recv() {
-    let dir =
-        std::env::temp_dir().join(format!("binkd-perl-port-after-recv-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "rbinkd-perl-port-after-recv-{}",
+        std::process::id()
+    ));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -1384,7 +1386,7 @@ async fn the_port_of_the_removed_file_of_after_recv() {
         std::thread::sleep(Duration::from_millis(20));
     }
     let mut client = client_config(&dir, "2:5047/13@fidonet", port);
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let files = vec![
         SendFile {
             netname: "13b70064.pkt".to_string(),
@@ -1448,8 +1450,10 @@ async fn the_port_of_the_removed_file_of_after_recv() {
 #[cfg(feature = "perl")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_port_of_the_queue_of_after_sent() {
-    let dir =
-        std::env::temp_dir().join(format!("binkd-perl-port-after-sent-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!(
+        "rbinkd-perl-port-after-sent-{}",
+        std::process::id()
+    ));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -1515,7 +1519,7 @@ async fn the_port_of_the_queue_of_after_sent() {
         std::thread::sleep(Duration::from_millis(20));
     }
     let mut client = client_config(&dir, "2:5047/13@fidonet", port);
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,
@@ -1563,7 +1567,8 @@ async fn the_port_of_the_queue_of_after_sent() {
 #[cfg(feature = "perl")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn the_port_of_the_reload_of_the_script() {
-    let dir = std::env::temp_dir().join(format!("binkd-perl-reload-script-{}", std::process::id()));
+    let dir =
+        std::env::temp_dir().join(format!("rbinkd-perl-reload-script-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(dir.join("in")).unwrap();
     fs::create_dir_all(dir.join("outb")).unwrap();
@@ -1658,7 +1663,7 @@ async fn the_port_of_the_reload_of_the_script() {
     // the closure of the files of the caller sends no file.
     fs::write(dir.join("outb").join("13b70064.cut"), vec![b'c'; 10]).unwrap();
     let mut client = client_config(&dir, "2:5047/13@fidonet", port);
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let log = Arc::new(Log::new(0, 0, "", Vec::new()));
     let now = || DateTime {
         epoch: 1_000_000_000,

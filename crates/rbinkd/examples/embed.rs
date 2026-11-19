@@ -6,8 +6,8 @@
 
 use std::sync::Arc;
 
-use binkd::{Engine, FtnAddr};
-use binkd_log::{Log, ERROR};
+use rbinkd::{Engine, FtnAddr};
+use rbinkd_log::{Log, ERROR};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,14 +15,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .nth(1)
         .unwrap_or_else(|| "binkd.conf".to_string());
     // The caller of the port parses the config, the port of `readcfg()`.
-    let config = binkd_config::parse(&path)?;
+    let config = rbinkd_config::parse(&path)?;
     let log = Arc::new(Log::new(
         config.loglevel,
         config.conlog,
         &config.logpath,
         config.nolog.clone(),
     ));
-    let mut engine = Engine::new(config, binkd::cli::Options::default(), log);
+    let mut engine = Engine::new(config, rbinkd::cli::Options::default(), log);
     // The caller names a node, the port of the `-P` switch of the C code. The
     // caller without a node runs the server manager, the port of `do_server()`.
     if let Some(node) = std::env::args().nth(2) {

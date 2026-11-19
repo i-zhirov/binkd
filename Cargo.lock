@@ -9,91 +9,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "320119579fcad9c21884f5c4861d16174d0e06250625266f50fe6898340abefa"
 
 [[package]]
-name = "binkd-config"
-version = "0.1.0"
-dependencies = [
- "binkd-ftn",
- "binkd-spool",
-]
-
-[[package]]
-name = "binkd-corpus"
-version = "0.1.0"
-
-[[package]]
-name = "binkd-ftn"
-version = "0.1.0"
-dependencies = [
- "binkd-corpus",
-]
-
-[[package]]
-name = "binkd-log"
-version = "0.1.0"
-dependencies = [
- "binkd-ftn",
-]
-
-[[package]]
-name = "binkd-net"
-version = "0.1.0"
-dependencies = [
- "binkd-config",
- "binkd-ftn",
- "binkd-log",
- "binkd-proto",
- "binkd-spool",
- "binkd-srif",
- "tokio",
-]
-
-[[package]]
-name = "binkd-perl"
-version = "0.1.0"
-dependencies = [
- "binkd-config",
- "binkd-ftn",
- "binkd-log",
- "binkd-srif",
-]
-
-[[package]]
-name = "binkd-proto"
-version = "0.1.0"
-dependencies = [
- "binkd-ftn",
- "binkd-spool",
- "bzip2",
- "flate2",
- "tokio",
-]
-
-[[package]]
-name = "binkd-spool"
-version = "0.1.0"
-dependencies = [
- "binkd-corpus",
- "binkd-ftn",
-]
-
-[[package]]
-name = "binkd-srif"
-version = "0.1.0"
-dependencies = [
- "binkd-config",
- "binkd-ftn",
- "binkd-log",
- "binkd-spool",
-]
-
-[[package]]
-name = "binkd-win"
-version = "0.1.0"
-dependencies = [
- "windows-sys",
-]
-
-[[package]]
 name = "bytes"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -267,18 +182,103 @@ dependencies = [
 name = "rbinkd"
 version = "0.1.0"
 dependencies = [
- "binkd-config",
- "binkd-ftn",
- "binkd-log",
- "binkd-net",
- "binkd-perl",
- "binkd-proto",
- "binkd-spool",
- "binkd-win",
  "fs2",
+ "rbinkd-config",
+ "rbinkd-ftn",
+ "rbinkd-log",
+ "rbinkd-net",
+ "rbinkd-perl",
+ "rbinkd-proto",
+ "rbinkd-spool",
+ "rbinkd-win",
  "syslog",
  "time",
  "tokio",
+]
+
+[[package]]
+name = "rbinkd-config"
+version = "0.1.0"
+dependencies = [
+ "rbinkd-ftn",
+ "rbinkd-spool",
+]
+
+[[package]]
+name = "rbinkd-corpus"
+version = "0.1.0"
+
+[[package]]
+name = "rbinkd-ftn"
+version = "0.1.0"
+dependencies = [
+ "rbinkd-corpus",
+]
+
+[[package]]
+name = "rbinkd-log"
+version = "0.1.0"
+dependencies = [
+ "rbinkd-ftn",
+]
+
+[[package]]
+name = "rbinkd-net"
+version = "0.1.0"
+dependencies = [
+ "rbinkd-config",
+ "rbinkd-ftn",
+ "rbinkd-log",
+ "rbinkd-proto",
+ "rbinkd-spool",
+ "rbinkd-srif",
+ "tokio",
+]
+
+[[package]]
+name = "rbinkd-perl"
+version = "0.1.0"
+dependencies = [
+ "rbinkd-config",
+ "rbinkd-ftn",
+ "rbinkd-log",
+ "rbinkd-srif",
+]
+
+[[package]]
+name = "rbinkd-proto"
+version = "0.1.0"
+dependencies = [
+ "bzip2",
+ "flate2",
+ "rbinkd-ftn",
+ "rbinkd-spool",
+ "tokio",
+]
+
+[[package]]
+name = "rbinkd-spool"
+version = "0.1.0"
+dependencies = [
+ "rbinkd-corpus",
+ "rbinkd-ftn",
+]
+
+[[package]]
+name = "rbinkd-srif"
+version = "0.1.0"
+dependencies = [
+ "rbinkd-config",
+ "rbinkd-ftn",
+ "rbinkd-log",
+ "rbinkd-spool",
+]
+
+[[package]]
+name = "rbinkd-win"
+version = "0.1.0"
+dependencies = [
+ "windows-sys",
 ]
 
 [[package]]

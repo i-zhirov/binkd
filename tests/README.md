@@ -34,8 +34,8 @@ The parity tests are target-gated and run in the `windows` CI job. On a
 Windows host:
 
 ```
-cargo test -p binkd-win
-cargo test -p binkd-config
+cargo test -p rbinkd-win
+cargo test -p rbinkd-config
 cargo test --workspace
 ```
 
@@ -44,17 +44,17 @@ the Windows feature set, and the Windows `-d` dump. On another system the
 cross-target check is:
 
 ```
-cargo check -p binkd-win -p binkd-config -p rbinkd --target x86_64-pc-windows-gnu
+cargo check -p rbinkd-win -p rbinkd-config -p rbinkd --target x86_64-pc-windows-gnu
 ```
 
 ## Run the Perl tests
 
-The hooks of Perl need the optional crate `binkd-perl` and the interpreter
+The hooks of Perl need the optional crate `rbinkd-perl` and the interpreter
 of the system:
 
 ```
 cargo test -p rbinkd --features perl --test perl
-cd crates/binkd-perl
+cd crates/rbinkd-perl
 cargo test
 ```
 
@@ -65,20 +65,20 @@ session hooks end to end, and the reload hooks. The oracle cases run against
 the upstream C binary when the environment names `BINKD_C_PERL`, a binary of
 `./configure --with-perl`.
 
-The cases of `crates/binkd-perl/tests/hooks.rs` call every hook and hold the
+The cases of `crates/rbinkd-perl/tests/hooks.rs` call every hook and hold the
 marks, the return values, the abort text, the new file names, the action, and
 the rate limit. The case `two_sessions_do_not_share_the_variables` holds the
 per-session clones with two threads, and the cases
 `concurrent_calls_do_not_race_on_the_master` and
 `two_clones_call_the_log_hook_on_two_threads` hold the log hook on two
-threads. The unit test `the_hook_runs_on_two_threads` of `binkd-log` holds the
+threads. The unit test `the_hook_runs_on_two_threads` of `rbinkd-log` holds the
 log without Perl. The port case
 `the_port_of_the_perl_clones_of_two_sessions` holds the clones of two sessions
 of the daemon. The cases `a_hook_message_reaches_the_peer`,
 `the_session_values_reach_the_hook`,
 `the_traffic_of_the_files_reaches_the_hook`, and
 `the_compression_counters_reach_the_hooks` of
-`crates/binkd-proto/tests/session.rs` hold the sink of `msg_send()`, the session
+`crates/rbinkd-proto/tests/session.rs` hold the sink of `msg_send()`, the session
 values, the traffic, and the compression counters. The cases
 `the_session_variables_reach_the_script`,
 `the_traffic_and_compression_variables_reach_the_script`,
@@ -88,7 +88,7 @@ values, the traffic, and the compression counters. The cases
 `the_script_removes_an_entry_of_after_recv`,
 `the_script_deletes_an_entry_of_before_recv`, and
 `the_script_deletes_an_entry_of_after_sent` of
-`crates/binkd-perl/tests/hooks.rs` hold `$start`, `$host`, `$ip`, `$sysname`,
+`crates/rbinkd-perl/tests/hooks.rs` hold `$start`, `$host`, `$ip`, `$sysname`,
 `%opt`, `$traf_mail`, `$traf_file`, `$z_send`, `$z_recv`, and `@queue` in the
 script, the values that the script writes back into `@queue`, the deletion of
 an entry in `before_send()` and `after_recv()`, and the deletion in
@@ -97,7 +97,7 @@ The cases
 `the_hook_rebuilds_the_session_files`,
 `the_hook_removes_a_file_from_the_session`, and
 `the_hook_removes_a_file_of_after_recv` of
-`crates/binkd-proto/tests/session.rs` hold the files that the session rebuilds
+`crates/rbinkd-proto/tests/session.rs` hold the files that the session rebuilds
 and drops from the queue. The case
 `the_session_does_not_refresh_the_queue_of_before_recv` holds the upstream C
 rule that
@@ -117,34 +117,34 @@ The case `the_port_of_the_reload_of_the_script` of
 config: the new script answers `config_loaded()`, a session uses it, the old
 script is not called again, and `on_start()` runs only for the script of the
 start. The case `the_hook_of_after_recv_runs_before_the_rename` of
-`crates/binkd-proto/tests/session.rs` holds the order of `after_recv()`: the
+`crates/rbinkd-proto/tests/session.rs` holds the order of `after_recv()`: the
 hook sees the partial file and the real name before the rename and may change
 the name. The case `the_after_recv_values_reach_the_script` of
-`crates/binkd-perl/tests/hooks.rs` holds `$tmpfile` and `$file`. The case
+`crates/rbinkd-perl/tests/hooks.rs` holds `$tmpfile` and `$file`. The case
 `the_where_of_the_error_follows_the_c_code` of
-`crates/binkd-net/src/caller.rs` holds the `$where` map of `on_error()`, and
+`crates/rbinkd-net/src/caller.rs` holds the `$where` map of `on_error()`, and
 the oracle and port cases of the call hold `error where=1`. The case
 `the_on_log_hook_runs_on_the_master` of `crates/rbinkd/tests/perl.rs` holds the
 decision that `on_log()` runs on the master interpreter. The case
 `the_answerer_runs_on_handshake_after_the_adr` of
-`crates/binkd-proto/tests/session.rs` holds the order of `on_handshake()` for
+`crates/rbinkd-proto/tests/session.rs` holds the order of `on_handshake()` for
 the answerer: the hook sees the caller's `@he`, and the answers replace our
 address and the password. The oracle and port session cases hold `@he` with the
 shared script. The case `the_action_of_after_sent_changes_the_spool` of
-`crates/binkd-proto/tests/session.rs` holds `$action` of `after_sent()`:
+`crates/rbinkd-proto/tests/session.rs` holds `$action` of `after_sent()`:
 `d` removes the file, `t` truncates it, and `s` removes it at the end of a
 successful session. The oracle and port session cases hold `d` with the shared
 script. The case `the_hook_sees_the_two_parts_of_the_message` of
-`crates/binkd-proto/tests/session.rs` holds the `s1`/`s2` split of
+`crates/rbinkd-proto/tests/session.rs` holds the `s1`/`s2` split of
 `on_send()`. The oracle and port cases of the session hold the split with the
 shared script. The cases `the_config_variables_reach_the_script` and
 `the_config_variables_reach_a_session_clone` of
-`crates/binkd-perl/tests/config.rs` hold `%config`, `%domain`, `@addr`,
+`crates/rbinkd-perl/tests/config.rs` hold `%config`, `%domain`, `@addr`,
 `@listen`, `@ftrans`, `@overwrite`, `@skip`, `%share`, and `%node`, the main
 interpreter and a session clone. The case
 `the_oracle_of_the_perl_hook_of_the_start` and the port case
 `the_port_of_the_perl_hooks_of_the_session` hold `$config{sysname}`.
-The cases of `crates/binkd-perl/tests/xs.rs` hold the XS helpers `Log`,
+The cases of `crates/rbinkd-perl/tests/xs.rs` hold the XS helpers `Log`,
 `aeq`, `arm`, `msg_send`, and `binkd_warn`.
 
 ## The golden corpus
@@ -260,8 +260,8 @@ The `inbound_minfree` case runs the non-negative `minfree` path. The focused
 checks are:
 
 ```sh
-cargo test -p binkd-spool inbound::tests
-cargo test -p binkd-spool --test spool_corpus
+cargo test -p rbinkd-spool inbound::tests
+cargo test -p rbinkd-spool --test spool_corpus
 cargo test -p rbinkd the_free_space
 ```
 
@@ -281,17 +281,17 @@ The configs use relative paths, so the upstream C binary runs in the case
 directory. The directories of the cases (`in`, `outb`, `box`, `inbox`,
 `bbox`) are in the repository, and the `include` fragments live in `parts/`.
 
-The Rust test `crates/binkd-config/tests/dump_corpus.rs` parses each case and
+The Rust test `crates/rbinkd-config/tests/dump_corpus.rs` parses each case and
 compares the dump with the expectation. When the `BINKD_C` variable names the
 upstream C binary, the test also runs it and checks that the expectation is
 current:
 
 ```
-BINKD_C=/path/to/binkd cargo test -p binkd-config --test dump_corpus
+BINKD_C=/path/to/binkd cargo test -p rbinkd-config --test dump_corpus
 ```
 
 The config corpus holds successful `-d` dumps only. The partition and
-missing-inbox rejection paths are unit tests in `binkd-config`; the corpus
+missing-inbox rejection paths are unit tests in `rbinkd-config`; the corpus
 format has no expected-error case.
 
 ## The reload corpus
@@ -337,17 +337,17 @@ Set `BINKD_C` to the path of the binary and run every test that starts the C
 process:
 
 ```sh
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test interop
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-net --test interop
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test record
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-config --test dump_corpus
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-config --test reload_corpus
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-proto --test interop
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-net --test interop
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-proto --test record
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-config --test dump_corpus
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-config --test reload_corpus
 BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test cli
 BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test daemon
 ```
 
 Without `BINKD_C` the tests report that they are skipped. Only the interop
-cases of the `binkd-proto` file need the C binary; the Rust side is the
+cases of the `rbinkd-proto` file need the C binary; the Rust side is the
 library, not the Rust binary. The cases of `crates/rbinkd/tests/engine.rs` hold
 the two roles of the Rust library against each other.
 
@@ -383,11 +383,11 @@ chmod +x mkinstalldirs
 ./configure
 make
 cd ..
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test interop -- --test-threads=1
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-net --test interop -- --test-threads=1
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test record -- --test-threads=1
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-config --test dump_corpus
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-config --test reload_corpus
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-proto --test interop -- --test-threads=1
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-net --test interop -- --test-threads=1
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-proto --test record -- --test-threads=1
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-config --test dump_corpus
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-config --test reload_corpus
 BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test cli
 BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test daemon -- --test-threads=1
 BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test interop_binary -- --test-threads=1
@@ -438,7 +438,7 @@ BSD is build-supported but not CI-tested. The upstream C reference and the
 Rust workspace build on BSD, and no CI runner is configured. The
 record `doc/compatibility.md` holds the matrix.
 
-The Rust test `crates/binkd-net/tests/proxy_interop.rs` runs the proxy matrix
+The Rust test `crates/rbinkd-net/tests/proxy_interop.rs` runs the proxy matrix
 for the network layer. Set `BINKD_C_PROXY` to the path of an upstream C binary
 that the `configure` script built with `--with-proxy` and `--with-ntlm`:
 
@@ -449,14 +449,14 @@ chmod +x mkinstalldirs
 ./configure --with-proxy --with-ntlm
 make
 cd ..
-BINKD_C_PROXY=$PWD/upstream-c/binkd cargo test -p binkd-net --test proxy_interop
+BINKD_C_PROXY=$PWD/upstream-c/binkd cargo test -p rbinkd-net --test proxy_interop
 ```
 
 Without `BINKD_C_PROXY` the tests report that they are skipped. The corpus
 tests need the plain build of the upstream C binary, so keep the two builds
 apart.
 
-The Rust test `crates/binkd-proto/tests/interop.rs` runs a transfer of the port
+The Rust test `crates/rbinkd-proto/tests/interop.rs` runs a transfer of the port
 against the C server with the rate limit. Set `BINKD_C_BWLIM` to the path of an
 upstream C binary that the `configure` script built with `--with-bwlim`:
 
@@ -468,14 +468,14 @@ chmod +x mkinstalldirs
 make
 cd ..
 BINKD_C_BWLIM=$PWD/upstream-c/binkd \
-    cargo test -p binkd-proto --test interop \
+    cargo test -p rbinkd-proto --test interop \
     rust_client_to_c_server_rate_limited
 ```
 
 Without `BINKD_C_BWLIM` the test reports that it is skipped.
 
 The interop test `c_client_claims_freq_to_rust_server` of
-`crates/binkd-proto/tests/interop.rs` runs the C client of the protocol
+`crates/rbinkd-proto/tests/interop.rs` runs the C client of the protocol
 version 1.0 against the listener of the port: the C client claims a FREQ, the
 external program of the port answers the file of the exchange, and the port holds
 its own end of the batch back until the C client answers the claim. Set
@@ -483,7 +483,7 @@ its own end of the batch back until the C client answers the claim. Set
 with the `PRTCLVER` define of the upstream `Config.h`:
 
 ```sh
-BINKD_C_V10=$PWD/upstream-c-v10/binkd cargo test -p binkd-proto --test interop
+BINKD_C_V10=$PWD/upstream-c-v10/binkd cargo test -p rbinkd-proto --test interop
 ```
 
 The build of that binary, in a second clone of the upstream tree:
@@ -497,7 +497,7 @@ advertises the version 1.1, and the upstream C code holds its own end of the
 batch back for a peer of the version 1.0 only, so the test needs the build of
 the version 1.0.
 
-The Rust test `crates/binkd-net/tests/srv.rs` runs the SRV lookup of the port
+The Rust test `crates/rbinkd-net/tests/srv.rs` runs the SRV lookup of the port
 against a server of the test on the loopback address. The test needs no C binary,
 because the upstream C code asks the resolver library of the system. The test
 supplies the settings of the resolver, so it exercises the query, the records
@@ -510,11 +510,11 @@ The Rust interoperability matrix:
 | Rust | C | plain, zlib, bzip2, and CRYPT |
 | C | Rust | plain, zlib, bzip2, and CRYPT |
 | C | C | the binary baseline |
-| Rust | Rust | `crates/binkd-proto/tests/session.rs` |
+| Rust | Rust | `crates/rbinkd-proto/tests/session.rs` |
 
 The compression of a file has no corpus case: the bytes of a zlib or bzip2
 stream depend on the version of the library. The unit tests of
-`crates/binkd-proto/src/compress.rs` cover a round trip of both methods, and
+`crates/rbinkd-proto/src/compress.rs` cover a round trip of both methods, and
 the interop tests cover the C and the Rust streams against each other.
 
 The upstream C client needs the poll file in the outbound directory of the
@@ -524,7 +524,7 @@ clients, and exits.
 
 ## The recorded sessions
 
-The Rust test `crates/binkd-proto/tests/record.rs` reads the recordings of
+The Rust test `crates/rbinkd-proto/tests/record.rs` reads the recordings of
 `tests/sessions/`. A recording holds the bytes of the two directions of one
 session: `s` for the bytes that the recorded side sent and `r` for the bytes that
 it received. The test replays the bytes of the peer into a fresh session and
@@ -553,13 +553,13 @@ AKA.
 The focused cases of the local clock, the `TIME` frame, and the binary log:
 
 ```sh
-cargo test -p binkd-log binlog::tests
-cargo test -p binkd-ftn --test corpus
-cargo test -p binkd-proto banner
-cargo test -p binkd-proto --test session the_time_frame_is_sent
-cargo test -p binkd-net the_banner_time
+cargo test -p rbinkd-log binlog::tests
+cargo test -p rbinkd-ftn --test corpus
+cargo test -p rbinkd-proto banner
+cargo test -p rbinkd-proto --test session the_time_frame_is_sent
+cargo test -p rbinkd-net the_banner_time
 cargo test -p rbinkd --test cli the_version_date_is_local
-BINKD_C=$PWD/upstream-c/binkd cargo test -p binkd-proto --test interop
+BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd-proto --test interop
 BINKD_C=$PWD/upstream-c/binkd cargo test -p rbinkd --test interop_binary
 ```
 
@@ -569,20 +569,20 @@ The focused cases of the log sink, the syslog backend, and the keyword. They
 need no live syslog daemon:
 
 ```sh
-cargo test -p binkd-log a_sink_receives_the_level_and_text
-cargo test -p binkd-log a_hook_rewrites_the_message_of_the_sink
-cargo test -p binkd-log a_suppressing_hook_leaves_the_sink_empty
-cargo test -p binkd-log a_nolog_mask_suppresses_the_sink
-cargo test -p binkd-log a_level_above_the_file_level_skips_the_sink
+cargo test -p rbinkd-log a_sink_receives_the_level_and_text
+cargo test -p rbinkd-log a_hook_rewrites_the_message_of_the_sink
+cargo test -p rbinkd-log a_suppressing_hook_leaves_the_sink_empty
+cargo test -p rbinkd-log a_nolog_mask_suppresses_the_sink
+cargo test -p rbinkd-log a_level_above_the_file_level_skips_the_sink
 cargo test -p rbinkd syslog::tests
-cargo test -p binkd-config the_syslog_facility_is_parsed
-cargo test -p binkd-config the_syslog_facility_of_auth_and_authpriv
-cargo test -p binkd-config the_syslog_facility_is_case_sensitive
-cargo test -p binkd-config the_mark_facility_is_rejected
-cargo test -p binkd-config the_syslog_keyword_shows_the_c_fallback
+cargo test -p rbinkd-config the_syslog_facility_is_parsed
+cargo test -p rbinkd-config the_syslog_facility_of_auth_and_authpriv
+cargo test -p rbinkd-config the_syslog_facility_is_case_sensitive
+cargo test -p rbinkd-config the_mark_facility_is_rejected
+cargo test -p rbinkd-config the_syslog_keyword_shows_the_c_fallback
 ```
 
-The cases of `binkd-log` use a fake sink, and the cases of `rbinkd` cover the
+The cases of `rbinkd-log` use a fake sink, and the cases of `rbinkd` cover the
 facility and priority mapping. No live syslog daemon is required. No golden
 case parses a `syslog <name>` line; the dump holds only the fallback, because
 the upstream C parser `read_syslog_facility()` has an inverted argument check.
@@ -592,33 +592,33 @@ The Rust parser and dump cases are the only coverage of the keyword.
 
 | File | Crate | Cases |
 | --- | --- | --- |
-| `pmatch.tsv` | `binkd-ftn` | `xpmatch` |
-| `getword.tsv` | `binkd-ftn` | `getwordx2` |
-| `crypt.tsv` | `binkd-ftn` | ZipCrypto keys and buffers |
-| `cram.tsv` | `binkd-ftn` | HMAC-MD5 and CRAM-MD5 |
-| `ftn.tsv` | `binkd-ftn` | FTN addresses and domains |
-| `tools.tsv` | `binkd-ftn` | The pure helpers of `tools.c` |
-| `pkt.tsv` | `binkd-ftn` | Packet headers |
-| `flo.tsv` | `binkd-spool` | Flow file lines |
-| `spool/queue_scan.tsv` | `binkd-spool` | The queue scan and the sort |
-| `spool/queue_points.tsv` | `binkd-spool` | Point directories |
-| `spool/queue_zone.tsv` | `binkd-spool` | Zone directories |
-| `spool/filebox.tsv` | `binkd-spool` | Fileboxes |
-| `spool/bsy.tsv` | `binkd-spool` | `.bsy` and `.csy` files |
-| `spool/try_hld.tsv` | `binkd-spool` | `.try` and `.hld` files |
-| `spool/try_remove.tsv` | `binkd-spool` | `remove-try-files` |
-| `spool/busy.tsv` | `binkd-spool` | `.bsy` and `.csy` flags |
-| `spool/busy_touch.tsv` | `binkd-spool` | `bsy_touch` delay |
-| `spool/inbound_test.tsv` | `binkd-spool` | `inb_test` and the rename styles |
-| `spool/inbound_done.tsv` | `binkd-spool` | `inb_done` rename |
-| `spool/inbound_reject.tsv` | `binkd-spool` | `inb_reject` and `inb_fopen` |
-| `spool/inbound_minfree.tsv` | `binkd-spool` | `inb_fopen` and `minfree` |
-| `spool/inbound_pkthdr.tsv` | `binkd-spool` | `check_pkthdr` |
-| `config/minimal.conf` | `binkd-config` | The defaults of the `-d` dump |
-| `config/full.conf` | `binkd-config` | The `-d` dump of the values |
-| `config/styles.conf` | `binkd-config` | The `-d` dump of the styles |
-| `config/reload_basic.conf` | `binkd-config` | The reload of the values |
-| `config/reload_node.conf` | `binkd-config` | The reload of the node table |
+| `pmatch.tsv` | `rbinkd-ftn` | `xpmatch` |
+| `getword.tsv` | `rbinkd-ftn` | `getwordx2` |
+| `crypt.tsv` | `rbinkd-ftn` | ZipCrypto keys and buffers |
+| `cram.tsv` | `rbinkd-ftn` | HMAC-MD5 and CRAM-MD5 |
+| `ftn.tsv` | `rbinkd-ftn` | FTN addresses and domains |
+| `tools.tsv` | `rbinkd-ftn` | The pure helpers of `tools.c` |
+| `pkt.tsv` | `rbinkd-ftn` | Packet headers |
+| `flo.tsv` | `rbinkd-spool` | Flow file lines |
+| `spool/queue_scan.tsv` | `rbinkd-spool` | The queue scan and the sort |
+| `spool/queue_points.tsv` | `rbinkd-spool` | Point directories |
+| `spool/queue_zone.tsv` | `rbinkd-spool` | Zone directories |
+| `spool/filebox.tsv` | `rbinkd-spool` | Fileboxes |
+| `spool/bsy.tsv` | `rbinkd-spool` | `.bsy` and `.csy` files |
+| `spool/try_hld.tsv` | `rbinkd-spool` | `.try` and `.hld` files |
+| `spool/try_remove.tsv` | `rbinkd-spool` | `remove-try-files` |
+| `spool/busy.tsv` | `rbinkd-spool` | `.bsy` and `.csy` flags |
+| `spool/busy_touch.tsv` | `rbinkd-spool` | `bsy_touch` delay |
+| `spool/inbound_test.tsv` | `rbinkd-spool` | `inb_test` and the rename styles |
+| `spool/inbound_done.tsv` | `rbinkd-spool` | `inb_done` rename |
+| `spool/inbound_reject.tsv` | `rbinkd-spool` | `inb_reject` and `inb_fopen` |
+| `spool/inbound_minfree.tsv` | `rbinkd-spool` | `inb_fopen` and `minfree` |
+| `spool/inbound_pkthdr.tsv` | `rbinkd-spool` | `check_pkthdr` |
+| `config/minimal.conf` | `rbinkd-config` | The defaults of the `-d` dump |
+| `config/full.conf` | `rbinkd-config` | The `-d` dump of the values |
+| `config/styles.conf` | `rbinkd-config` | The `-d` dump of the styles |
+| `config/reload_basic.conf` | `rbinkd-config` | The reload of the values |
+| `config/reload_node.conf` | `rbinkd-config` | The reload of the node table |
 
 The `tz_off` cases of `tools.tsv` cover the truncation toward zero for
 positive and negative seconds values. The explicit offset path is exact; the

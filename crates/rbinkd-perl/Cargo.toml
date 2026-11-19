@@ -1,0 +1,26 @@
+[package]
+name = "rbinkd-perl"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "GPL-2.0-or-later"
+description = "The FFI of the Perl hooks of rbinkd, the port of `perlhooks.c`."
+build = "build.rs"
+
+# The crate is not a member of the workspace. The default build excludes it.
+# See `doc/configuration.md`.
+
+[dependencies]
+rbinkd-config = { path = "../rbinkd-config" }
+rbinkd-ftn = { path = "../rbinkd-ftn" }
+rbinkd-log = { path = "../rbinkd-log" }
+rbinkd-srif = { path = "../rbinkd-srif" }
+
+[dev-dependencies]
+rbinkd-spool = { path = "../rbinkd-spool" }
+
+[lints.rust]
+# The exception is described in `doc/development.md`: the crate holds the C shim of
+# the Perl C API and the FFI, so it alone holds `allow`. Every other crate keeps
+# `forbid`.
+unsafe_code = "allow"

@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: inbound_minfree
 #
 # `inb_fopen()` checks a non-negative `minfree` against the free space.

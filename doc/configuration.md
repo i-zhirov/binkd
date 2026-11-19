@@ -6,6 +6,11 @@ repository are the local reference:
 - `binkd.conf` for UNIX
 - `binkd.cfg` for Windows
 
+The same files can use the `rbinkd.conf` and `rbinkd.cfg` names. If the
+config argument is omitted, rbinkd looks for `rbinkd.conf`, then
+`binkd.conf` on UNIX. On Windows it looks for `rbinkd.cfg`, then
+`binkd.cfg`. The other extension is also accepted.
+
 The upstream Binkd manual documents every original directive. See the
 [documentation index](README.md) for the upstream links.
 
@@ -14,7 +19,7 @@ The upstream Binkd manual documents every original directive. See the
 The configuration file is the last argument:
 
 ```sh
-rbinkd binkd.conf
+rbinkd rbinkd.conf
 ```
 
 A minimal configuration names a domain, an address, a spool directory, and
@@ -39,17 +44,23 @@ set of common directives and comments.
 Check the configuration without starting the daemon:
 
 ```sh
-rbinkd -n binkd.conf
+rbinkd -n rbinkd.conf
 ```
 
 Dump the parsed configuration and exit:
 
 ```sh
-rbinkd -d binkd.conf
+rbinkd -d rbinkd.conf
 ```
 
 The `-d` output is a compatibility surface. Keep it stable when you change
 the parser.
+
+## Log path environment
+
+The `log` directive sets the text log path. If the directive is empty,
+`RBINKD_LOG` sets the path, then `BINKD_LOG`. The configuration value takes
+precedence.
 
 ## Directives
 

@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: bsy
 #
 # An old `.bsy` file is removed, a current `.csy` file sets the busy state.

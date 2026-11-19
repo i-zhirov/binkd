@@ -7,9 +7,8 @@ license.workspace = true
 description = "The rbinkd mailer: the Rust reimplementation of binkd, its command line and daemon."
 
 [lib]
-# The library crate keeps the binkd name for the embedders and the
-# C-compatible API; the project and the executable are rbinkd.
-name = "binkd"
+# The library and the executable share the rbinkd name.
+name = "rbinkd"
 
 [[bin]]
 name = "rbinkd"
@@ -17,22 +16,22 @@ path = "src/main.rs"
 
 [features]
 # The Perl hooks are optional. See `doc/configuration.md`.
-perl = ["dep:binkd-perl"]
+perl = ["dep:rbinkd-perl"]
 
 [target.'cfg(unix)'.dependencies]
 syslog = "=7.0.0"
 
 [target.'cfg(windows)'.dependencies]
-binkd-win = { path = "../binkd-win" }
+rbinkd-win = { path = "../rbinkd-win" }
 
 [dependencies]
-binkd-perl = { path = "../binkd-perl", optional = true }
-binkd-config = { path = "../binkd-config" }
-binkd-ftn = { path = "../binkd-ftn" }
-binkd-net = { path = "../binkd-net" }
-binkd-proto = { path = "../binkd-proto" }
-binkd-log = { path = "../binkd-log" }
-binkd-spool = { path = "../binkd-spool" }
+rbinkd-perl = { path = "../rbinkd-perl", optional = true }
+rbinkd-config = { path = "../rbinkd-config" }
+rbinkd-ftn = { path = "../rbinkd-ftn" }
+rbinkd-net = { path = "../rbinkd-net" }
+rbinkd-proto = { path = "../rbinkd-proto" }
+rbinkd-log = { path = "../rbinkd-log" }
+rbinkd-spool = { path = "../rbinkd-spool" }
 fs2 = "=0.4.3"
 time = { version = "=0.3.44", features = ["local-offset"] }
 tokio = { version = "=1.54.0", features = ["rt", "rt-multi-thread", "macros", "signal", "time", "io-std", "process"] }

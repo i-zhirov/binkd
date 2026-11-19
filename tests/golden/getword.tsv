@@ -1,4 +1,4 @@
-# crate: binkd-ftn
+# crate: rbinkd-ftn
 #
 # getwordx2(src, n, flags, fldsep, fldskip) -> word or <null>.
 #

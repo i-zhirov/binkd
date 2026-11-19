@@ -1,20 +1,20 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/binkd-ftn",
-    "crates/binkd-spool",
-    "crates/binkd-config",
-    "crates/binkd-proto",
-    "crates/binkd-log",
-    "crates/binkd-net",
-    "crates/binkd-srif",
-    "crates/binkd-corpus",
+    "crates/rbinkd-ftn",
+    "crates/rbinkd-spool",
+    "crates/rbinkd-config",
+    "crates/rbinkd-proto",
+    "crates/rbinkd-log",
+    "crates/rbinkd-net",
+    "crates/rbinkd-srif",
+    "crates/rbinkd-corpus",
     "crates/rbinkd",
-    "crates/binkd-win",
+    "crates/rbinkd-win",
 ]
 # The crate of the FFI is optional and excluded from the workspace.
 # See `doc/configuration.md`.
-exclude = ["crates/binkd-perl"]
+exclude = ["crates/rbinkd-perl"]
 
 [workspace.package]
 version = "0.1.0"

@@ -8,7 +8,7 @@ use std::fmt;
 /// The C code states the name `binkd` in the text, so the text holds no name
 /// of the program of the run.
 pub const USAGE: &str = "\
-usage: binkd [-CcDipqrsvmh] [-P node] config
+usage: rbinkd [-CcDipqrsvmh] [-P node] config
   -D       run as daemon
   -C       reload on config change
   -c       run client only
@@ -24,7 +24,7 @@ usage: binkd [-CcDipqrsvmh] [-P node] config
   -vv      dump version with compilation flags and quit
   -d       dump parsed config and exit
   -m       disable CRAM-MD5 authorization
-  -n       don't run binkd-client and binkd-server (check config, make polls)
+  -n       don't run rbinkd-client and rbinkd-server (check config, make polls)
   -h       print this help
 
 Copyright (c) 1996-2009 Dima Maloff and others.
@@ -110,7 +110,7 @@ pub struct Options {
     pub no: bool,
     /// The `-t` switch of Windows: the service command.
     #[cfg(windows)]
-    pub service: Option<binkd_win::command::Command>,
+    pub service: Option<rbinkd_win::command::Command>,
     /// The `-S` switch of Windows: the display name of the service.
     #[cfg(windows)]
     pub service_name: Option<String>,
@@ -233,7 +233,7 @@ pub fn parse(args: &[String]) -> Result<Options, Error> {
                 #[cfg(windows)]
                 't' => {
                     let value = argument(&switches, &mut i, args, &mut index, c)?;
-                    let command = binkd_win::command::Command::parse(&value)
+                    let command = rbinkd_win::command::Command::parse(&value)
                         .ok_or(Error::ServiceCommand(value))?;
                     options.service = Some(command);
                 }
@@ -405,12 +405,12 @@ mod tests {
             "-t",
             "install",
             "-S",
-            "Binkd mailer",
+            "Rbinkd mailer",
             "binkd.conf",
         ]))
         .unwrap();
-        assert_eq!(options.service, Some(binkd_win::command::Command::Install));
-        assert_eq!(options.service_name.as_deref(), Some("Binkd mailer"));
+        assert_eq!(options.service, Some(rbinkd_win::command::Command::Install));
+        assert_eq!(options.service_name.as_deref(), Some("Rbinkd mailer"));
         assert_eq!(options.config.as_deref(), Some("binkd.conf"));
     }
 

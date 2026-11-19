@@ -1,0 +1,17 @@
+[package]
+name = "rbinkd-srif"
+description = "The SRIF events of rbinkd: the flag and exec events and the SRIF exchange"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rbinkd-ftn = { path = "../rbinkd-ftn" }
+rbinkd-config = { path = "../rbinkd-config" }
+rbinkd-spool = { path = "../rbinkd-spool" }
+rbinkd-log = { path = "../rbinkd-log" }
+
+[lints]
+workspace = true

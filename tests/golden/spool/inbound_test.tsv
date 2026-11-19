@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: inbound_test
 #
 # `inb_test()` looks for the file with the same size and time.

@@ -38,11 +38,11 @@ $tempRoot = if ($env:RUNNER_TEMP) {
 } else {
     [System.IO.Path]::GetTempPath()
 }
-$root = Join-Path $tempRoot ('binkd-smoke-' + [guid]::NewGuid().ToString('N'))
-$serviceName = 'BinkdSmoke' + [guid]::NewGuid().ToString('N').Substring(0, 12)
-$log = Join-Path $root 'binkd.log'
-$pidFile = Join-Path $root 'binkd.pid'
-$config = Join-Path $root 'binkd.conf'
+$root = Join-Path $tempRoot ('rbinkd-smoke-' + [guid]::NewGuid().ToString('N'))
+$serviceName = 'RbinkdSmoke' + [guid]::NewGuid().ToString('N').Substring(0, 12)
+$log = Join-Path $root 'rbinkd.log'
+$pidFile = Join-Path $root 'rbinkd.pid'
+$config = Join-Path $root 'rbinkd.conf'
 $outbound = Join-Path $root 'outbound'
 $inbound = Join-Path $root 'inbound'
 
@@ -192,7 +192,7 @@ Push-Location $root
 try {
     Write-Step 'Install'
     $output = Invoke-Rbinkd -Arguments @(
-        '-t', 'install', '-S', $serviceName, '-c', 'binkd.conf'
+        '-t', 'install', '-S', $serviceName, '-c', 'rbinkd.conf'
     )
     $installed = $true
     Assert-Contains -Text $output `
@@ -306,10 +306,10 @@ try {
 catch {
     Write-Host "The Windows service smoke test failed: $_"
     if (Test-Path -LiteralPath $log) {
-        Write-Host '--- binkd.log ---'
+        Write-Host '--- rbinkd.log ---'
         Get-Content -LiteralPath $log -ErrorAction SilentlyContinue |
             ForEach-Object { Write-Host $_ }
-        Write-Host '--- end of binkd.log ---'
+        Write-Host '--- end of rbinkd.log ---'
     }
     throw
 }

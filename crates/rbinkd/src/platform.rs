@@ -3,8 +3,8 @@
 
 use std::path::Path;
 
-use binkd_log::DateTime;
-use binkd_net::srif::ShortName;
+use rbinkd_log::DateTime;
+use rbinkd_net::srif::ShortName;
 
 /// The names of the months, the port of `__DATE__` of the C code.
 const MONTHS: [&str; 12] = [
@@ -77,11 +77,11 @@ pub fn free_space(path: &Path) -> u64 {
 /// Returns the lookup of the short name of a received file, the port of the
 /// Windows branch of `run_args()` of `srif.c`.
 ///
-/// The Windows binary supplies the safe wrapper of `binkd-win`; the other
+/// The Windows binary supplies the safe wrapper of `rbinkd-win`; the other
 /// systems answer no lookup, and the expansion keeps the name of the file.
 #[cfg(windows)]
 fn windows_short_name(path: &str) -> Result<String, u32> {
-    binkd_win::storage::short_path(Path::new(path))
+    rbinkd_win::storage::short_path(Path::new(path))
 }
 
 /// Returns the lookup of the short name of a received file.
@@ -100,7 +100,7 @@ pub fn short_name() -> Option<ShortName> {
 /// the C `stat()` that `check_config()` of `readcfg.c` uses.
 ///
 /// On Unix the identity is the device number. On Windows the binary asks the
-/// safe wrapper of `binkd-win` for the volume serial. The other systems answer
+/// safe wrapper of `rbinkd-win` for the volume serial. The other systems answer
 /// `None`, the port of a failed `stat()`.
 #[cfg(unix)]
 pub fn partition(path: &Path) -> Option<u64> {
@@ -111,7 +111,7 @@ pub fn partition(path: &Path) -> Option<u64> {
 /// Returns the identity of the file system of a path.
 #[cfg(windows)]
 pub fn partition(path: &Path) -> Option<u64> {
-    binkd_win::storage::volume_serial(path).map(u64::from)
+    rbinkd_win::storage::volume_serial(path).map(u64::from)
 }
 
 /// Returns the identity of the file system of a path.

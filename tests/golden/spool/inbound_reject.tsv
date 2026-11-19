@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: inbound_reject
 #
 # `inb_reject()` removes the partial file of the transfer.

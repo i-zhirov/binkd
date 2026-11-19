@@ -8,8 +8,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use binkd::{cli::Options, Config, Engine, FtnAddr};
-use binkd_log::Log;
+use rbinkd::{cli::Options, Config, Engine, FtnAddr};
+use rbinkd_log::Log;
 
 /// Returns a free port of the process.
 fn free_port() -> u16 {
@@ -62,7 +62,7 @@ fn config(dir: &Path, aka: &str, port: u16, node: Option<&str>) -> Config {
     );
     let path = dir.join("binkd.conf");
     fs::write(&path, text).unwrap();
-    binkd_config::parse(&path.display().to_string()).unwrap()
+    rbinkd_config::parse(&path.display().to_string()).unwrap()
 }
 
 /// Returns the files of a directory.

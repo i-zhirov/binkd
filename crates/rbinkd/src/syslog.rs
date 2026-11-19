@@ -3,12 +3,12 @@
 //!
 //! The C code writes every message of a level at most `current_loglevel` to the
 //! local syslog when `syslog_facility` is not negative. The port keeps the
-//! platform code out of `binkd-log`: this module builds the sink from the
+//! platform code out of `rbinkd-log`: this module builds the sink from the
 //! `syslog` crate and installs it on the log.
 
 use std::sync::{Arc, Mutex};
 
-use binkd_log::{Level, Log, Sink};
+use rbinkd_log::{Level, Log, Sink};
 use syslog::{Facility, Formatter3164, Logger, LoggerBackend, Severity};
 
 /// Configures the syslog sink of the log, the port of the `openlog()` call of
@@ -133,14 +133,14 @@ struct SyslogSink {
 impl SyslogSink {
     /// Connects to the local syslog with a facility, the port of `openlog()`.
     ///
-    /// The process name is `binkd` and the record holds the process id, the port
+    /// The process name is `rbinkd` and the record holds the process id, the port
     /// of the `LOG_PID` argument of `openlog()`. A host without a local syslog
     /// answers `None` instead of failing the daemon.
     fn new(facility: i32) -> Option<SyslogSink> {
         let formatter = Formatter3164 {
             facility: self::facility(facility)?,
             hostname: None,
-            process: "binkd".into(),
+            process: "rbinkd".into(),
             pid: std::process::id(),
         };
         let logger = syslog::unix(formatter).ok()?;
@@ -162,7 +162,7 @@ impl Sink for SyslogSink {
 #[cfg(test)]
 mod tests {
     use super::{configure, facility, priority, write_severity};
-    use binkd_log::{Level, Log, Sink, DEBUG, FATAL, INFO};
+    use rbinkd_log::{Level, Log, Sink, DEBUG, FATAL, INFO};
     use std::sync::{Arc, Mutex};
     use syslog::{Facility, Formatter3164, Logger, Severity};
 
@@ -177,8 +177,8 @@ mod tests {
         }
     }
 
-    fn now() -> binkd_log::DateTime {
-        binkd_log::DateTime {
+    fn now() -> rbinkd_log::DateTime {
+        rbinkd_log::DateTime {
             epoch: 0,
             year: 2020,
             day: 1,
@@ -222,7 +222,7 @@ mod tests {
             let formatter = Formatter3164 {
                 facility: Facility::LOG_KERN,
                 hostname: None,
-                process: "binkd".into(),
+                process: "rbinkd".into(),
                 pid: 0,
             };
             let mut logger: Logger<Vec<u8>, Formatter3164> = Logger::new(Vec::new(), formatter);

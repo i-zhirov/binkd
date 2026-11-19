@@ -1,0 +1,23 @@
+[package]
+name = "rbinkd-net"
+description = "The network layer of rbinkd: the listener, the caller, and the connect"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rbinkd-ftn = { path = "../rbinkd-ftn" }
+rbinkd-spool = { path = "../rbinkd-spool" }
+rbinkd-config = { path = "../rbinkd-config" }
+rbinkd-log = { path = "../rbinkd-log" }
+rbinkd-proto = { path = "../rbinkd-proto" }
+rbinkd-srif = { path = "../rbinkd-srif" }
+tokio = { version = "=1.54.0", features = ["rt", "net", "io-util", "macros", "sync", "time"] }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+tokio = { version = "=1.54.0", features = ["rt-multi-thread", "macros"] }

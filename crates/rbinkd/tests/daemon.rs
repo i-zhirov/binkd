@@ -12,15 +12,15 @@ use std::process::{Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use binkd_config::model::Config;
-use binkd_ftn::addr::FtnAddr;
-use binkd_ftn::domain::{DomainTable, FtnDomain};
-use binkd_ftn::node::NodeSpec;
-use binkd_log::{DateTime, Log};
+use rbinkd_config::model::Config;
+use rbinkd_ftn::addr::FtnAddr;
+use rbinkd_ftn::domain::{DomainTable, FtnDomain};
+use rbinkd_ftn::node::NodeSpec;
+use rbinkd_log::{DateTime, Log};
 #[cfg(unix)]
-use binkd_net::Caller;
-use binkd_net::{listen, SessionOptions};
-use binkd_proto::SendFile;
+use rbinkd_net::Caller;
+use rbinkd_net::{listen, SessionOptions};
+use rbinkd_proto::SendFile;
 
 /// Returns the path of the binary of the port.
 fn binary() -> PathBuf {
@@ -243,7 +243,7 @@ async fn the_listener_serves_a_session() {
     let mut client = client_config(&client_dir, "2:5047/13@fidonet", port);
     let packet = vec![b'c'; 300];
     fs::write(client_dir.join("outb").join("13b70064.cut"), &packet).unwrap();
-    let _ = binkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
+    let _ = rbinkd_spool::queue::Queue::scan(&mut client.spool, 1_000_000_000);
     let files = vec![SendFile {
         netname: "13b70064.cut".to_string(),
         path: Some(client_dir.join("outb").join("13b70064.cut")),
@@ -331,7 +331,7 @@ async fn the_client_manager_polls_a_node() {
     fs::create_dir_all(peer_dir.join("in")).unwrap();
     let port = free_port();
     let mut peer = client_config(&peer_dir, "2:5047/13@fidonet", 0);
-    peer.listen = vec![binkd_config::model::ListenChain {
+    peer.listen = vec![rbinkd_config::model::ListenChain {
         addr: "127.0.0.1".to_string(),
         port: port.to_string(),
     }];
@@ -363,7 +363,7 @@ async fn the_client_manager_polls_a_node() {
         now,
         SessionOptions::new(Duration::from_secs(10), true, false),
         move |_| peer_files.clone(),
-        move |file: &binkd_proto::ReceivedFile| {
+        move |file: &rbinkd_proto::ReceivedFile| {
             if let Ok(mut list) = peer_received.lock() {
                 list.push(file.clone());
             }
@@ -513,7 +513,7 @@ async fn the_inetd_session_runs_on_the_pipe() {
     // The caller of the test runs the session over the pipes of the daemon.
     let input = child.stdout.take().unwrap();
     let output = child.stdin.take().unwrap();
-    let mut pipe = binkd::pipe::Pipe::new(input, output);
+    let mut pipe = rbinkd::pipe::Pipe::new(input, output);
     let now = || DateTime {
         epoch: 1_000_000_000,
         year: 2001,
@@ -549,11 +549,11 @@ async fn the_inetd_session_runs_on_the_pipe() {
         size: packet.len() as u64,
         time: now().epoch,
     }];
-    let settings = binkd_net::session_config(&client, server_node.as_ref(), true, false, &now());
-    let mut received: Vec<binkd_proto::ReceivedFile> = Vec::new();
-    let result = binkd_proto::run(
+    let settings = rbinkd_net::session_config(&client, server_node.as_ref(), true, false, &now());
+    let mut received: Vec<rbinkd_proto::ReceivedFile> = Vec::new();
+    let result = rbinkd_proto::run(
         &mut pipe,
-        binkd_proto::Role::Client,
+        rbinkd_proto::Role::Client,
         &settings,
         &files,
         &mut |file| {

@@ -1,0 +1,15 @@
+[package]
+name = "rbinkd-config"
+description = "The config parser of rbinkd, the port of readcfg.c"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rbinkd-ftn = { path = "../rbinkd-ftn" }
+rbinkd-spool = { path = "../rbinkd-spool" }
+
+[lints]
+workspace = true

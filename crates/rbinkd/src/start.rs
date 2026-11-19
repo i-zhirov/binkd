@@ -1,9 +1,10 @@
 //! The startup order of rbinkd, the port of `main()` of `binkd.c`.
 
 use std::fmt;
+use std::path::Path;
 
-use binkd_config::Parser;
-use binkd_log::{Log, FATAL};
+use rbinkd_config::Parser;
+use rbinkd_log::{Log, FATAL};
 
 use crate::cli;
 use crate::daemon::Daemon;
@@ -30,7 +31,7 @@ pub enum Error {
     /// The command line, the port of `parseargs()`.
     Cli(cli::Error),
     /// The config, the port of `readcfg()`.
-    Config(binkd_config::Error),
+    Config(rbinkd_config::Error),
 }
 
 impl fmt::Display for Error {
@@ -50,8 +51,8 @@ impl From<cli::Error> for Error {
     }
 }
 
-impl From<binkd_config::Error> for Error {
-    fn from(e: binkd_config::Error) -> Error {
+impl From<rbinkd_config::Error> for Error {
+    fn from(e: rbinkd_config::Error) -> Error {
         Error::Config(e)
     }
 }
@@ -63,7 +64,7 @@ impl From<binkd_config::Error> for Error {
 /// port of this slice holds the command line, the paths that end the program, and
 /// the startup of the daemon: `-d` dumps the config, `-n` checks the config,
 /// `-v` states the version, and a run without them starts the daemon. The caller
-/// supplies the log, as the C code of the port of `binkd-log` keeps the log of
+/// supplies the log, as the C code of the port of `rbinkd-log` keeps the log of
 /// the process.
 pub fn run(args: &[String], log: &std::sync::Arc<Log>) -> Result<Outcome, Error> {
     run_with(args, log, None)
@@ -105,14 +106,18 @@ fn run_with(
     // The C code of `parseargs()` writes this message before the config.
     if options.extra {
         log.message(
-            binkd_log::ERROR,
+            rbinkd_log::ERROR,
             "Extra parameters ignored",
             &platform::now(),
         );
     }
 
-    if let Some(path) = options.config.clone() {
-        let mut features = binkd_config::Features::platform_default();
+    let config_path = options
+        .config
+        .clone()
+        .or_else(|| (options.verbose == 0).then(default_config).flatten());
+    if let Some(path) = config_path {
+        let mut features = rbinkd_config::Features::platform_default();
         // The C code of `perl_init()` accepts the `perl-*` keywords only in a
         // build of `--with-perl`, the port of the `WITH_PERL` of `readcfg.c`.
         features.perl = cfg!(feature = "perl");
@@ -131,13 +136,18 @@ fn run_with(
         if options.dump > 0 {
             return Ok(Outcome::Exit {
                 code: 0,
-                text: binkd_config::dump_with(&config, &features),
+                text: rbinkd_config::dump_with(&config, &features),
             });
         }
+        let log_path = effective_log_path(
+            &config.logpath,
+            std::env::var("RBINKD_LOG").ok(),
+            std::env::var("BINKD_LOG").ok(),
+        );
         log.init(
             config.loglevel,
             config.conlog,
-            &config.logpath,
+            &log_path,
             config.nolog.clone(),
         );
         // The port of the `openlog()` call of `vLog()`: the sink is ready
@@ -179,7 +189,7 @@ fn run_with(
                         });
                     }
                     log.message(
-                        binkd_log::ERROR,
+                        rbinkd_log::ERROR,
                         &format!("cannot load Perl script {}, hooks disabled", perl.0),
                         &platform::now(),
                     );
@@ -224,4 +234,98 @@ fn run_with(
     }
 
     Err(cli::Error::Usage.into())
+}
+
+/// Returns the default configuration path for the current directory.
+///
+/// The new name comes first. The legacy name stays valid for an existing
+/// Binkd installation.
+fn default_config() -> Option<String> {
+    default_config_in(Path::new("."))
+}
+
+/// Returns the first default configuration in a directory.
+fn default_config_in(dir: &Path) -> Option<String> {
+    let names: &[&str] = if cfg!(windows) {
+        &["rbinkd.cfg", "binkd.cfg", "rbinkd.conf", "binkd.conf"]
+    } else {
+        &["rbinkd.conf", "binkd.conf", "rbinkd.cfg", "binkd.cfg"]
+    };
+    names
+        .iter()
+        .find(|name| dir.join(name).is_file())
+        .map(|name| (*name).to_string())
+}
+
+/// Selects the log path.
+///
+/// The `log` directive wins. An empty directive uses the new environment
+/// variable first and the legacy one second.
+fn effective_log_path(
+    config_path: &str,
+    rbinkd_env: Option<String>,
+    binkd_env: Option<String>,
+) -> String {
+    if !config_path.is_empty() {
+        return config_path.to_string();
+    }
+    rbinkd_env
+        .filter(|value| !value.is_empty())
+        .or_else(|| binkd_env.filter(|value| !value.is_empty()))
+        .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{default_config_in, effective_log_path};
+    use std::fs;
+
+    #[test]
+    fn the_config_log_path_wins() {
+        assert_eq!(
+            effective_log_path(
+                "./binkd.log",
+                Some("new.log".into()),
+                Some("old.log".into())
+            ),
+            "./binkd.log"
+        );
+    }
+
+    #[test]
+    fn the_new_environment_name_precedes_the_legacy_name() {
+        assert_eq!(
+            effective_log_path("", Some("new.log".into()), Some("old.log".into())),
+            "new.log"
+        );
+    }
+
+    #[test]
+    fn the_legacy_environment_name_is_supported() {
+        assert_eq!(
+            effective_log_path("", None, Some("old.log".into())),
+            "old.log"
+        );
+    }
+
+    #[test]
+    fn an_empty_environment_value_is_ignored() {
+        assert_eq!(
+            effective_log_path("", Some(String::new()), Some("old.log".into())),
+            "old.log"
+        );
+    }
+
+    #[test]
+    fn the_default_config_supports_both_names() {
+        let dir =
+            std::env::temp_dir().join(format!("rbinkd-default-config-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join("binkd.conf"), "").unwrap();
+        assert_eq!(default_config_in(&dir), Some("binkd.conf".to_string()));
+        fs::write(dir.join("rbinkd.conf"), "").unwrap();
+        assert_eq!(default_config_in(&dir), Some("rbinkd.conf".to_string()));
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

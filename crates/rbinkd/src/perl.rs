@@ -3,13 +3,13 @@
 
 use std::sync::{Arc, Mutex, Weak};
 
-use binkd_config::Config;
-use binkd_log::Log;
-use binkd_perl::{
+use rbinkd_config::Config;
+use rbinkd_log::Log;
+use rbinkd_perl::{
     Call, CallError, File, Handshake as PerlHandshake, Hooks, Received, Sent,
     SessionVars as PerlSessionVars,
 };
-use binkd_proto::{
+use rbinkd_proto::{
     CallVars, ErrorVars, FileVars, Handshake, QueueFile, ReceivedVars, SentVars, SessionVars,
 };
 
@@ -18,7 +18,7 @@ struct LogSink {
     log: Weak<Log>,
 }
 
-impl binkd_perl::LogSink for LogSink {
+impl rbinkd_perl::LogSink for LogSink {
     fn log(&self, level: i32, message: &str) {
         if let Some(log) = self.log.upgrade() {
             log.message(level, message, &crate::platform::now());
@@ -32,14 +32,14 @@ pub(crate) struct Runtime {
     /// The master interpreter, the port of `cfg->perl`.
     pub(crate) master: Arc<Mutex<Hooks>>,
     /// The source of the hooks of one session.
-    pub(crate) factory: binkd_proto::Factory,
+    pub(crate) factory: rbinkd_proto::Factory,
     /// The hook of the log, the port of `perl_on_log()`.
-    pub(crate) log_hook: Arc<dyn binkd_log::Hook>,
+    pub(crate) log_hook: Arc<dyn rbinkd_log::Hook>,
 }
 
 /// Loads a script for a config, the port of `perl_init()`.
 pub(crate) fn load(log: &Arc<Log>, script: &str, config: Config) -> Option<Runtime> {
-    let options = binkd_perl::Options {
+    let options = rbinkd_perl::Options {
         log: Some(Arc::new(LogSink {
             log: Arc::downgrade(log),
         })),
@@ -48,15 +48,15 @@ pub(crate) fn load(log: &Arc<Log>, script: &str, config: Config) -> Option<Runti
         sender: None,
         config: Some(config),
     };
-    let hooks = binkd_perl::Hooks::load_with(script, options)?;
+    let hooks = rbinkd_perl::Hooks::load_with(script, options)?;
     let master = Arc::new(Mutex::new(hooks));
     let clone = Arc::clone(&master);
-    let factory: binkd_proto::Factory = Arc::new(move || {
+    let factory: rbinkd_proto::Factory = Arc::new(move || {
         let master = clone.lock().ok()?;
         let clone = master.clone_for_session()?;
-        Some(Arc::new(ProtoHook::new(Arc::new(Mutex::new(clone)))) as Arc<dyn binkd_proto::Hooks>)
+        Some(Arc::new(ProtoHook::new(Arc::new(Mutex::new(clone)))) as Arc<dyn rbinkd_proto::Hooks>)
     });
-    let log_hook = Arc::new(binkd_perl::LogHook::from_shared(Arc::clone(&master)));
+    let log_hook = Arc::new(rbinkd_perl::LogHook::from_shared(Arc::clone(&master)));
     Some(Runtime {
         master,
         factory,
@@ -81,9 +81,9 @@ impl ProtoHook {
 
 /// The sink of `msg_send()` of one session, the port of the `STATE` of
 /// `msg_send2()`.
-struct ProtoSink(binkd_proto::MessageSink);
+struct ProtoSink(rbinkd_proto::MessageSink);
 
-impl binkd_perl::MessageSink for ProtoSink {
+impl rbinkd_perl::MessageSink for ProtoSink {
     fn send(&self, kind: u8, text: &str) {
         (self.0)(kind, text);
     }
@@ -114,7 +114,7 @@ fn session(vars: &SessionVars) -> PerlSessionVars {
         files_sent: vars.files_sent,
         z_send: vars.z_send,
         z_recv: vars.z_recv,
-        opt: binkd_perl::Opt {
+        opt: rbinkd_perl::Opt {
             nd: vars.opt.nd,
             nr: vars.opt.nr,
             md: vars.opt.md,
@@ -124,7 +124,7 @@ fn session(vars: &SessionVars) -> PerlSessionVars {
         queue: vars
             .queue
             .iter()
-            .map(|entry| binkd_perl::QueueFile {
+            .map(|entry| rbinkd_perl::QueueFile {
                 file: entry.file.clone(),
                 size: entry.size,
                 time: entry.time,
@@ -138,7 +138,7 @@ fn session(vars: &SessionVars) -> PerlSessionVars {
     }
 }
 
-impl binkd_proto::Hooks for ProtoHook {
+impl rbinkd_proto::Hooks for ProtoHook {
     fn on_call(&self, call: &mut CallVars) -> bool {
         let Ok(hooks) = self.hooks.lock() else {
             return true;
@@ -278,7 +278,7 @@ impl binkd_proto::Hooks for ProtoHook {
         result
     }
 
-    fn on_send(&self, vars: &SessionVars, command: binkd_proto::Command, s1: &str, s2: &str) {
+    fn on_send(&self, vars: &SessionVars, command: rbinkd_proto::Command, s1: &str, s2: &str) {
         let Ok(hooks) = self.hooks.lock() else {
             return;
         };
@@ -299,15 +299,16 @@ impl binkd_proto::Hooks for ProtoHook {
         hooks.setup_rlimit(&session(vars), file, limit);
     }
 
-    fn set_message_sink(&self, sink: Option<binkd_proto::MessageSink>) {
+    fn set_message_sink(&self, sink: Option<rbinkd_proto::MessageSink>) {
         let Ok(mut hooks) = self.hooks.lock() else {
             return;
         };
-        let sender = sink.map(|sink| Arc::new(ProtoSink(sink)) as Arc<dyn binkd_perl::MessageSink>);
+        let sender =
+            sink.map(|sink| Arc::new(ProtoSink(sink)) as Arc<dyn rbinkd_perl::MessageSink>);
         hooks.set_message_sink(sender);
     }
 
-    fn refresh_queue(&self, fallback: &binkd_ftn::addr::FtnAddr) -> Option<Vec<QueueFile>> {
+    fn refresh_queue(&self, fallback: &rbinkd_ftn::addr::FtnAddr) -> Option<Vec<QueueFile>> {
         let Ok(hooks) = self.hooks.lock() else {
             return None;
         };

@@ -43,19 +43,19 @@ cargo +1.85.0 check --workspace
 | Crate | Responsibility |
 | --- | --- |
 | `rbinkd` | Binary and library entry point: CLI, daemon, signals, service |
-| `binkd-config` | Configuration model, parser, dump, and reload |
-| `binkd-ftn` | Pure FTN logic: addresses, patterns, packets, CRAM, ZipCrypto |
-| `binkd-log` | Text and binary session logs |
-| `binkd-net` | Listener, caller, proxy, SRV, and network session support |
-| `binkd-proto` | binkp frames, session state machine, compression |
-| `binkd-spool` | BSO queue, busy flags, flow files, inbound files |
-| `binkd-srif` | SRIF request engine |
-| `binkd-perl` | Optional Perl hooks behind a small C shim |
-| `binkd-win` | Windows service and file-system FFI |
-| `binkd-corpus` | Test-only corpus reader |
+| `rbinkd-config` | Configuration model, parser, dump, and reload |
+| `rbinkd-ftn` | Pure FTN logic: addresses, patterns, packets, CRAM, ZipCrypto |
+| `rbinkd-log` | Text and binary session logs |
+| `rbinkd-net` | Listener, caller, proxy, SRV, and network session support |
+| `rbinkd-proto` | binkp frames, session state machine, compression |
+| `rbinkd-spool` | BSO queue, busy flags, flow files, inbound files |
+| `rbinkd-srif` | SRIF request engine |
+| `rbinkd-perl` | Optional Perl hooks behind a small C shim |
+| `rbinkd-win` | Windows service and file-system FFI |
+| `rbinkd-corpus` | Test-only corpus reader |
 
-The binary crate is `rbinkd`. The library crate keeps the `binkd` name for
-the embedders and for the compatible API.
+The binary and the library crate are `rbinkd`. The public API keeps the
+command-line, config, and network behavior of the upstream project.
 
 ## Runtime design
 
@@ -67,17 +67,17 @@ The layers point downward:
 
 ```text
 rbinkd
-  -> binkd-net, binkd-proto, binkd-config, binkd-log, binkd-srif
-  -> binkd-spool
-  -> binkd-ftn
+  -> rbinkd-net, rbinkd-proto, rbinkd-config, rbinkd-log, rbinkd-srif
+  -> rbinkd-spool
+  -> rbinkd-ftn
 ```
 
-`binkd-ftn` is pure and has no I/O. The spool layer owns file-system
+`rbinkd-ftn` is pure and has no I/O. The spool layer owns file-system
 effects. The network and protocol layers own the transport and the session.
 The binary maps typed errors to exit codes and log output.
 
 The workspace forbids unsafe code. The only exceptions are the Windows FFI
-in `binkd-win` and the Perl C shim in `binkd-perl`.
+in `rbinkd-win` and the Perl C shim in `rbinkd-perl`.
 
 ## Documentation
 

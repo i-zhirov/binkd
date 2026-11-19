@@ -19,17 +19,20 @@ uses it as the interop oracle. The C source is not part of this repository.
 On a supported platform, install `rbinkd` in place of the Binkd executable
 and keep the existing configuration and spool:
 
-- `rbinkd` reads `binkd.conf` on UNIX and `binkd.cfg` on Windows.
+- `rbinkd` reads `rbinkd.conf` or `binkd.conf` on UNIX and `rbinkd.cfg`
+  or `binkd.cfg` on Windows. If the config argument is omitted, it checks
+  the new name first.
 - It uses the same BSO spool layout, flow files, inbound names, and log
   files.
 - It accepts the supported Binkd command-line options.
 - It speaks binkp 1.0 and 1.1 and keeps the `binkd` protocol identity.
-- It keeps the `binkd-service` Windows service name.
+- The Windows service defaults to `rbinkd-service`. The legacy
+  `binkd-service` name remains available with `-S binkd-service`.
 - It keeps the supported config keywords and the `-d` dump.
 
-The executable name is the main visible difference. Runtime names stay
-compatible so that an existing installation can switch the binary without
-renaming its files or service.
+The executable name and the default service name are the visible changes.
+The legacy config and service names stay available so that an existing
+installation can switch the binary without renaming its files or service.
 
 ## Supported platforms
 
@@ -52,8 +55,8 @@ These differences apply to all supported Rust builds:
 - ASO (Amiga-style outbound) is not implemented. rbinkd uses BSO.
 - The dynamic zlib and bzip2 loader keywords `zlib-dll` and `bzlib2-dll`
   are not implemented. The Rust build uses built-in compression.
-- The legacy `BINKD_LOG` environment variable is not read. Set the log
-  path in the configuration file.
+- `RBINKD_LOG` and the legacy `BINKD_LOG` set the log path when the config
+  holds no `log` directive. The `log` directive takes precedence.
 - The legacy `BINKD_ICON_FILE` environment variable and the tray icon are
   not implemented.
 - The message text of a log line can differ from the C daemon. The log line

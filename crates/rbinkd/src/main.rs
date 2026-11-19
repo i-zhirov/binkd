@@ -6,11 +6,11 @@
 
 use std::sync::Arc;
 
-use binkd::cli;
-use binkd::daemon;
-use binkd::platform;
-use binkd::start::{self, Outcome};
-use binkd_log::{Log, ERROR, FATAL};
+use rbinkd::cli;
+use rbinkd::daemon;
+use rbinkd::platform;
+use rbinkd::start::{self, Outcome};
+use rbinkd_log::{Log, ERROR, FATAL};
 
 /// Runs the program, the port of `main()` of `binkd.c`.
 #[tokio::main]
@@ -24,7 +24,7 @@ async fn main() {
     // `already_daemonized` of `unix/daemonize.c`.
     #[cfg(unix)]
     if let Ok(options) = cli::parse(&args) {
-        if options.daemon && std::env::var("BINKD_DAEMONIZED").is_err() {
+        if options.daemon && !daemonized() {
             std::process::exit(daemonize(&args));
         }
     }
@@ -33,7 +33,7 @@ async fn main() {
     #[cfg(windows)]
     if let Ok(options) = cli::parse(&args) {
         if let Some(command) = options.service {
-            std::process::exit(binkd_win::service::command(
+            std::process::exit(rbinkd_win::service::command(
                 command,
                 options.service_name.as_deref(),
                 options.config.as_deref(),
@@ -46,9 +46,9 @@ async fn main() {
     // service. An interactive process gets `NotService` and runs as usual.
     #[cfg(windows)]
     if args.len() == 1 {
-        match binkd_win::service::run(run_service_daemon) {
+        match rbinkd_win::service::run(run_service_daemon) {
             Ok(code) => std::process::exit(code),
-            Err(binkd_win::service::Error::NotService) => {}
+            Err(rbinkd_win::service::Error::NotService) => {}
             Err(error) => {
                 eprintln!("{error}");
                 std::process::exit(1);
@@ -65,6 +65,13 @@ async fn main() {
         Err(error) => start_error(error, &log, &program, &name),
     };
     std::process::exit(code);
+}
+
+/// Returns true when the process is the daemon child.
+#[cfg(unix)]
+fn daemonized() -> bool {
+    std::env::var_os("RBINKD_DAEMONIZED").is_some()
+        || std::env::var_os("BINKD_DAEMONIZED").is_some()
 }
 
 /// Detaches the process, the port of `binkd_daemonize()` of
@@ -86,6 +93,7 @@ fn daemonize(args: &[String]) -> i32 {
     };
     let child = std::process::Command::new(program)
         .args(&args[1..])
+        .env("RBINKD_DAEMONIZED", "1")
         .env("BINKD_DAEMONIZED", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -128,7 +136,7 @@ async fn finish_daemon(mut daemon: Box<daemon::Daemon>, signals: &mut daemon::Si
 /// Runs the daemon of the Windows service, the port of `ServiceStart()` of
 /// `nt/service.c`.
 #[cfg(windows)]
-fn run_service_daemon(context: binkd_win::service::ServiceContext) -> i32 {
+fn run_service_daemon(context: rbinkd_win::service::ServiceContext) -> i32 {
     let log = Arc::new(Log::new(ERROR, ERROR, "", Vec::new()));
     let panic_log = Arc::clone(&log);
     std::panic::set_hook(Box::new(move |info| {
@@ -141,7 +149,7 @@ fn run_service_daemon(context: binkd_win::service::ServiceContext) -> i32 {
     let (sender, receiver) = tokio::sync::mpsc::channel(4);
     context.control.set_handler(move |event| {
         let event = match event {
-            binkd_win::service::Event::Stop => daemon::Event::Exit(0),
+            rbinkd_win::service::Event::Stop => daemon::Event::Exit(0),
         };
         // The control handler can run on the thread of the runtime, so it
         // must not block. A full channel holds a stop of the daemon already.

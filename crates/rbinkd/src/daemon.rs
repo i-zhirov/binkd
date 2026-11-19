@@ -6,18 +6,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use binkd_config::reload::{Outcome as ReloadOutcome, Reloader};
-use binkd_config::{Config, Features};
-use binkd_ftn::addr::FtnAddr;
-use binkd_ftn::text::extract_filename;
-use binkd_log::{Log, CONNECTION, DEBUG, DEBUG2, ERROR, INFO, START, TRACE};
-use binkd_net::{listen, session::SessionOptions, Caller};
-use binkd_proto::{ReceivedFile, SendFile};
-use binkd_spool::busy::BusyList;
-use binkd_spool::config::SpoolConfig;
-use binkd_spool::fsutil;
-use binkd_spool::queue::Queue;
-use binkd_spool::tryfile;
+use rbinkd_config::reload::{Outcome as ReloadOutcome, Reloader};
+use rbinkd_config::{Config, Features};
+use rbinkd_ftn::addr::FtnAddr;
+use rbinkd_ftn::text::extract_filename;
+use rbinkd_log::{Log, CONNECTION, DEBUG, DEBUG2, ERROR, INFO, START, TRACE};
+use rbinkd_net::{listen, session::SessionOptions, Caller};
+use rbinkd_proto::{ReceivedFile, SendFile};
+use rbinkd_spool::busy::BusyList;
+use rbinkd_spool::config::SpoolConfig;
+use rbinkd_spool::fsutil;
+use rbinkd_spool::queue::Queue;
+use rbinkd_spool::tryfile;
 use tokio::task::JoinHandle;
 
 use crate::cli::{self, Options};
@@ -162,7 +162,7 @@ pub struct Daemon {
     /// The log of the process.
     log: Arc<Log>,
     /// The source of the hooks of a session, or `None`.
-    hooks: Option<binkd_proto::Factory>,
+    hooks: Option<rbinkd_proto::Factory>,
     /// The Perl hooks of the running daemon, or `None`.
     #[cfg(feature = "perl")]
     perl: Option<crate::perl::Runtime>,
@@ -234,7 +234,7 @@ impl Daemon {
     }
 
     /// Sets the source of the hooks of the sessions.
-    pub fn set_hook_factory(&mut self, hooks: Option<binkd_proto::Factory>) {
+    pub fn set_hook_factory(&mut self, hooks: Option<rbinkd_proto::Factory>) {
         self.hooks = hooks;
     }
 
@@ -458,7 +458,7 @@ impl Daemon {
                 .get(fa, platform::now().epoch)
                 .cloned()
         });
-        let mut settings = binkd_net::session_config(
+        let mut settings = rbinkd_net::session_config(
             &self.config,
             node.as_ref(),
             !self.options.no_crypt,
@@ -471,7 +471,7 @@ impl Daemon {
             let spool = Arc::clone(&spool);
             move |peer: &[FtnAddr]| files_of(&spool, peer, platform::now().epoch)
         };
-        let mut srf = binkd_net::srif::Events::new(
+        let mut srf = rbinkd_net::srif::Events::new(
             &self.config,
             peer,
             Arc::clone(&self.log),
@@ -479,9 +479,9 @@ impl Daemon {
         )
         .with_short_name(platform::short_name());
         let mut pipe = crate::pipe::Pipe::new(tokio::io::stdin(), tokio::io::stdout());
-        let result = binkd_proto::run_with(
+        let result = rbinkd_proto::run_with(
             &mut pipe,
-            binkd_proto::Role::Server,
+            rbinkd_proto::Role::Server,
             &settings,
             &mut files,
             &mut |file: &ReceivedFile| {
@@ -652,7 +652,7 @@ impl Daemon {
     /// `server.c`.
     ///
     /// The C code builds the sockets of every `listen` entry and accepts the
-    /// connections; the port calls `binkd_net::listen()`, which does the same.
+    /// connections; the port calls `rbinkd_net::listen()`, which does the same.
     /// The C code runs no listener for a run without the server role.
     fn spawn_listener(&self) -> Option<JoinHandle<()>> {
         let (_, server) = self.options.roles();
@@ -840,7 +840,7 @@ pub fn files_of(spool: &Mutex<SpoolConfig>, peer: &[FtnAddr], now: i64) -> Vec<S
 /// `inbound.c`.
 ///
 /// The C code renames the temporary file inside the session, and the caller of the
-/// port does the same in `finish_file()` of `binkd-proto`, so the port of this
+/// port does the same in `finish_file()` of `rbinkd-proto`, so the port of this
 /// closure must not run `inb_done()` again: a second call finds no temporary file
 /// and answers `missing tmp file`. The closure holds the counters of the daemon, the
 /// port of the `Log (1, "%s -> %s")` line of the C code.
@@ -864,8 +864,8 @@ pub fn receive_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use binkd_ftn::domain::{DomainTable, FtnDomain};
-    use binkd_ftn::node::NodeSpec;
+    use rbinkd_ftn::domain::{DomainTable, FtnDomain};
+    use rbinkd_ftn::node::NodeSpec;
 
     #[test]
     fn the_scan_finds_the_file_of_a_peer() {

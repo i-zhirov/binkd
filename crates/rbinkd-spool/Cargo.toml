@@ -1,0 +1,17 @@
+[package]
+name = "rbinkd-spool"
+description = "BSO spool handling of rbinkd: flow files, queue, busy flags, inbound"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+rbinkd-ftn = { path = "../rbinkd-ftn" }
+
+[lints]
+workspace = true
+
+[dev-dependencies]
+rbinkd-corpus = { path = "../rbinkd-corpus" }

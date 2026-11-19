@@ -13,9 +13,9 @@ It is aimed at existing Binkd operators who want to keep their BSO spool,
 configuration, and network setup while running a Rust implementation.
 
 On a supported platform, replace the Binkd executable with `rbinkd`. The
-daemon reads the same configuration files, accepts the same command-line
-options, writes the same spool files, and keeps the `binkd` protocol
-identity. Configure and operate it as you would the upstream mailer.
+daemon reads the same configuration files, accepts the supported
+command-line options, writes the same spool files, and keeps the `binkd`
+protocol identity. Configure and operate it as you would the upstream mailer.
 
 ## Features
 
@@ -38,13 +38,13 @@ cargo build --release -p rbinkd
 Create a configuration from the sample, or use an existing Binkd config:
 
 ```sh
-cp binkd.conf binkd.local.conf
+cp binkd.conf rbinkd.conf
 ```
 
 Start the daemon:
 
 ```sh
-target/release/rbinkd binkd.local.conf
+target/release/rbinkd rbinkd.conf
 ```
 
 For the client-only or poll modes, see the [operations guide](doc/operations.md)
@@ -64,16 +64,19 @@ Windows 9x/Me.
 
 Keep these differences in mind before you replace a Binkd binary:
 
-- The executable is `rbinkd`, but configuration names, spool files, the
-  service name, and the protocol identity remain `binkd`-compatible.
+- The executable is `rbinkd`. The config reader accepts both `rbinkd.conf`
+  and `binkd.conf` (and the `.cfg` forms). If the config argument is omitted,
+  it checks the new name first. The Windows service defaults to
+  `rbinkd-service`; use `-S binkd-service` for a legacy service. The spool
+  files and protocol identity remain `binkd`-compatible.
 - ASO (Amiga-style outbound) is not implemented. Use BSO.
 - The proxy, SOCKS, and rate-limit configuration keywords are available in
   the Windows build only.
 - The Windows build has no tray icon and no `-T` switch.
 - The Windows build rejects `syslog`, `aso`, `zlib-dll`, and `bzlib2-dll`.
 - The dynamic zlib and bzip2 loader keywords are not implemented.
-- The Rust build does not read the legacy `BINKD_LOG` environment variable.
-  Set the log path in the configuration file.
+- The Rust build reads `RBINKD_LOG` and the legacy `BINKD_LOG`. The `log`
+  directive in the configuration takes precedence.
 
 See the [compatibility guide](doc/compatibility.md) for the full matrix and
 the behavior differences.

@@ -20,8 +20,9 @@ documentation for the original C daemon.
 - [binkd.conf](../binkd.conf): UNIX sample
 - [binkd.cfg](../binkd.cfg): Windows sample
 
-The Rust parser reads these files. The comments in the samples describe the
-common directives.
+The samples keep the legacy names. Copy them to `rbinkd.conf` or
+`rbinkd.cfg` for a new installation. The Rust parser reads both names. The
+comments in the samples describe the common directives.
 
 ## Developer documentation
 

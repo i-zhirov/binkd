@@ -40,8 +40,8 @@ in other programs.
   for the session and the daemon, `flate2` and `bzip2` for the compression,
   `fs2` for the free space of the binary, `time` for the safe local offset
   of the logs, the `TIME` frame, and `-v`, and `syslog` for the local syslog
-  backend of the Unix binary. The optional `binkd-perl` crate holds the Perl C
-  shim. The `binkd-win` crate holds the Windows service and file-system FFI
+  backend of the Unix binary. The optional `rbinkd-perl` crate holds the Perl C
+  shim. The `rbinkd-win` crate holds the Windows service and file-system FFI
   and `windows-sys`. The upstream C implementation has its own dependencies:
   zlib, bzip2, and Perl (all optional), pthreads, libresolv, and libutil.
 - **Storage**: The local file system. The BSO spool directories, the
@@ -65,7 +65,7 @@ in other programs.
   the upstream C implementation and MUST read the same config files. The
   upstream C implementation is the reference and the oracle of the interop
   tests. The Rust port MUST NOT reproduce undefined behavior (see
-  [Architecture](#architecture)). `binkd-ftn` MUST stay pure.
+  [Architecture](#architecture)). `rbinkd-ftn` MUST stay pure.
 - **Scale/Scope**: One rbinkd instance per FTN node. Up to `maxservers` and
   `maxclients` concurrent sessions, 100 each by default. The config has
   about 100 keywords.
@@ -81,16 +81,16 @@ rbinkd/
 ├── Cargo.toml                  # the workspace, forbids unsafe code
 ├── Cargo.lock                  # the resolved dependencies
 ├── crates/                     # the Rust crates of the implementation
-│   ├── binkd-ftn/              # pure FTN logic, no I/O, no globals
-│   ├── binkd-spool/            # BSO spool handling
-│   ├── binkd-config/           # config model and parser
-│   ├── binkd-proto/            # binkp frames and the session state machine
-│   ├── binkd-log/              # text and binary session logs
-│   ├── binkd-net/              # listen sockets and outgoing calls
-│   ├── binkd-srif/             # the SRIF interface and its event engine
-│   ├── binkd-corpus/           # test-only corpus reader
-│   ├── binkd-perl/             # optional Perl hooks (excluded)
-│   ├── binkd-win/              # Windows service and file-system FFI
+│   ├── rbinkd-ftn/              # pure FTN logic, no I/O, no globals
+│   ├── rbinkd-spool/            # BSO spool handling
+│   ├── rbinkd-config/           # config model and parser
+│   ├── rbinkd-proto/            # binkp frames and the session state machine
+│   ├── rbinkd-log/              # text and binary session logs
+│   ├── rbinkd-net/              # listen sockets and outgoing calls
+│   ├── rbinkd-srif/             # the SRIF interface and its event engine
+│   ├── rbinkd-corpus/           # test-only corpus reader
+│   ├── rbinkd-perl/             # optional Perl hooks (excluded)
+│   ├── rbinkd-win/              # Windows service and file-system FFI
 │   └── rbinkd/                 # the binary: CLI, daemon, signals
 ├── ci/upstream-c.patch         # the interop patch of the upstream C tree
 ├── doc/                        # user and developer documentation
@@ -116,13 +116,13 @@ default. The C reference is upstream, and the interop tests clone it.
 - **Build (Rust, default)**: `cargo build --workspace`
 - **Test (Rust)**: `cargo test --workspace`
 - **Test the Perl hooks** (needs the Perl C shim):
-  `cd crates/binkd-perl && cargo test -- --test-threads=1`
+  `cd crates/rbinkd-perl && cargo test -- --test-threads=1`
 - **Test the Perl hooks of the binary**:
   `cargo test -p rbinkd --features perl -- --test-threads=1`
 - **Check the Windows service** (needs the target):
-  `cargo check -p binkd-win -p rbinkd --target x86_64-pc-windows-gnu`
+  `cargo check -p rbinkd-win -p rbinkd --target x86_64-pc-windows-gnu`
 - **Test the Windows parity** (needs Windows):
-  `cargo test -p binkd-win && cargo test -p binkd-config`
+  `cargo test -p rbinkd-win && cargo test -p rbinkd-config`
   and the full workspace suite.
 - **Test the Windows service** (needs Windows, an administrator prompt, and
   the release binary): `cargo build --release -p rbinkd`, then
@@ -150,10 +150,10 @@ default. The C reference is upstream, and the interop tests clone it.
 - **Build the upstream C oracle with Perl** (the `BINKD_C_PERL` cases): use the
   upstream C steps with `./configure --with-perl`, then set `BINKD_C_PERL` to
   the path of the built `binkd`.
-- **Run (Rust)**: `./target/debug/rbinkd binkd.conf`
+- **Run (Rust)**: `./target/debug/rbinkd rbinkd.conf`
 - **Version (Rust)**: `./target/debug/rbinkd -v`
-- **Check the config (Rust)**: `./target/debug/rbinkd -n binkd.conf`
-- **Dump the parsed config (Rust)**: `./target/debug/rbinkd -d binkd.conf`
+- **Check the config (Rust)**: `./target/debug/rbinkd -n rbinkd.conf`
+- **Dump the parsed config (Rust)**: `./target/debug/rbinkd -d rbinkd.conf`
 - **Dump the version and the compile flags (Rust)**:
   `./target/debug/rbinkd -vv`
 
@@ -225,7 +225,7 @@ library with a thin binary.
   other sessions.
 - Support a graceful shutdown. Finish or abort a session, remove the `.bsy`
   files, and exit within a few seconds of a signal.
-- The library crates are consumed by other code. `binkd-ftn` MUST NOT
+- The library crates are consumed by other code. `rbinkd-ftn` MUST NOT
   access the file system, the network, or the environment. Keep side
   effects out of the default code path.
 - Export a stable public API. Mark internal items as private. Document
@@ -267,11 +267,11 @@ The layers of the Rust target, from top to bottom:
 ```text
 rbinkd (binary: CLI, daemon, signals, config reload)
      ↓
-binkd-net, binkd-proto, binkd-config, binkd-log, binkd-srif
+rbinkd-net, rbinkd-proto, rbinkd-config, rbinkd-log, rbinkd-srif
      ↓
-binkd-spool (queue, busy flags, inbound)
+rbinkd-spool (queue, busy flags, inbound)
      ↓
-binkd-ftn (pure FTN logic: addresses, patterns, CRAM, ZipCrypto)
+rbinkd-ftn (pure FTN logic: addresses, patterns, CRAM, ZipCrypto)
 ```
 
 The tests add one layer on the side:
@@ -279,14 +279,14 @@ The tests add one layer on the side:
 ```text
 tests (corpus tests in crates/*/tests/)
      ↓
-binkd-corpus (test-only corpus reader)
+rbinkd-corpus (test-only corpus reader)
 ```
 
 Each layer calls the layer below it. No layer calls a layer above it.
-`binkd-ftn` is a leaf: it depends on `std` only. Today the workspace has
-`binkd-ftn`, `binkd-spool`, `binkd-config`, `binkd-proto`, `binkd-log`,
-`binkd-net`, `binkd-srif`, `binkd-corpus`, `binkd-win`, and `rbinkd`; the
-optional `binkd-perl` is excluded from the workspace.
+`rbinkd-ftn` is a leaf: it depends on `std` only. Today the workspace has
+`rbinkd-ftn`, `rbinkd-spool`, `rbinkd-config`, `rbinkd-proto`, `rbinkd-log`,
+`rbinkd-net`, `rbinkd-srif`, `rbinkd-corpus`, `rbinkd-win`, and `rbinkd`; the
+optional `rbinkd-perl` is excluded from the workspace.
 
 The layers of the upstream C implementation, for reference:
 
@@ -321,12 +321,12 @@ port fixes them):
 - **Static analysis**: `cargo clippy --workspace --all-targets`
   with the workspace lints in `Cargo.toml`: `unsafe_code = "forbid"`
   and clippy `all = "warn"`. Do not weaken a workspace lint. The exceptions:
-  `binkd-perl`, the crate of the FFI of the Perl hooks, holds
+  `rbinkd-perl`, the crate of the FFI of the Perl hooks, holds
   `unsafe_code = "allow"` for the Perl C shim; the
   crate is optional and the default build holds it not, and a build that wants
-  the hooks names the feature `perl` of the `rbinkd` crate. The `binkd-win`
+  the hooks names the feature `perl` of the `rbinkd` crate. The `rbinkd-win`
   crate holds the second exception for the FFI of the Windows
-  service, the FFI exception of `binkd-win`; the crate is a
+  service, the FFI exception of `rbinkd-win`; the crate is a
   target-specific dependency of `rbinkd` and compiles on Windows only.
 - **Doc comments**: every public item of a Rust crate has a `///` comment
   and every module a `//!` comment. State the upstream C function that the
@@ -339,7 +339,7 @@ port fixes them):
   `binkd-*` crate names. Keep the upstream C names in the port-mapping
   comments, so a reader can find the source function.
 - **Imports**: Rust uses `use crate::...` and module paths. A test-only
-  crate is a `[dev-dependencies]` entry, for example `binkd-corpus`.
+  crate is a `[dev-dependencies]` entry, for example `rbinkd-corpus`.
 
 ### Testing
 
@@ -361,8 +361,8 @@ port fixes them):
   `a_hook_rewrites_the_message_of_the_sink`,
   `a_suppressing_hook_leaves_the_sink_empty`,
   `a_nolog_mask_suppresses_the_sink`, and
-  `a_level_above_the_file_level_skips_the_sink` of `binkd-log`. The
-  `binkd::syslog` cases cover the facility and the priority mapping. No live
+  `a_level_above_the_file_level_skips_the_sink` of `rbinkd-log`. The
+  `rbinkd::syslog` cases cover the facility and the priority mapping. No live
   syslog daemon is needed. The Rust parser and dump cases cover the `syslog`
   keyword. No golden C case parses a `syslog <name>` line; the dump holds only
   the fallback, because the C parser `read_syslog_facility()` has an inverted
@@ -400,17 +400,17 @@ port fixes them):
 
 ### Dependency Management
 
-- **Pin all dependency versions explicitly.** `binkd-proto`, `binkd-net`, and
+- **Pin all dependency versions explicitly.** `rbinkd-proto`, `rbinkd-net`, and
   `rbinkd` depend on `tokio` with an exact version (`=1.54.0`) and the features
   that each crate needs; `rbinkd` adds the `signal` feature for the handlers of
-  the daemon, which `std` cannot install. `binkd-proto` depends on `flate2` with
+  the daemon, which `std` cannot install. `rbinkd-proto` depends on `flate2` with
   the pure Rust backend (`=1.1.10`, `rust_backend`) and on `bzip2` (`=0.6.1`).
   `rbinkd` depends on `fs2` (`=0.4.3`) for the free space of the inbound
   directories, and on `time` (`=0.3.44`) with the `local-offset` feature for
   the safe local offset of the logs, the `TIME` frame, and `-v`; the pure
   crates use `std` only and do not use `time`. `rbinkd` also depends on
   `syslog` (`=7.0.0`) as a Unix-only target dependency for the safe local
-  syslog backend, and the Windows build compiles it not. The `binkd-win` crate
+  syslog backend, and the Windows build compiles it not. The `rbinkd-win` crate
   depends on `windows-sys` (`=0.61.2`) with the features of the service
   control manager and `Win32_Storage_FileSystem` for the short-name and volume
   wrappers; it is a target-specific dependency of `rbinkd` and the UNIX build
@@ -439,11 +439,13 @@ supply-chain, and the maintenance cost.
 ### Configuration & Documentation
 
 - **Runtime configuration**: the config file is the last argument
-  (`./rbinkd binkd.conf`). The samples are `binkd.conf` (UNIX) and
-  `binkd.cfg` (DOS and Windows). The command line flags are in
-  `rbinkd.8`. The Rust build does not read the legacy `BINKD_LOG` or
-  `BINKD_ICON_FILE` variables. Set the log path in the config. The tray icon
-  is not supported.
+  (`./rbinkd rbinkd.conf`). The `.conf` and `.cfg` forms are accepted on both
+  platforms; a run without the argument checks the new name first, then the
+  legacy name, with the platform extension first. The Windows service
+  defaults to `rbinkd-service`; the legacy `binkd-service` name is available
+  with `-S`. The command line flags are in `rbinkd.8`. The Rust build reads
+  `RBINKD_LOG` and the legacy `BINKD_LOG`; the config `log` directive wins.
+  The legacy `BINKD_ICON_FILE` variable and the tray icon are not supported.
 - **The documentation index is `doc/README.md`.** It links to the upstream
   manuals and protocol notes. Do not copy upstream documentation into this
   tree. Keep only documentation for the Rust implementation here.

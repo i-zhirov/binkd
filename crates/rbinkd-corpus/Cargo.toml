@@ -1,0 +1,12 @@
+[package]
+name = "rbinkd-corpus"
+description = "The golden corpus reader for the rbinkd tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true

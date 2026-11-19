@@ -10,7 +10,7 @@ pub const NAME: &str = "binkd";
 ///
 /// The C code states the version of the C project in `Config.h`, and the
 /// release process updates it. The port states the version of its own package,
-/// as `mailer()` of `binkd-net` does.
+/// as `mailer()` of `rbinkd-net` does.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// The build flags of the port, the port of `_DBNKD` of `confopt.h`.
@@ -26,9 +26,9 @@ pub const FACILITIES: &str = "ipv6";
 /// The C code states the version, the build date and time of the compiler,
 /// and the system name of `uname()`. The port states the version of its own
 /// package and takes the date and the system name from the caller, as
-/// `binkd-log` takes the local time.
+/// `rbinkd-log` takes the local time.
 pub fn line(date: &str, system: &str) -> String {
-    format!("Binkd {VERSION} ({date}/{system})\n")
+    format!("rbinkd {VERSION} ({date}/{system})\n")
 }
 
 /// Returns the text of the `-vv` switches, the port of the version block of
@@ -47,7 +47,7 @@ mod tests {
     #[test]
     fn the_line_holds_the_version_and_the_parenthesis() {
         let text = line("Oct 27 2026 02:00:00", "Darwin");
-        assert!(text.starts_with("Binkd "));
+        assert!(text.starts_with("rbinkd "));
         assert!(text.ends_with("(Oct 27 2026 02:00:00/Darwin)\n"));
         assert!(text.contains(VERSION));
     }

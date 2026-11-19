@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: queue_scan
 #
 # The scan of the outbound directory, the sort, and the sizes.

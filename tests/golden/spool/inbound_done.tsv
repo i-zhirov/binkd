@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: inbound_done
 #
 # `inb_done()` renames the partial file to its real name.

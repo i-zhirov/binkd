@@ -28,12 +28,20 @@ remains the build for OS/2, DOS, Amiga, and Windows 9x/Me.
 .PP
 The executable is
 .BR rbinkd .
-Runtime names remain compatible: the configuration files are
-.B binkd.conf
+Runtime names remain compatible: the configuration files accept the
+.B rbinkd.conf
 and
-.BR binkd.cfg ,
-and the Windows service name is
-.BR binkd-service .
+.B binkd.conf
+names on UNIX, and the
+.B rbinkd.cfg
+and
+.B binkd.cfg
+names on Windows. The Windows service name defaults to
+.BR rbinkd-service .
+The legacy
+.B binkd-service
+name is available with
+.BR "\-S binkd-service" .
 .SH OPTIONS
 .TP
 .BI \-a " ip"
@@ -104,7 +112,9 @@ or
 This option is available on Windows only.
 .TP
 .BI \-S " name"
-Set the Windows service name. This option is available on Windows only.
+Set the Windows service name. The default is
+.BR rbinkd-service .
+This option is available on Windows only.
 .SH SIGNALS
 .TP
 .B SIGHUP
@@ -117,17 +127,35 @@ Stop the daemon after the current work is finished or aborted.
 Stop the daemon.
 .SH FILES
 .TP
+.I rbinkd.conf
+The new UNIX configuration file.
+.TP
 .I binkd.conf
-The UNIX configuration file.
+The legacy UNIX configuration file.
+.TP
+.I rbinkd.cfg
+The new Windows configuration file.
 .TP
 .I binkd.cfg
-The Windows configuration file.
+The legacy Windows configuration file.
+.PP
+If the config argument is omitted, rbinkd checks the new name first, then
+the legacy name.
+.SH ENVIRONMENT
+.TP
+.B RBINKD_LOG
+The text log path when the config has no
+.B log
+directive. It takes precedence over
+.BR BINKD_LOG .
+.TP
+.B BINKD_LOG
+The legacy text log path when the config has no
+.B log
+directive.
 .SH LIMITATIONS
 ASO (Amiga-style outbound) is not implemented. The dynamic zlib and bzip2
-loader keywords are not implemented. The legacy
-.B BINKD_LOG
-environment variable is not read; set the log path in the configuration
-file.
+loader keywords are not implemented.
 .PP
 The Windows build has no tray icon and no
 .B \-T

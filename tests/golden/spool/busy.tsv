@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: busy
 #
 # The `.bsy` and `.csy` files of the busy list.

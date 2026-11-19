@@ -9,11 +9,11 @@
 
 use std::sync::{Arc, Mutex};
 
-use binkd_config::Config;
-use binkd_ftn::addr::FtnAddr;
-use binkd_log::Log;
-use binkd_net::{bind, listen, session::SessionOptions, Caller};
-use binkd_proto::{Report, SendFile};
+use rbinkd_config::Config;
+use rbinkd_ftn::addr::FtnAddr;
+use rbinkd_log::Log;
+use rbinkd_net::{bind, listen, session::SessionOptions, Caller};
+use rbinkd_proto::{Report, SendFile};
 
 use crate::platform;
 
@@ -47,8 +47,8 @@ impl Engine {
     ///
     /// `serve()` binds its own listeners, so this method is for a caller that
     /// needs the sockets or checks the bind. The caller that runs the sessions
-    /// uses `serve()` or `binkd_net::listen()`.
-    pub async fn bind(&self) -> Result<Vec<tokio::net::TcpListener>, binkd_net::ListenError> {
+    /// uses `serve()` or `rbinkd_net::listen()`.
+    pub async fn bind(&self) -> Result<Vec<tokio::net::TcpListener>, rbinkd_net::ListenError> {
         bind(&self.config, &self.log, &platform::now).await
     }
 
@@ -58,7 +58,7 @@ impl Engine {
     /// The C code runs one manager of the server in a process of its own; the
     /// port runs one task, so a caller may hold the task of a listener beside
     /// other code, the port of `branch (clientmgr, 0, 0)`.
-    pub async fn serve(self) -> Result<(), binkd_net::ListenError> {
+    pub async fn serve(self) -> Result<(), rbinkd_net::ListenError> {
         let timeout = std::time::Duration::from_secs(self.config.nettimeout.max(1) as u64);
         let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
         options.no_md5 = self.options.no_md5;
@@ -71,7 +71,7 @@ impl Engine {
         };
         let inbound = self.config.inbound.clone();
         let log = Arc::clone(&self.log);
-        let receive = move |file: &binkd_proto::ReceivedFile| {
+        let receive = move |file: &rbinkd_proto::ReceivedFile| {
             crate::daemon::receive_file(&spool, &inbound, file, platform::now().epoch, &log);
             Ok(())
         };
@@ -90,7 +90,7 @@ impl Engine {
     ///
     /// The C code runs the manager of the client for every node of the queue;
     /// the caller of the port names the node and holds the report.
-    pub async fn poll(&mut self, fa: &FtnAddr) -> Option<Result<Report, binkd_net::CallError>> {
+    pub async fn poll(&mut self, fa: &FtnAddr) -> Option<Result<Report, rbinkd_net::CallError>> {
         let timeout = std::time::Duration::from_secs(self.config.nettimeout.max(1) as u64);
         let mut options = SessionOptions::new(timeout, !self.options.no_crypt, false);
         options.no_md5 = self.options.no_md5;

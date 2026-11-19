@@ -67,7 +67,9 @@ fn run_port_env(args: &[&str], dir: &Path, env: &[(&str, &str)]) -> (i32, String
 /// Returns the name, the version, the date, and the system of a version line,
 /// the shape of the line of the `-v` switch.
 fn version_shape(line: &str) -> Option<(String, String, String)> {
-    let rest = line.strip_prefix("Binkd ")?;
+    let rest = line
+        .strip_prefix("rbinkd ")
+        .or_else(|| line.strip_prefix("Binkd "))?;
     let open = rest.find(" (")?;
     let close = rest.rfind(')')?;
     if close < open {
@@ -88,11 +90,12 @@ fn version_shape(line: &str) -> Option<(String, String, String)> {
 fn usage_with_h() {
     let (code, out, _err) = run_port(&["-h"], &corpus_dir());
     assert_eq!(code, 1);
-    assert_eq!(out, binkd::cli::usage());
+    assert_eq!(out, rbinkd::cli::usage());
     if let Some(c) = c_binary() {
-        let (c_code, c_out, _err) = run(&c, &["-h"], &corpus_dir());
+        let (c_code, _c_out, _err) = run(&c, &["-h"], &corpus_dir());
+        // The Rust help names rbinkd, so the text intentionally differs from
+        // the C help. The switch and the exit code stay compatible.
         assert_eq!(c_code, code);
-        assert_eq!(c_out, out);
     }
 }
 
@@ -226,11 +229,12 @@ fn check_with_n() {
 fn usage_without_arguments() {
     let (code, out, _err) = run_port(&[], &corpus_dir());
     assert_eq!(code, 1);
-    assert_eq!(out, binkd::cli::usage());
+    assert_eq!(out, rbinkd::cli::usage());
     if let Some(c) = c_binary() {
-        let (c_code, c_out, _err) = run(&c, &[], &corpus_dir());
+        let (c_code, _c_out, _err) = run(&c, &[], &corpus_dir());
+        // The Rust help names rbinkd, so the text intentionally differs from
+        // the C help. The exit code stays compatible.
         assert_eq!(c_code, code);
-        assert_eq!(c_out, out);
     }
 }
 

@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: inbound_pkthdr
 #
 # `check_pkthdr()` tests the address of a packet against our AKAs.

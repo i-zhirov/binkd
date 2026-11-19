@@ -1,4 +1,4 @@
-# crate: binkd-spool
+# crate: rbinkd-spool
 # case: filebox
 #
 # The filebox of a node, the T-Mail filebox, and an empty filebox.
