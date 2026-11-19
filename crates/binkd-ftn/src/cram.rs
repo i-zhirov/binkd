@@ -44,7 +44,7 @@ fn hex_digit(v: u8) -> char {
 /// Returns the digest bytes. The first byte of the result is the
 /// digest length. The C code writes one byte past the buffer for an odd
 /// number of hex digits. The port takes the full pairs only (see
-/// `doc/rust-rewrite-plan.md`).
+/// `doc/compatibility.md`).
 pub fn parse(s: &str) -> Option<Vec<u8>> {
     let bytes = s.as_bytes();
     let at = find(bytes, b"CRAM")?;

@@ -24,8 +24,8 @@ mail and files between FTN systems over TCP/IP with the binkp protocol. FTN node
 it as a daemon next to their BSO spool. The Rust workspace in this repository is the
 only implementation in this repository and the default on UNIX and Windows.
 The C implementation is upstream in `https://github.com/pgul/binkd`, and this
-repository holds no C implementation, the decision of
-`doc/decisions/c-out-of-tree.md`. The optional Perl FFI shim remains C.
+repository holds no C implementation. The optional Perl FFI shim remains C.
+See `doc/compatibility.md` for lineage and platform support.
 The upstream C implementation is the reference and the only build of OS/2,
 DOS, Amiga, and Windows 9x/Me. The Rust crates are also a library for embedding
 in other programs.
@@ -78,7 +78,6 @@ rbinkd/
 ├── .github/actions/upstream-c/ # clone and patch the upstream C reference
 ├── AGENTS.md                   # this file
 ├── README.md                   # what rbinkd is, build and install
-├── task.md                     # the Rust rewrite task statement
 ├── Cargo.toml                  # the workspace, forbids unsafe code
 ├── Cargo.lock                  # the resolved dependencies
 ├── crates/                     # the Rust crates of the implementation
@@ -94,18 +93,20 @@ rbinkd/
 │   ├── binkd-win/              # Windows service and file-system FFI
 │   └── rbinkd/                 # the binary: CLI, daemon, signals
 ├── ci/upstream-c.patch         # the interop patch of the upstream C tree
-├── doc/                        # Rust docs and the upstream doc index
+├── doc/                        # user and developer documentation
 │   ├── README.md               # documentation index
-│   ├── decisions/              # architecture decision records
-│   └── rust-rewrite-plan.md    # rewrite plan
+│   ├── compatibility.md        # drop-in behavior and limitations
+│   ├── configuration.md        # configuration guide
+│   ├── operations.md           # running and service guide
+│   └── development.md          # build, tests, and runtime design
 ├── tests/                      # Rust tests, corpus, Windows smoke test
 │   ├── README.md               # how to run the tests, corpus format
 │   ├── golden/                 # corpus cases (Rust reads them)
 │   └── windows-smoke.ps1       # Windows service smoke test
 ```
 
-The upstream C modules are not in this tree. `doc/rust-rewrite-plan.md` maps
-every upstream C module to its Rust crate.
+The upstream C modules are not in this tree. `doc/development.md` describes
+the Rust workspace and the runtime design.
 
 ## Build And Test Commands
 
@@ -321,11 +322,11 @@ port fixes them):
   with the workspace lints in `Cargo.toml`: `unsafe_code = "forbid"`
   and clippy `all = "warn"`. Do not weaken a workspace lint. The exceptions:
   `binkd-perl`, the crate of the FFI of the Perl hooks, holds
-  `unsafe_code = "allow"`, the decision of `doc/decisions/perl-hooks.md`; the
+  `unsafe_code = "allow"` for the Perl C shim; the
   crate is optional and the default build holds it not, and a build that wants
   the hooks names the feature `perl` of the `rbinkd` crate. The `binkd-win`
   crate holds the second exception for the FFI of the Windows
-  service, the decision of `doc/decisions/windows-support.md`; the crate is a
+  service, the FFI exception of `binkd-win`; the crate is a
   target-specific dependency of `rbinkd` and compiles on Windows only.
 - **Doc comments**: every public item of a Rust crate has a `///` comment
   and every module a `//!` comment. State the upstream C function that the
@@ -381,8 +382,7 @@ port fixes them):
   runs the base protocol, network, record, and binary tests. The
   config corpus, CLI, and daemon tests are not the Windows C oracle.
   The proxy, rate-limit, and protocol 1.0 variants stay Ubuntu-only.
-  BSD is build-supported but not CI-tested, the record
-  `doc/decisions/platform-ci.md`.
+  BSD is build-supported but not CI-tested; see `doc/compatibility.md`.
 - The Windows target-gated tests cover the short-name and volume wrappers,
   the partition provider, the Windows feature set, and the Windows dump. They
   run in the `windows` CI job. The config corpus holds only successful dumps,
@@ -429,8 +429,7 @@ port fixes them):
 **Rationale**: fewer, well-vetted dependencies reduce the security, the
 supply-chain, and the maintenance cost.
 
-**Known exclusions** (the upstream C code; the Rust port replaces them in the
-named phase of `doc/rust-rewrite-plan.md`):
+**Known exclusions** (the upstream C code; the Rust port replaces them):
 
 - The upstream C code links zlib and bzip2 (`compress.c`) and loads them at run
   time on Windows (`zlibdl.c`).
@@ -442,8 +441,9 @@ named phase of `doc/rust-rewrite-plan.md`):
 - **Runtime configuration**: the config file is the last argument
   (`./rbinkd binkd.conf`). The samples are `binkd.conf` (UNIX) and
   `binkd.cfg` (DOS and Windows). The command line flags are in
-  `rbinkd.8`. The environment variables are `BINKD_LOG` (the log path)
-  and `BINKD_ICON_FILE` (the Windows tray icon).
+  `rbinkd.8`. The Rust build does not read the legacy `BINKD_LOG` or
+  `BINKD_ICON_FILE` variables. Set the log path in the config. The tray icon
+  is not supported.
 - **The documentation index is `doc/README.md`.** It links to the upstream
   manuals and protocol notes. Do not copy upstream documentation into this
   tree. Keep only documentation for the Rust implementation here.
@@ -453,7 +453,7 @@ named phase of `doc/rust-rewrite-plan.md`):
 - **Update the documents that the change touches**: `README.md` for the
   build and the links, `tests/README.md` for the test suite and the corpus
   format, `doc/README.md` for the documentation links, and
-  `doc/rust-rewrite-plan.md` for the port status and the module map.
+  `doc/development.md` for the workspace layout and runtime design.
 - **The release process** updates the `HISTORY`, the `PATCHLEVEL` value in
   `Config.h`, and the spec file of the upstream C tree. This repository holds
   no copy of them.

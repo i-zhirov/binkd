@@ -7,8 +7,8 @@ license = "GPL-2.0-or-later"
 description = "The FFI of the Perl hooks of binkd, the port of `perlhooks.c`."
 build = "build.rs"
 
-# The crate is not a member of the workspace: the default build holds it not,
-# the port of the decision of `doc/decisions/perl-hooks.md`.
+# The crate is not a member of the workspace. The default build excludes it.
+# See `doc/configuration.md`.
 
 [dependencies]
 binkd-config = { path = "../binkd-config" }
@@ -20,7 +20,7 @@ binkd-srif = { path = "../binkd-srif" }
 binkd-spool = { path = "../binkd-spool" }
 
 [lints.rust]
-# The exception of `doc/decisions/perl-hooks.md`: the crate holds the C shim of
+# The exception is described in `doc/development.md`: the crate holds the C shim of
 # the Perl C API and the FFI, so it alone holds `allow`. Every other crate keeps
 # `forbid`.
 unsafe_code = "allow"

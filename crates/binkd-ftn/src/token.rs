@@ -21,7 +21,7 @@ fn is_space(b: u8) -> bool {
 ///
 /// The port follows `getwordx2()` of `getw.c`. The C code can
 /// under-allocate the buffer for a `%VAR%` expansion. The port returns
-/// a correct value (see `doc/rust-rewrite-plan.md`).
+/// a correct value (see `doc/compatibility.md`).
 pub fn getwordx2(
     src: Option<&[u8]>,
     n: i32,

@@ -12,8 +12,8 @@ members = [
     "crates/rbinkd",
     "crates/binkd-win",
 ]
-# The crate of the FFI is optional: the default build holds it not, the port of
-# the decision of `doc/decisions/perl-hooks.md`.
+# The crate of the FFI is optional and excluded from the workspace.
+# See `doc/configuration.md`.
 exclude = ["crates/binkd-perl"]
 
 [workspace.package]

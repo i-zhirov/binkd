@@ -10,7 +10,7 @@
 //! default build of the workspace holds it not, and a build that wants the hooks
 //! names the feature `perl` of the `binkd` crate. The crate alone holds the
 //! exception of the lint `unsafe_code`, the decision of
-//! `doc/decisions/perl-hooks.md`.
+//! `doc/configuration.md`.
 //!
 //! The behaviour of every hook is pinned by the cases of
 //! `crates/rbinkd/tests/perl.rs` against the oracle of `--with-perl`.

@@ -16,8 +16,7 @@ name = "rbinkd"
 path = "src/main.rs"
 
 [features]
-# The hooks of Perl: the default build holds the crate not, the decision of
-# `doc/decisions/perl-hooks.md`.
+# The Perl hooks are optional. See `doc/configuration.md`.
 perl = ["dep:binkd-perl"]
 
 [target.'cfg(unix)'.dependencies]

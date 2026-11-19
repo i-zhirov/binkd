@@ -7,7 +7,7 @@
 # cram_tostring(hexdigest, len) -> string
 # cram_parse(string) -> "<len>:<hex>" or <null>
 # The corpus has no odd number of hex digits: the C code writes one
-# byte past the buffer for that input (see doc/rust-rewrite-plan.md).
+# byte past the buffer for that input (see doc/compatibility.md).
 # See tests/README.md for the field format.
 
 # RFC 2202 test case 1.

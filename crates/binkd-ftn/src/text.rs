@@ -337,7 +337,7 @@ pub fn isarcmail(s: &[u8]) -> bool {
 /// Returns the time zone offset in minutes.
 ///
 /// The C code computes the local time zone when the value is -1. The
-/// platform layer does that part (see `doc/rust-rewrite-plan.md`).
+/// platform layer does that part (see `doc/compatibility.md`).
 pub fn tz_off(tzoff: i32) -> i64 {
     (tzoff / 60) as i64
 }

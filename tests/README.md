@@ -436,7 +436,7 @@ unset, so those tests skip.
 
 BSD is build-supported but not CI-tested. The upstream C reference and the
 Rust workspace build on BSD, and no CI runner is configured. The
-record `doc/decisions/platform-ci.md` holds the matrix.
+record `doc/compatibility.md` holds the matrix.
 
 The Rust test `crates/binkd-net/tests/proxy_interop.rs` runs the proxy matrix
 for the network layer. Set `BINKD_C_PROXY` to the path of an upstream C binary
@@ -503,7 +503,7 @@ because the upstream C code asks the resolver library of the system. The test
 supplies the settings of the resolver, so it exercises the query, the records
 of the answer, and the fallback.
 
-The matrix of `doc/rust-rewrite-plan.md`:
+The Rust interoperability matrix:
 
 | Client | Server | State |
 | --- | --- | --- |
@@ -626,8 +626,8 @@ system offset for `tzoff -1` comes from the platform layer and the binary
 log takes it as an argument.
 
 The corpus does not cover the modules that need the network, the process
-managers, or the config parser. See `doc/rust-rewrite-plan.md` for the
-plan that adds those tests.
+managers, or the config parser. See `doc/development.md` for the test layers
+and the interop suite.
 
 ## Add a spool corpus case
 

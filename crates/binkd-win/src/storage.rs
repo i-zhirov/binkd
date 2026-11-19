@@ -3,7 +3,7 @@
 //! identity of `stat()` that `check_config()` of `readcfg.c` uses.
 //!
 //! The unsafe Windows calls stay in this crate, the exception of the lint
-//! `unsafe_code` of `doc/decisions/windows-support.md`. The functions answer a
+//! `unsafe_code` of `doc/development.md`. The functions answer a
 //! value and never end the process.
 
 use std::ffi::OsString;

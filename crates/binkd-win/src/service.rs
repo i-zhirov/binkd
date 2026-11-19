@@ -5,7 +5,7 @@
 //! records of the arguments of the service, and the status reports. The C code
 //! of `nt/service.c` is the reference. The crate alone holds the exception of
 //! the lint `unsafe_code` for the FFI, the decision of
-//! `doc/decisions/windows-support.md`.
+//! `doc/development.md`.
 
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
