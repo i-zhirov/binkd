@@ -124,6 +124,35 @@ warn and die hook keeps the name `binkd_warn` for compatibility. The
 upstream `perlhooks.txt` documents the variables and the return values of
 the hooks.
 
+## Example
+
+This short script writes one line at start and prefixes every log line.
+Save it as `hooks.pl` and name it in the config:
+
+```perl
+# Save as hooks.pl and set `perl-hooks /path/to/hooks.pl`.
+sub on_start {
+    Log(3, "example: started as $config{sysname}");
+    return 1;
+}
+
+sub on_log {
+    s/^/example: /;
+    return 1;
+}
+
+1;
+```
+
+The `perl-hooks` line of the config points to the file:
+
+```text
+perl-hooks /path/to/hooks.pl
+```
+
+Build with the `perl` feature. The case `the_doc_example_runs` extracts
+this block and runs it, so the example must stay runnable.
+
 ## Tests
 
 The default test suite does not build the Perl crate. Run the two optional
@@ -135,10 +164,10 @@ cargo test --manifest-path crates/rbinkd-perl/Cargo.toml -- --test-threads=1
 ```
 
 The first command tests the binary with the hooks. The second command tests
-the crate and the C shim. The script `tests/perl/hooks.pl` defines every
-hook. The cases of `crates/rbinkd/tests/perl.rs` compare the port with the
-upstream C binary when `BINKD_C_PERL` names a build of
-`./configure --with-perl`.
+the crate, the C shim, and the example of this page. The script
+`tests/perl/hooks.pl` defines every hook. The cases of
+`crates/rbinkd/tests/perl.rs` compare the port with the upstream C binary
+when `BINKD_C_PERL` names a build of `./configure --with-perl`.
 
 The CI job `perl` installs `libperl-dev`, runs both suites, builds the C
 oracle with `--with-perl`, and runs the binary suite against it.

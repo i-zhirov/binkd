@@ -32,6 +32,9 @@ jobs:
       - name: Install the Perl headers
         run: sudo apt-get update && sudo apt-get install -y libperl-dev
       - uses: dtolnay/rust-toolchain@stable
+      - name: Test the Perl example of the documentation
+        working-directory: crates/rbinkd-perl
+        run: cargo test --test doc_example -- --test-threads=1
       - name: Test the Perl hooks of the crate
         run: cd crates/rbinkd-perl && cargo test -- --test-threads=1
       - uses: ./.github/actions/upstream-c

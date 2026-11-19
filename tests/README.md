@@ -60,9 +60,12 @@ cargo test
 
 The script `tests/perl/hooks.pl` holds every hook. The hook writes its name to
 the file of the environment `BINKD_PERL_MARK`, so a case holds the hooks that
-ran. The port cases of `crates/rbinkd/tests/perl.rs` hold the call hooks, the
-session hooks end to end, and the reload hooks. The oracle cases run against
-the upstream C binary when the environment names `BINKD_C_PERL`, a binary of
+ran. The case `the_doc_example_runs` of
+`crates/rbinkd-perl/tests/doc_example.rs` extracts the example from
+`doc/perl.md` and runs it, so the page stays runnable. The port cases of
+`crates/rbinkd/tests/perl.rs` hold the call hooks, the session hooks end to
+end, and the reload hooks. The oracle cases run against the upstream C binary
+when the environment names `BINKD_C_PERL`, a binary of
 `./configure --with-perl`.
 
 The cases of `crates/rbinkd-perl/tests/hooks.rs` call every hook and hold the
