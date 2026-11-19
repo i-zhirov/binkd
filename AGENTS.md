@@ -94,7 +94,10 @@ rbinkd/
 │   ├── binkd-win/              # Windows service and file-system FFI
 │   └── rbinkd/                 # the binary: CLI, daemon, signals
 ├── ci/upstream-c.patch         # the interop patch of the upstream C tree
-├── doc/                        # protocol, config, rewrite, decisions
+├── doc/                        # Rust docs and the upstream doc index
+│   ├── README.md               # documentation index
+│   ├── decisions/              # architecture decision records
+│   └── rust-rewrite-plan.md    # rewrite plan
 ├── tests/                      # Rust tests, corpus, Windows smoke test
 │   ├── README.md               # how to run the tests, corpus format
 │   ├── golden/                 # corpus cases (Rust reads them)
@@ -439,15 +442,18 @@ named phase of `doc/rust-rewrite-plan.md`):
 - **Runtime configuration**: the config file is the last argument
   (`./rbinkd binkd.conf`). The samples are `binkd.conf` (UNIX) and
   `binkd.cfg` (DOS and Windows). The command line flags are in
-  `binkd.txt`. The environment variables are `BINKD_LOG` (the log path)
+  `rbinkd.8`. The environment variables are `BINKD_LOG` (the log path)
   and `BINKD_ICON_FILE` (the Windows tray icon).
+- **The documentation index is `doc/README.md`.** It links to the upstream
+  manuals and protocol notes. Do not copy upstream documentation into this
+  tree. Keep only documentation for the Rust implementation here.
 - **The config format is a contract.** A change to a directive needs a
   corpus case in `tests/golden/config/` and a comparison of the `-d` dump with
   the upstream C dump of `binkd -d`.
 - **Update the documents that the change touches**: `README.md` for the
   build and the links, `tests/README.md` for the test suite and the corpus
-  format, and `doc/rust-rewrite-plan.md` for the port status and the
-  module map.
+  format, `doc/README.md` for the documentation links, and
+  `doc/rust-rewrite-plan.md` for the port status and the module map.
 - **The release process** updates the `HISTORY`, the `PATCHLEVEL` value in
   `Config.h`, and the spec file of the upstream C tree. This repository holds
   no copy of them.

@@ -157,8 +157,8 @@ it.
 
 These surfaces are the oracles for the equivalence tests:
 
-- The binkp wire protocol. The documents `doc/binkp10-en.txt` and
-  `doc/binkp11-en.txt` define the frames and the session flow.
+- The binkp wire protocol. The upstream [Binkp 1.0] and [Binkp 1.1]
+  documents define the frames and the session flow.
 - The `-d` option. It dumps every parsed config value. The output is a
   byte-comparable contract for the config parser.
 - The spool directory. Queue files, `.flo` files, `.try` files, `.bsy`
@@ -1511,3 +1511,6 @@ The milestones follow the phases. Each milestone is a mergeable state.
    implementation in this tree and the default on UNIX and on Windows NT and
    later. The upstream C implementation is the reference and the legacy
    build.
+
+[Binkp 1.0]: https://github.com/pgul/binkd/blob/master/doc/binkp10-en.txt
+[Binkp 1.1]: https://github.com/pgul/binkd/blob/master/doc/binkp11-en.txt

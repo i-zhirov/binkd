@@ -3,11 +3,13 @@
 /// The level of a message of the log, the port of the `lev` argument of
 /// `vLog()`.
 ///
-/// The C code passes plain integers and compares them with `<=`. The levels of the
-/// reference are in `doc/binkd-ref-en.txt`: 0 is a critical error, 1 an ordinary
-/// error, 2 an error on a connection attempt, 3 the extensions and the files, 4 the
-/// start of binkd, 5 the DNS and the files, 6 the events of the protocol, 7 the
-/// addresses and the data blocks, and 8 and above the debug messages.
+/// The C code passes plain integers and compares them with `<=`. The
+/// upstream `binkd-ref-en.txt` lists the levels:
+/// <https://github.com/pgul/binkd/blob/master/doc/binkd-ref-en.txt>.
+/// 0 is a critical error, 1 an ordinary error, 2 an error on a connection
+/// attempt, 3 the extensions and the files, 4 the start of binkd, 5 the DNS
+/// and the files, 6 the events of the protocol, 7 the addresses and the data
+/// blocks, and 8 and above the debug messages.
 pub type Level = i32;
 
 /// The level of a critical error, the port of the level 0 of `vLog()`. The C code
