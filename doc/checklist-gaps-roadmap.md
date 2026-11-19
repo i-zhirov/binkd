@@ -6,6 +6,7 @@
 
 - **Date**: 2026-11-15
 - **Status**: Implemented
+- **Verified**: 2026-11-19. The plan phases and exit criteria are complete
 - **Design**: [rust-rewrite-plan.md](rust-rewrite-plan.md), with the
   decisions [legacy-platforms.md](decisions/legacy-platforms.md) and
   [windows-support.md](decisions/windows-support.md)
@@ -184,12 +185,12 @@ job or record the accepted absence, and update the docs:
 
 ## Definition Of Done
 
-- All six slices are implemented and their plans are marked done.
-- The four checklist items are green: modern platform support, both
-  server and client modes, both modes in library form, and the
-  C↔Rust binary integration suite in CI.
-- The C and Rust suites, the binary interop matrix, the Windows smoke
+- [x] All six slices are implemented and their plans are marked done.
+- [x] The four checklist items are green: modern platform support, both
+  server and client modes, both modes in library form, and the C↔Rust
+  binary integration suite in CI.
+- [x] The C and Rust suites, the binary interop matrix, the Windows smoke
   test, and the platform jobs pass.
-- The known differences are in the decisions and the README; no
+- [x] The known differences are in the decisions and the README. No
   unchecked platform behavior remains in the checklist.
-- No open Critical or Important review findings.
+- [x] No open Critical or Important review findings remain.

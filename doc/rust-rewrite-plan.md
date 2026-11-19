@@ -1,5 +1,7 @@
 # Plan: the rbinkd reimplementation of Binkd in Rust
 
+- **Status**: Implemented
+
 This document is the action plan for the Rust rewrite of binkd.
 It records the former state of the C code, the test strategy, the target
 architecture, and the port order.
@@ -174,7 +176,7 @@ These surfaces are the oracles for the equivalence tests:
 
 The rewrite is complete when these conditions hold:
 
-- The Rust `binkd` binary passes every corpus case and every interop test
+- The Rust `rbinkd` binary passes every corpus case and every interop test
   against the upstream C implementation.
 - The Rust code parses every config file of the corpus and the `-d` dump
   is byte-identical to the upstream C dump.
@@ -234,7 +236,7 @@ The Rust tests of a crate read the files that its `# crate:` header names. The
 test selects its cases by that name, so no case stays unchecked.
 
 The corpus is the differential oracle. An in-process binding to the C code
-(`binkd-ffi`) was planned but not added. The interop suite runs the real
+(`binkd-ffi`) is not part of the port. The interop suite runs the real
 upstream C binary against the Rust code in both roles, so it supplies the
 differential coverage.
 
@@ -356,8 +358,8 @@ crates/
   binkd-corpus/             # test only: the golden corpus reader
 ```
 
-`binkd-ftn`, `binkd-spool`, and `binkd-corpus` exist. The other crates
-arrive in the later phases.
+The workspace holds every crate above. The binary crate is `rbinkd`, and
+the library crate keeps the `binkd` name.
 
 ### 5.1 Crate rules
 
@@ -623,7 +625,7 @@ Progress:
   a replay and a recorded `TIME` frame are deterministic. The interop test
   holds the C frame sequence with `NUL TIME` after `NDL` and before `VER`.
   (done)
-- The NR mode and the ND mode are open. Step 4 is done: the spool holds the
+- The NR mode and the ND mode are done. The spool holds the
   link status files of the ND mode, `binkd-spool::status`, the port of
   `ND_set_status()`: `status_path()` gives `<outbound>/<address>.stc`,
   `set_status()` writes the name, the size, and the time of the file that the
@@ -713,7 +715,7 @@ Exit criteria:
 - The interop matrix passes for plain, CRAM, CRYPT, GZ, and BZ2.
 - The NR mode, the ND mode, and the multi-batch mode pass.
 
-Known gaps, for the start of phase 5:
+Items closed at the start of phase 5:
 
 - The receiver declines a file with the rules of the `skip` directive, the port of
   `skip_test()` of `protocol.c`: a rule that matches the address type and the name
@@ -737,10 +739,10 @@ Known gaps, for the start of phase 5:
 - The frame tests of the interop suite retry a scenario of the peer: the C binary
   closes the transport at the end of a session, and the socket of the peer may answer
   with a reset before the frames of the last batch are read. The test of a frame runs
-  the scenario again for that race.
+  the scenario again for that race. (done)
 - The port of `free_port()` of the interop suite is unique in the process: a port of a
   closed listener is free at the moment, and another test of the suite takes it under
-  the parallel load.
+  the parallel load. (done)
 
 Exit criteria:
 
@@ -748,7 +750,7 @@ Exit criteria:
 - The interop matrix passes for plain, CRAM, CRYPT, GZ, and BZ2.
 - The NR mode, the ND mode, and the multi-batch mode pass.
 
-### Phase 5: network, managers, SRIF, binary log
+### Phase 5: network, managers, SRIF, binary log (done)
 
 Deliverables:
 
@@ -1421,31 +1423,32 @@ The cutover is complete:
   service smoke tests. No job builds a local C tree.
 
 The Windows service mode is implemented. The Debian packaging and the
-upstream release files stay in the upstream C tree. The release notes state
-the port status and the known differences.
+upstream release files stay in the upstream C tree. The README, the man page,
+and the decision records state the port status and the known differences.
 
 Exit criteria:
 
-- A release candidate passes the full suite.
-- The release notes state the port status and the known differences.
+- The full suite passes. (done)
+- The README, the man page, and the decision records state the port status
+  and the known differences. (done)
 
-## 7. Decisions and open questions
+## 7. Decisions
 
 Each decision gets a record in `doc/decisions/` when the team makes it.
-The list below holds the decisions that the plan needs before phase 4.
+The list below holds the decisions that shape the port.
 
 1. Perl hooks: settled in `doc/decisions/perl-hooks.md`. The port follows
    `perlhooks.c` in Rust over a minimal C shim of the Perl C API.
 2. Legacy platforms: settled in `doc/decisions/legacy-platforms.md`. The team
    accepted option 2: the Rust port does not support OS/2, DOS, and Amiga, and
    the upstream C implementation is their reference and build.
-3. Log text: is the message text part of the contract?
-   The plan assumes no. The log line format is a contract.
-4. Error exit codes: the C code calls `exit(1)` on a level 0 log message.
-   The library form returns an error. The binary maps the error to the
-   exit code.
-5. The `-d` dump: the plan treats the dump as a stable contract.
-   A future change needs a version note.
+3. Log text: settled. The message text is not a contract. The log line
+   format is a contract.
+4. Error exit codes: settled. The C code calls `exit(1)` on a level 0 log
+   message. The library form returns an error. The binary maps the error to
+   the exit code.
+5. The `-d` dump: settled. The dump is a stable contract. A future change
+   needs a version note.
 6. Windows support: settled in `doc/decisions/windows-support.md`. Windows NT
    and later is supported, the service mode is in scope, the tray icon is not,
    and Windows 9x/Me is out of scope.
@@ -1500,10 +1503,10 @@ The milestones follow the phases. Each milestone is a mergeable state.
 
 1. Milestone 1: phase 0 and phase 1 (done). The Rust pure core matches
    the upstream C code on the corpus.
-2. Milestone 2: phase 2 and phase 3. The Rust code reads and writes
+2. Milestone 2: phase 2 and phase 3 (done). The Rust code reads and writes
    the spool and parses every config.
-3. Milestone 3: phase 4. The Rust code runs a binkp session with the C
-   code.
+3. Milestone 3: phase 4 (done). The Rust code runs a binkp session with the
+   C code.
 4. Milestone 4: phase 5 and phase 6 (done). The Rust binary runs as a daemon
    and as a library on UNIX and Windows, and the Windows service mode is in
    place.
