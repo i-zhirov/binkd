@@ -53,6 +53,21 @@ target/release/rbinkd rbinkd.conf
 For the client-only or poll modes, see the [operations guide](doc/operations.md)
 or `rbinkd -h`.
 
+## Releases
+
+Tagged releases publish Linux glibc and static musl archives for x86_64,
+aarch64, armv5te, armv7, i686, mips, and mipsel; macOS archives for Intel
+and Apple Silicon; and a Windows x86_64 archive. Every release includes
+`SHA256SUMS`.
+
+Download the archive for your platform from
+[GitHub Releases](https://github.com/i-zhirov/rbinkd/releases), unpack it,
+and put `rbinkd` on `PATH`. The archive also contains the man page, the
+configuration samples, and the license.
+
+Versioning and the tag process are described in
+[Releases](doc/release.md).
+
 ## Supported platforms
 
 - Linux

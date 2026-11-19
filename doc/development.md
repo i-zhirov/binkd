@@ -26,6 +26,10 @@ with:
 cargo build --release -p rbinkd --features windows-original
 ```
 
+Tagged releases use the cross-platform matrix in
+[Releases](release.md). The release workflow is not a normal build command;
+there is no local substitute for its Linux cross-builds.
+
 ## Test
 
 ```sh

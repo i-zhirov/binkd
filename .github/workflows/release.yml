@@ -1,0 +1,223 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check the tag matches the workspace version
+        run: |
+          version=$(cargo metadata --locked --no-deps --format-version 1 |
+            python3 -c 'import json, sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "rbinkd"))')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not match workspace version $version" >&2
+            exit 1
+          fi
+      - name: Test the workspace
+        run: cargo test --workspace --locked
+      - name: Lint the workspace
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Check the format
+        run: cargo fmt --check
+
+  linux-gnu:
+    needs: check
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu,aarch64-unknown-linux-gnu
+      - uses: mlugg/setup-zig@v2.2.1
+        with:
+          version: 0.17.1
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --version 0.24.1 --locked
+      - name: Build the glibc binaries
+        run: |
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            cargo zigbuild --release --locked -p rbinkd --bin rbinkd \
+              --target "$target.2.17"
+          done
+      - name: Package the glibc binaries
+        run: |
+          mkdir -p dist
+          for target in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu; do
+            ci/package-release.sh "$GITHUB_REF_NAME" "$target" \
+              "target/$target/release/rbinkd" dist
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rbinkd-linux-gnu
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  linux-musl:
+    needs: check
+    runs-on: ubuntu-22.04
+    env:
+      STABLE_TARGETS: >-
+        armv7-unknown-linux-musleabihf
+        aarch64-unknown-linux-musl
+        armv5te-unknown-linux-musleabi
+        i686-unknown-linux-musl
+        x86_64-unknown-linux-musl
+      NIGHTLY_TARGETS: >-
+        mips-unknown-linux-musl
+        mipsel-unknown-linux-musl
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: armv7-unknown-linux-musleabihf,aarch64-unknown-linux-musl,armv5te-unknown-linux-musleabi,i686-unknown-linux-musl,x86_64-unknown-linux-musl
+      - uses: mlugg/setup-zig@v2.2.1
+        with:
+          version: 0.17.1
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --version 0.24.1 --locked
+      - name: Install nightly for MIPS
+        run: rustup toolchain install nightly --profile minimal --component rust-src
+      - name: Build the stable musl binaries
+        run: |
+          for target in $STABLE_TARGETS; do
+            cargo zigbuild --release --locked -p rbinkd --bin rbinkd \
+              --target "$target"
+          done
+      - name: Build the MIPS musl binaries
+        run: |
+          for target in $NIGHTLY_TARGETS; do
+            cargo +nightly zigbuild --release --locked -p rbinkd --bin rbinkd \
+              -Z build-std=std,panic_abort \
+              --target "$target"
+          done
+      - name: Check that every musl binary is static
+        run: |
+          for target in $STABLE_TARGETS $NIGHTLY_TARGETS; do
+            if readelf -d "target/$target/release/rbinkd" | grep -q NEEDED; then
+              echo "$target is not statically linked" >&2
+              exit 1
+            fi
+          done
+      - name: Package the musl binaries
+        run: |
+          mkdir -p dist
+          for target in $STABLE_TARGETS $NIGHTLY_TARGETS; do
+            ci/package-release.sh "$GITHUB_REF_NAME" "$target" \
+              "target/$target/release/rbinkd" dist
+          done
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rbinkd-linux-musl
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  macos:
+    needs: check
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: macos-15
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build the binary
+        run: |
+          cargo build --release --locked -p rbinkd --bin rbinkd \
+            --target "${{ matrix.target }}"
+      - name: Package the binary
+        run: |
+          ci/package-release.sh "$GITHUB_REF_NAME" "${{ matrix.target }}" \
+            "target/${{ matrix.target }}/release/rbinkd" dist
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rbinkd-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  windows:
+    needs: check
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+      - name: Build the binary
+        run: |
+          cargo build --release --locked -p rbinkd --bin rbinkd `
+            --target x86_64-pc-windows-msvc
+      - name: Package the binary
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = 'x86_64-pc-windows-msvc'
+          $name = "rbinkd-$env:GITHUB_REF_NAME-$target"
+          $stage = Join-Path $env:RUNNER_TEMP $name
+          Remove-Item -Recurse -Force $stage -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item "target/$target/release/rbinkd.exe" $stage
+          Copy-Item README.md, COPYING, rbinkd.8, binkd.conf, binkd.cfg $stage
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Compress-Archive -Path $stage -DestinationPath "dist/$name.zip"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rbinkd-x86_64-pc-windows-msvc
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs:
+      - linux-gnu
+      - linux-musl
+      - macos
+      - windows
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Write the checksums
+        run: |
+          cd dist
+          sha256sum -- *.tar.gz *.zip > SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --draft \
+            --title "rbinkd $GITHUB_REF_NAME" \
+            --generate-notes \
+            dist/*
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
