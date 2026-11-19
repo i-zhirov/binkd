@@ -98,7 +98,8 @@ rbinkd/
 │   ├── compatibility.md        # drop-in behavior and limitations
 │   ├── configuration.md        # configuration guide
 │   ├── operations.md           # running and service guide
-│   └── development.md          # build, tests, and runtime design
+│   ├── development.md          # build, tests, and runtime design
+│   └── perl.md                 # optional Perl hooks and safety
 ├── tests/                      # Rust tests, corpus, Windows smoke test
 │   ├── README.md               # how to run the tests, corpus format
 │   ├── golden/                 # corpus cases (Rust reads them)

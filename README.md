@@ -77,6 +77,9 @@ Keep these differences in mind before you replace a Binkd binary:
 - The dynamic zlib and bzip2 loader keywords are not implemented.
 - The Rust build reads `RBINKD_LOG` and the legacy `BINKD_LOG`. The `log`
   directive in the configuration takes precedence.
+- The Perl hooks are optional. A default build rejects the `perl-*`
+  directives. See [Perl hooks](doc/perl.md) for the optional build and the
+  unsafe boundary.
 
 See the [compatibility guide](doc/compatibility.md) for the full matrix and
 the behavior differences.
@@ -88,6 +91,7 @@ the behavior differences.
 - [Configuration](doc/configuration.md)
 - [Operations](doc/operations.md)
 - [Development](doc/development.md)
+- [Perl hooks](doc/perl.md)
 - [Manual page](rbinkd.8)
 
 ## Lineage

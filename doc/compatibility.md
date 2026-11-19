@@ -62,7 +62,9 @@ These differences apply to all supported Rust builds:
 - The message text of a log line can differ from the C daemon. The log line
   format stays compatible.
 - The Perl hooks are optional. Build the binary with the `perl` feature to
-  include them.
+  include them. A default build rejects the `perl-*` directives. The UNIX
+  sample has active `perl-hooks` and `perl-var` lines. See
+  [Perl hooks](perl.md) for the details.
 
 The UNIX build:
 

@@ -101,7 +101,16 @@ cargo build --release -p rbinkd --features perl
 ```
 
 The hooks are optional because they add a C shim and a dependency on the
-Perl interpreter.
+Perl interpreter. A default build rejects `perl-hooks`, `perl-strict`,
+`perl-var`, and `perl-dll` as unknown keywords. Its `-d` dump omits them.
+The `perl-dll` directive is accepted for compatibility, but the Rust build
+does not load that file at run time.
+
+The UNIX sample has active `perl-hooks` and `perl-var` lines. Comment them
+out before you use the sample with a default build.
+
+See [Perl hooks](perl.md) for the build requirements, the unsafe boundary,
+the runtime model, and the tests.
 
 ## Upstream configuration reference
 

@@ -9,7 +9,8 @@ interop procedure.
 
 - Rust 1.85 or later
 - A C toolchain only for the optional Perl hooks or for the C interop tests
-- Perl development files only for a build with the `perl` feature
+- Perl development files and `ExtUtils::Embed` only for a build with the
+  `perl` feature
 
 ## Build
 
@@ -77,7 +78,9 @@ effects. The network and protocol layers own the transport and the session.
 The binary maps typed errors to exit codes and log output.
 
 The workspace forbids unsafe code. The only exceptions are the Windows FFI
-in `rbinkd-win` and the Perl C shim in `rbinkd-perl`.
+in `rbinkd-win` and the Perl C shim in `rbinkd-perl`. The [Perl hooks](perl.md)
+page describes the optional build, the unsafe boundary, and the runtime
+model.
 
 ## Documentation
 

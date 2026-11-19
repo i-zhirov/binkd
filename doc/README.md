@@ -28,6 +28,8 @@ comments in the samples describe the common directives.
 
 - [Development](development.md): build, tests, workspace layout, and
   runtime design
+- [Perl hooks](perl.md): the optional build, the unsafe boundary, the
+  runtime model, and the tests
 - [Test suite](../tests/README.md): golden corpus, session replay, and C
   interop tests
 - [Coding rules](../AGENTS.md): repository and code conventions

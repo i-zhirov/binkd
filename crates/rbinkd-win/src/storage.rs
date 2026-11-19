@@ -2,8 +2,8 @@
 //! `GetShortPathName()` call of `run_args()` of `srif.c` and of the volume
 //! identity of `stat()` that `check_config()` of `readcfg.c` uses.
 //!
-//! The unsafe Windows calls stay in this crate, the exception of the lint
-//! `unsafe_code` of `doc/development.md`. The functions answer a
+//! The unsafe Windows calls stay in this crate, one of the two exceptions of
+//! the lint `unsafe_code` of `doc/development.md`. The functions answer a
 //! value and never end the process.
 
 use std::ffi::OsString;

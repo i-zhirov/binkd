@@ -3,8 +3,8 @@
 //!
 //! The module holds the `-t` commands, the service dispatcher, the registry
 //! records of the arguments of the service, and the status reports. The C code
-//! of `nt/service.c` is the reference. The crate alone holds the exception of
-//! the lint `unsafe_code` for the FFI, the decision of
+//! of `nt/service.c` is the reference. This crate and `rbinkd-perl` hold the
+//! two exceptions of the lint `unsafe_code` for the FFI, the decision of
 //! `doc/development.md`.
 
 use std::ffi::OsStr;
