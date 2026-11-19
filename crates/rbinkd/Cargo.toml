@@ -17,6 +17,8 @@ path = "src/main.rs"
 [features]
 # The Perl hooks are optional. See `doc/configuration.md`.
 perl = ["dep:rbinkd-perl"]
+# The original Windows short-name and partition behavior.
+windows-original = ["rbinkd-win/windows-original"]
 
 [target.'cfg(unix)'.dependencies]
 syslog = "=7.0.0"

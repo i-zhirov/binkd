@@ -2,8 +2,8 @@
 //!
 //! The crate holds the two calls that no stable safe standard API covers:
 //! `GetShortPathNameW()` and `GetFileInformationByHandle()`. The crate
-//! `rbinkd-win` accepts only the safe wrappers of this crate and sets
-//! `unsafe_code = "forbid"`.
+//! `rbinkd-win` accepts only the safe wrappers of this crate when the feature
+//! `windows-original` is enabled.
 
 #[cfg(windows)]
 mod windows;

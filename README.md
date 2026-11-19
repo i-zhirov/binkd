@@ -35,6 +35,9 @@ Build the release binary:
 cargo build --release -p rbinkd
 ```
 
+For the original Windows `*N` and volume-check behavior, add
+`--features windows-original`.
+
 Create a configuration from the sample, or use an existing Binkd config:
 
 ```sh
@@ -80,6 +83,9 @@ Keep these differences in mind before you replace a Binkd binary:
 - The Perl hooks are optional. A default build rejects the `perl-*`
   directives. See [Perl hooks](doc/perl.md) for the optional build and the
   unsafe boundary.
+- The default Windows build uses the long file name for `*N` and skips the
+  same-volume checks. Build with `--features windows-original` for the
+  original C behavior.
 
 See the [compatibility guide](doc/compatibility.md) for the full matrix and
 the behavior differences.

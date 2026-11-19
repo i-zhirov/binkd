@@ -163,6 +163,12 @@ directives. The source documentation in
 .I doc/perl.md
 describes the optional build and the runtime model.
 .PP
+The default Windows build uses the long file name for
+.B *N
+and skips the same-volume checks. Build with
+.B \-\-features windows-original
+for the original C behavior.
+.PP
 The Windows build has no tray icon and no
 .B \-T
 switch. It rejects

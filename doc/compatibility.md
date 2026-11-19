@@ -78,6 +78,20 @@ The Windows build:
 - Has no tray icon and no `-T` switch.
 - Rejects `syslog`, `aso`, `zlib-dll`, and `bzlib2-dll`.
 - Accepts `proxy`, `socks`, and `limit-rate`.
+- Uses the long file name for `*N` and skips the same-volume checks by
+  default. Build with `--features windows-original` for the original C
+  behavior: the short name and the volume checks use raw Windows calls.
+
+### Windows short name and volume checks
+
+The default Windows build answers no short-name lookup for `*N`. The macro
+expands to the long file name. The default build also answers no partition
+identity, so `check_config()` skips the checks that keep `temp-inbound`,
+`inbound`, `inbound-nonsecure`, and node inboxes on the same volume.
+
+Build with `--features windows-original` to use `GetShortPathNameW()` and
+`GetFileInformationByHandle()` and restore the upstream C behavior. The
+optional `rbinkd-win-ffi` crate is built only with that feature.
 
 The upstream C Windows build also accepts `aso`. The Rust Windows build
 does not. The upstream C build has no syslog backend.

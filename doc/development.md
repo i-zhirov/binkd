@@ -18,7 +18,13 @@ interop procedure.
 cargo build --release -p rbinkd
 ```
 
-The binary is `target/release/rbinkd`.
+The binary is `target/release/rbinkd`. The default Windows build uses long
+names for `*N` and skips the volume checks. Build the original C behavior
+with:
+
+```sh
+cargo build --release -p rbinkd --features windows-original
+```
 
 ## Test
 
@@ -53,7 +59,7 @@ cargo +1.85.0 check --workspace
 | `rbinkd-srif` | SRIF request engine |
 | `rbinkd-perl` | Optional Perl hooks behind a small C shim |
 | `rbinkd-win` | Windows service and file-system helpers |
-| `rbinkd-win-ffi` | Raw Windows file-system FFI |
+| `rbinkd-win-ffi` | Optional raw Windows file-system FFI |
 | `rbinkd-corpus` | Test-only corpus reader |
 
 The binary and the library crate are `rbinkd`. The public API keeps the
@@ -78,10 +84,10 @@ rbinkd
 effects. The network and protocol layers own the transport and the session.
 The binary maps typed errors to exit codes and log output.
 
-The workspace forbids unsafe code. The only exceptions are the raw Windows
-file-system calls in `rbinkd-win-ffi` and the Perl C shim in `rbinkd-perl`.
-`rbinkd-win` accepts only safe APIs. The [Perl hooks](perl.md) page describes
-the optional build, the unsafe boundary, and the runtime model.
+The workspace forbids unsafe code. The only exceptions are the optional raw
+Windows file-system calls in `rbinkd-win-ffi` and the optional Perl C shim in
+`rbinkd-perl`. `rbinkd-win` accepts only safe APIs. The [Perl hooks](perl.md)
+page describes the optional build, the unsafe boundary, and the runtime model.
 
 ## Documentation
 

@@ -77,9 +77,10 @@ pub fn free_space(path: &Path) -> u64 {
 /// Returns the lookup of the short name of a received file, the port of the
 /// Windows branch of `run_args()` of `srif.c`.
 ///
-/// The Windows binary supplies the safe wrapper of `rbinkd-win`; the other
-/// systems answer no lookup, and the expansion keeps the name of the file.
-#[cfg(windows)]
+/// The original behavior is optional. The default Windows build answers no
+/// lookup, so `*N` keeps the long name. A build with `windows-original` uses
+/// the safe wrapper of `rbinkd-win`.
+#[cfg(all(windows, feature = "windows-original"))]
 fn windows_short_name(path: &str) -> Result<String, u32> {
     rbinkd_win::storage::short_path(Path::new(path))
 }
@@ -87,7 +88,14 @@ fn windows_short_name(path: &str) -> Result<String, u32> {
 /// Returns the lookup of the short name of a received file.
 #[cfg(windows)]
 pub fn short_name() -> Option<ShortName> {
-    Some(windows_short_name)
+    #[cfg(feature = "windows-original")]
+    {
+        Some(windows_short_name)
+    }
+    #[cfg(not(feature = "windows-original"))]
+    {
+        None
+    }
 }
 
 /// Returns the lookup of the short name of a received file.
@@ -109,9 +117,21 @@ pub fn partition(path: &Path) -> Option<u64> {
 }
 
 /// Returns the identity of the file system of a path.
+///
+/// The original behavior is optional. The default Windows build answers
+/// `None`, so the config parser skips the same-volume checks. A build with
+/// `windows-original` uses the safe wrapper of `rbinkd-win`.
 #[cfg(windows)]
 pub fn partition(path: &Path) -> Option<u64> {
-    rbinkd_win::storage::volume_serial(path).map(u64::from)
+    #[cfg(feature = "windows-original")]
+    {
+        rbinkd_win::storage::volume_serial(path).map(u64::from)
+    }
+    #[cfg(not(feature = "windows-original"))]
+    {
+        let _ = path;
+        None
+    }
 }
 
 /// Returns the identity of the file system of a path.
@@ -196,19 +216,35 @@ mod tests {
         assert!(short_name().is_none());
     }
 
-    #[cfg(windows)]
+    #[cfg(all(windows, feature = "windows-original"))]
     #[test]
     fn the_short_name_provider_is_present_on_windows() {
         assert!(short_name().is_some());
     }
 
-    #[cfg(any(unix, windows))]
+    #[cfg(all(windows, not(feature = "windows-original")))]
+    #[test]
+    fn the_short_name_provider_is_absent_by_default_on_windows() {
+        assert!(short_name().is_none());
+    }
+
+    #[cfg(any(unix, all(windows, feature = "windows-original")))]
     #[test]
     fn the_partition_of_a_directory() {
         let dir = std::env::temp_dir().join(format!("binkd-partition-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         assert!(partition(&dir).is_some(), "the directory has no partition");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(all(windows, not(feature = "windows-original")))]
+    #[test]
+    fn the_partition_is_absent_by_default_on_windows() {
+        let dir = std::env::temp_dir().join(format!("binkd-partition-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(partition(&dir), None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

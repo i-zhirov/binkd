@@ -11,11 +11,10 @@ members = [
     "crates/rbinkd-corpus",
     "crates/rbinkd",
     "crates/rbinkd-win",
-    "crates/rbinkd-win-ffi",
 ]
-# The crate of the Perl FFI is optional and excluded from the workspace.
-# See `doc/configuration.md`.
-exclude = ["crates/rbinkd-perl"]
+# The Perl FFI and the original Windows FFI are optional and excluded from
+# the workspace. See `doc/perl.md` and `doc/compatibility.md`.
+exclude = ["crates/rbinkd-perl", "crates/rbinkd-win-ffi"]
 
 [workspace.package]
 version = "0.1.0"

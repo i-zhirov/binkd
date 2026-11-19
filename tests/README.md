@@ -35,18 +35,28 @@ Windows host:
 
 ```
 cargo test -p rbinkd-win
-cargo test -p rbinkd-win-ffi
 cargo test -p rbinkd-config
 cargo test --workspace
 ```
 
-The cases of `rbinkd-win-ffi` cover the short-name and volume wrappers. The
-other cases cover the partition provider, the Windows feature set, and the
-Windows `-d` dump. On another system, the cross-target check is:
+The cases cover the partition provider, the Windows feature set, and the
+Windows `-d` dump. The default Windows build uses the long file name for `*N`
+and skips the volume checks. Test the original behavior with:
 
 ```
-cargo check -p rbinkd-win -p rbinkd-win-ffi -p rbinkd-config \
-  -p rbinkd --target x86_64-pc-windows-gnu
+cargo test -p rbinkd-win --features windows-original
+cargo test -p rbinkd --features windows-original
+cargo test --manifest-path crates/rbinkd-win-ffi/Cargo.toml
+```
+
+The cases of `rbinkd-win-ffi` cover the short-name and volume wrappers. On
+another system, the cross-target check is:
+
+```
+cargo check -p rbinkd-win -p rbinkd-config -p rbinkd \
+  --target x86_64-pc-windows-gnu
+cargo check -p rbinkd --features windows-original \
+  --target x86_64-pc-windows-gnu
 ```
 
 ## Run the Perl tests

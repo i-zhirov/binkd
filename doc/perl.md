@@ -38,12 +38,13 @@ macOS, it also uses the SDK path from `xcrun`. The CI job `perl` installs
 The workspace forbids `unsafe` code. Two crates hold the only exceptions:
 
 - `rbinkd-win-ffi` uses `unsafe` for two raw Windows file-system calls. It
-  is a target-specific dependency and compiles on Windows only.
+  is an optional target-specific dependency and compiles on Windows only
+  with the `windows-original` feature.
 - `rbinkd-perl` uses `unsafe` for the Perl C API. It is the optional crate
   of this document.
 
-Perl is therefore not the only crate that uses `unsafe`. It is the only
-*optional* crate that uses `unsafe`.
+Both crates are optional and outside the default build. The default build of
+`rbinkd-win` does not use `rbinkd-win-ffi`.
 
 The boundary of `rbinkd-perl` is the C API of Perl. The Rust code holds raw
 `PerlInterpreter` and `SV` pointers. It calls the functions of `shim.c`, and

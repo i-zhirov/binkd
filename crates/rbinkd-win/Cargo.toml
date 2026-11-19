@@ -6,8 +6,12 @@ rust-version.workspace = true
 license.workspace = true
 description = "The Windows service mode of rbinkd, the port of `nt/service.c`."
 
+[features]
+# The original Windows short-name and partition behavior.
+windows-original = ["dep:rbinkd-win-ffi"]
+
 [target.'cfg(windows)'.dependencies]
-rbinkd-win-ffi = { path = "../rbinkd-win-ffi" }
+rbinkd-win-ffi = { path = "../rbinkd-win-ffi", optional = true }
 windows-service = "=0.8.1"
 winreg = "=0.56.0"
 
