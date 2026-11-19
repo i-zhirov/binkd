@@ -37,8 +37,8 @@ macOS, it also uses the SDK path from `xcrun`. The CI job `perl` installs
 
 The workspace forbids `unsafe` code. Two crates hold the only exceptions:
 
-- `rbinkd-win` uses `unsafe` for the Windows service and file-system FFI.
-  It is a target-specific dependency and compiles on Windows only.
+- `rbinkd-win-ffi` uses `unsafe` for two raw Windows file-system calls. It
+  is a target-specific dependency and compiles on Windows only.
 - `rbinkd-perl` uses `unsafe` for the Perl C API. It is the optional crate
   of this document.
 

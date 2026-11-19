@@ -2,9 +2,9 @@
 //!
 //! The crate holds the `-t` and `-S` commands and the service dispatcher of the
 //! Windows service control manager. The pure command values compile on every
-//! system. The FFI compiles on Windows only. This crate and `rbinkd-perl` hold
-//! the two exceptions of the lint `unsafe_code`, the decision of
-//! `doc/development.md`.
+//! system. The crate uses the safe APIs of `windows-service` and `winreg` and
+//! keeps `unsafe_code = "forbid"`. The raw file-system calls live in
+//! `rbinkd-win-ffi`.
 
 pub mod command;
 

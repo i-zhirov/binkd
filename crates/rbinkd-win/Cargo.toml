@@ -7,19 +7,13 @@ license.workspace = true
 description = "The Windows service mode of rbinkd, the port of `nt/service.c`."
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "=0.61.2", features = [
-    "Win32_Foundation",
-    "Win32_System_Services",
-    "Win32_System_Registry",
-    "Win32_Security",
-    "Win32_Storage_FileSystem",
-] }
+rbinkd-win-ffi = { path = "../rbinkd-win-ffi" }
+windows-service = "=0.8.1"
+winreg = "=0.56.0"
 
 [lints.rust]
-# The exception of `doc/development.md`: the crate holds the FFI
-# of the Windows service control manager. It shares the only exception with
-# `rbinkd-perl`; every other crate keeps `forbid`.
-unsafe_code = "allow"
+# The crate accepts only safe APIs. The raw calls live in `rbinkd-win-ffi`.
+unsafe_code = "forbid"
 
 [lints.clippy]
 all = "warn"

@@ -35,16 +35,18 @@ Windows host:
 
 ```
 cargo test -p rbinkd-win
+cargo test -p rbinkd-win-ffi
 cargo test -p rbinkd-config
 cargo test --workspace
 ```
 
-The cases cover the short-name and volume wrappers, the partition provider,
-the Windows feature set, and the Windows `-d` dump. On another system the
-cross-target check is:
+The cases of `rbinkd-win-ffi` cover the short-name and volume wrappers. The
+other cases cover the partition provider, the Windows feature set, and the
+Windows `-d` dump. On another system, the cross-target check is:
 
 ```
-cargo check -p rbinkd-win -p rbinkd-config -p rbinkd --target x86_64-pc-windows-gnu
+cargo check -p rbinkd-win -p rbinkd-win-ffi -p rbinkd-config \
+  -p rbinkd --target x86_64-pc-windows-gnu
 ```
 
 ## Run the Perl tests

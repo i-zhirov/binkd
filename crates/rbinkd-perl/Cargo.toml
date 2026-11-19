@@ -21,6 +21,6 @@ rbinkd-spool = { path = "../rbinkd-spool" }
 
 [lints.rust]
 # The exception is described in `doc/perl.md`: the crate holds the C shim of the
-# Perl C API and the FFI. It shares the only exception with `rbinkd-win`; every
-# other crate keeps `forbid`.
+# Perl C API and the FFI. It shares the only exception with `rbinkd-win-ffi`;
+# every other crate keeps `forbid`.
 unsafe_code = "allow"

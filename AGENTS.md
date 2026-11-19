@@ -41,8 +41,10 @@ in other programs.
   `fs2` for the free space of the binary, `time` for the safe local offset
   of the logs, the `TIME` frame, and `-v`, and `syslog` for the local syslog
   backend of the Unix binary. The optional `rbinkd-perl` crate holds the Perl C
-  shim. The `rbinkd-win` crate holds the Windows service and file-system FFI
-  and `windows-sys`. The upstream C implementation has its own dependencies:
+  shim. The `rbinkd-win` crate holds the Windows service and file-system
+  helpers and uses `windows-service` and `winreg`. The `rbinkd-win-ffi` crate
+  holds the two raw Windows file-system calls. The upstream C implementation
+  has its own dependencies:
   zlib, bzip2, and Perl (all optional), pthreads, libresolv, and libutil.
 - **Storage**: The local file system. The BSO spool directories, the
   `.flo`, `.try`, `.hld`, and `.bsy` files, the inbound directory, the
@@ -90,7 +92,8 @@ rbinkd/
 │   ├── rbinkd-srif/             # the SRIF interface and its event engine
 │   ├── rbinkd-corpus/           # test-only corpus reader
 │   ├── rbinkd-perl/             # optional Perl hooks (excluded)
-│   ├── rbinkd-win/              # Windows service and file-system FFI
+│   ├── rbinkd-win/              # Windows service and file system
+│   ├── rbinkd-win-ffi/          # raw Windows file-system calls
 │   └── rbinkd/                 # the binary: CLI, daemon, signals
 ├── ci/upstream-c.patch         # the interop patch of the upstream C tree
 ├── doc/                        # user and developer documentation
@@ -121,10 +124,11 @@ default. The C reference is upstream, and the interop tests clone it.
 - **Test the Perl hooks of the binary**:
   `cargo test -p rbinkd --features perl -- --test-threads=1`
 - **Check the Windows service** (needs the target):
-  `cargo check -p rbinkd-win -p rbinkd --target x86_64-pc-windows-gnu`
+  `cargo check -p rbinkd-win -p rbinkd-win-ffi -p rbinkd
+  --target x86_64-pc-windows-gnu`
 - **Test the Windows parity** (needs Windows):
-  `cargo test -p rbinkd-win && cargo test -p rbinkd-config`
-  and the full workspace suite.
+  `cargo test -p rbinkd-win && cargo test -p rbinkd-win-ffi &&
+  cargo test -p rbinkd-config` and the full workspace suite.
 - **Test the Windows service** (needs Windows, an administrator prompt, and
   the release binary): `cargo build --release -p rbinkd`, then
   `pwsh -NoProfile -ExecutionPolicy Bypass -File tests/windows-smoke.ps1`.
@@ -286,8 +290,9 @@ rbinkd-corpus (test-only corpus reader)
 Each layer calls the layer below it. No layer calls a layer above it.
 `rbinkd-ftn` is a leaf: it depends on `std` only. Today the workspace has
 `rbinkd-ftn`, `rbinkd-spool`, `rbinkd-config`, `rbinkd-proto`, `rbinkd-log`,
-`rbinkd-net`, `rbinkd-srif`, `rbinkd-corpus`, `rbinkd-win`, and `rbinkd`; the
-optional `rbinkd-perl` is excluded from the workspace.
+`rbinkd-net`, `rbinkd-srif`, `rbinkd-corpus`, `rbinkd-win`,
+`rbinkd-win-ffi`, and `rbinkd`; the optional `rbinkd-perl` is excluded from
+the workspace.
 
 The layers of the upstream C implementation, for reference:
 
@@ -325,10 +330,10 @@ port fixes them):
   `rbinkd-perl`, the crate of the FFI of the Perl hooks, holds
   `unsafe_code = "allow"` for the Perl C shim; the
   crate is optional and the default build holds it not, and a build that wants
-  the hooks names the feature `perl` of the `rbinkd` crate. The `rbinkd-win`
-  crate holds the second exception for the FFI of the Windows
-  service, the FFI exception of `rbinkd-win`; the crate is a
-  target-specific dependency of `rbinkd` and compiles on Windows only.
+  the hooks names the feature `perl` of the `rbinkd` crate. The
+  `rbinkd-win-ffi` crate holds the second exception for the two raw Windows
+  file-system calls; it is a target-specific dependency and compiles on
+  Windows only. The `rbinkd-win` crate keeps `unsafe_code = "forbid"`.
 - **Doc comments**: every public item of a Rust crate has a `///` comment
   and every module a `//!` comment. State the upstream C function that the
   port follows, for example "the port of `getw.c`".
@@ -412,10 +417,12 @@ port fixes them):
   crates use `std` only and do not use `time`. `rbinkd` also depends on
   `syslog` (`=7.0.0`) as a Unix-only target dependency for the safe local
   syslog backend, and the Windows build compiles it not. The `rbinkd-win` crate
-  depends on `windows-sys` (`=0.61.2`) with the features of the service
-  control manager and `Win32_Storage_FileSystem` for the short-name and volume
-  wrappers; it is a target-specific dependency of `rbinkd` and the UNIX build
-  does not compile it. Add a dependency only with an exact version.
+  depends on `windows-service` (`=0.8.1`) and `winreg` (`=0.56.0`) for the
+  service layer, and on `rbinkd-win-ffi` for the two raw file-system calls.
+  The `rbinkd-win-ffi` crate depends on `windows-sys` (`=0.61.2`) with the
+  `Win32_Foundation` and `Win32_Storage_FileSystem` features. These are
+  target-specific dependencies of `rbinkd`, and the UNIX build does not
+  compile them. Add a dependency only with an exact version.
 - **Prefer vanilla solutions.** Use `std` when it solves the problem. The
   Rust port of a C module uses `std` only, apart from the async runtime of
   the session and of the daemon.

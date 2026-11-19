@@ -233,9 +233,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Check the service mode
-        run: cargo check -p rbinkd-win -p rbinkd
+        run: cargo check -p rbinkd-win -p rbinkd-win-ffi -p rbinkd
       - name: Lint the service mode
-        run: cargo clippy -p rbinkd-win -p rbinkd --all-targets -- -D warnings
+        run: cargo clippy -p rbinkd-win -p rbinkd-win-ffi -p rbinkd --all-targets -- -D warnings
       - name: Test the workspace
         run: cargo test --workspace
       - name: Build the release binary

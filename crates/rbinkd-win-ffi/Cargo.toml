@@ -1,0 +1,22 @@
+[package]
+name = "rbinkd-win-ffi"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "The raw Windows file-system FFI of rbinkd."
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Storage_FileSystem",
+] }
+
+[lints.rust]
+# The exception of `doc/development.md`: the crate holds the two raw calls of
+# `GetShortPathNameW()` and `GetFileInformationByHandle()`. `rbinkd-win` keeps
+# `forbid` and accepts only the safe wrappers of this crate.
+unsafe_code = "allow"
+
+[lints.clippy]
+all = "warn"

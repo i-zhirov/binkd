@@ -11,8 +11,9 @@ members = [
     "crates/rbinkd-corpus",
     "crates/rbinkd",
     "crates/rbinkd-win",
+    "crates/rbinkd-win-ffi",
 ]
-# The crate of the FFI is optional and excluded from the workspace.
+# The crate of the Perl FFI is optional and excluded from the workspace.
 # See `doc/configuration.md`.
 exclude = ["crates/rbinkd-perl"]
 

@@ -8,9 +8,9 @@
 //! The C code links the hooks only with `./configure --with-perl`, whose default
 //! is no, and no test of the C tree names a hook. The crate is optional: the
 //! default build of the workspace holds it not, and a build that wants the hooks
-//! names the feature `perl` of the `rbinkd` crate. This crate and `rbinkd-win`
-//! hold the two exceptions of the lint `unsafe_code`. The page `doc/perl.md`
-//! describes the optional build and the unsafe boundary.
+//! names the feature `perl` of the `rbinkd` crate. This crate and
+//! `rbinkd-win-ffi` hold the two exceptions of the lint `unsafe_code`. The page
+//! `doc/perl.md` describes the optional build and the unsafe boundary.
 //!
 //! The behaviour of every hook is pinned by the cases of
 //! `crates/rbinkd/tests/perl.rs` against the oracle of `--with-perl`.
