@@ -62,7 +62,9 @@ workflow installs nightly with `rust-src` and uses
 `-Z build-std=std,panic_abort` for those two targets. Every musl binary is
 checked with `readelf -d` and must have no `NEEDED` entries.
 
-macOS and Windows build on native runners:
+macOS builds both targets on the Intel runner. The Apple Silicon target is
+cross-compiled with the Xcode SDK, which avoids the macOS arm64 runner
+capacity queue. Windows builds natively:
 
 - `x86_64-apple-darwin`
 - `aarch64-apple-darwin`
