@@ -8,7 +8,7 @@ jobs:
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Test the workspace
         run: cargo test --workspace
@@ -20,7 +20,7 @@ jobs:
   msrv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.85.0
       - name: Check the minimum supported Rust version
         run: cargo +1.85.0 check --workspace
@@ -28,7 +28,7 @@ jobs:
   perl:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install the Perl headers
         run: sudo apt-get update && sudo apt-get install -y libperl-dev
       - uses: dtolnay/rust-toolchain@stable
@@ -54,7 +54,7 @@ jobs:
   interop:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the C compression headers
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
@@ -85,7 +85,7 @@ jobs:
   interop-proxy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the C compression headers
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
@@ -105,7 +105,7 @@ jobs:
   interop-bwlim:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the C compression headers
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
@@ -126,7 +126,7 @@ jobs:
   interop-v10:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install the C compression headers
         run: sudo apt-get update && sudo apt-get install -y zlib1g-dev libbz2-dev
@@ -150,7 +150,7 @@ jobs:
     env:
       BINKD_C: ${{ github.workspace }}/upstream-c/binkd
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: ./.github/actions/upstream-c
       - name: Build the C reference
@@ -177,7 +177,7 @@ jobs:
     env:
       BINKD_C: '${{ github.workspace }}\upstream-c\bin\mingw32-zlib-bzlib2\binkd-mingw-zlib-bzlib2.exe'
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: msys2/setup-msys2@v2
         with:
@@ -220,7 +220,7 @@ jobs:
   macos:
     runs-on: macos-15-intel
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Test the workspace
         run: cargo test --workspace
@@ -230,7 +230,7 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Check the service mode
         run: cargo check -p rbinkd-win -p rbinkd
